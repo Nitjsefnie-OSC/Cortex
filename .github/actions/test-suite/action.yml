@@ -94,6 +94,7 @@ runs:
         apt_update_ok=""
         apt_update_timed_out=""
         for attempt in 1 2 3; do
+          apt_update_timed_out=""  # per-attempt state: the report names the last attempt
           if sudo timeout "${APT_TIMEOUT}s" apt-get update; then apt_update_ok=1; break; else
             apt_status=$?
             if [ "$apt_status" -eq 124 ]; then
@@ -116,6 +117,7 @@ runs:
         apt_install_ok=""
         apt_install_timed_out=""
         for attempt in 1 2 3; do
+          apt_install_timed_out=""  # per-attempt state: the report names the last attempt
           if sudo timeout "${APT_TIMEOUT}s" apt-get install -y "postgresql-${PG_VER}-pgvector"; then apt_install_ok=1; break; else
             apt_status=$?
             if [ "$apt_status" -eq 124 ]; then

@@ -39,9 +39,8 @@ scripts/check_project_wiki.py          Project wiki mirrors match their canonica
 scripts/check_no_deps_invariant.py     no-deps-invariant gate: clean (126 file(s) scanned).
 ```
 
-The final full CI pytest invocation completed with `9422 passed, 19 skipped,
-185 failed, 373 subtests passed`. The failures are codebase and AST tests that
-cannot load the local `tree_sitter_language_pack` native grammar libraries;
-the reported error is `DynamicLoadError` while loading
-`libtree_sitter_python.dylib`. The focused regression tests passed in the same
-environment.
+The full CI pytest invocation (`pytest --tb=short -q -p no:randomly`, run from
+the repository venv on the final tree) completed with `9608 passed, 19 skipped,
+373 subtests passed` and exit code 0, with no database configured. The 9608
+include the regression tests in
+`tests_py/scripts/test_pgvector_action_retry_timeout.py`.

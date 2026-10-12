@@ -70,3 +70,41 @@ sleep() { :; }
         assert result.returncode == 1
         assert result.stdout.splitlines().count(f"APT_{stage}") == 3
         assert f"apt-get {stage} timed out after 3 attempts" in result.stderr
+
+
+def test_final_message_reports_last_attempt_not_an_earlier_timeout() -> None:
+    action = ACTION.read_text()
+    start = action.index("        APT_TIMEOUT=")
+    end = action.index("        # Role + DB expected by DATABASE_URL", start)
+    apt_loops = "\n".join(line[8:] for line in action[start:end].splitlines())
+    # Per-attempt exit statuses: one timeout, then two ordinary failures.
+    # source: GNU coreutils timeout(1) exits 124 on expiry; 1 is any failure.
+    harness = """\
+PG_VER=fixture
+sudo() { "$@"; }
+timeout() { shift; "$@"; }
+statuses="124 1 1"
+apt-get() {
+  case "$*" in
+    update) command_name=update ;;
+    install*) command_name=install ;;
+  esac
+  if [ "$command_name" != "$FAIL_STAGE" ]; then return 0; fi
+  status="${statuses%% *}"; statuses="${statuses#* }"
+  return "$status"
+}
+sleep() { :; }
+"""
+
+    for stage in ("update", "install"):
+        result = subprocess.run(
+            ["bash", "-c", harness + apt_loops],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "FAIL_STAGE": stage},
+        )
+
+        assert result.returncode == 1
+        assert "timed out after 3 attempts" not in result.stderr
+        assert f"apt-get {stage}" in result.stderr
+        assert "failed after 3 attempts" in result.stderr
