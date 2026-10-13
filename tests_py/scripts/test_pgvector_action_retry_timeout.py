@@ -11,7 +11,7 @@ ACTION = REPO / ".github/actions/test-suite/action.yml"
 
 
 def test_pgvector_apt_attempts_are_bounded_and_report_timeout() -> None:
-    action = ACTION.read_text()
+    action = ACTION.read_text(encoding="utf-8")
 
     assert "# source: issue #681 (suggested 120-second per-attempt bound)" in action
     timeout_marker = (
@@ -33,7 +33,7 @@ def test_pgvector_apt_attempts_are_bounded_and_report_timeout() -> None:
 
 
 def test_timeout_retries_each_command_and_names_final_failure() -> None:
-    action = ACTION.read_text()
+    action = ACTION.read_text(encoding="utf-8")
     start = action.index("        APT_TIMEOUT=")
     end = action.index("        # Role + DB expected by DATABASE_URL", start)
     apt_loops = "\n".join(line[8:] for line in action[start:end].splitlines())
@@ -73,7 +73,7 @@ sleep() { :; }
 
 
 def test_final_message_reports_last_attempt_not_an_earlier_timeout() -> None:
-    action = ACTION.read_text()
+    action = ACTION.read_text(encoding="utf-8")
     start = action.index("        APT_TIMEOUT=")
     end = action.index("        # Role + DB expected by DATABASE_URL", start)
     apt_loops = "\n".join(line[8:] for line in action[start:end].splitlines())
