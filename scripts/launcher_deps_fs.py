@@ -195,24 +195,30 @@ def sweep_stale_scratch(deps_dir: str) -> None:
 
         Precondition: none -- a missing/unreadable parent is a silent no-op.
         Postcondition: every sibling ``<deps>.tmp-<pid>`` (an install's
-        ``--target``) and ``<deps>.uv-<version>.tmp-<pid>`` (the uv bootstrap's
-        scratch) of ``deps_dir`` whose ``<pid>`` no longer identifies a live
-        process has been best-effort removed. A killed install never reaches
-        its own cleanup: 64 such directories, each holding only uv's
-        ``.lock``, were found in one plugin data directory (2026-10-14).
+        ``--target``) of ``deps_dir`` and every ``uv-<version>.tmp-<pid>`` (the
+        uv bootstrap's scratch) in the plugin data directory whose ``<pid>`` no
+        longer identifies a live process has been best-effort removed. A
+        killed install never reaches its own cleanup: 64 such directories,
+        each holding only uv's ``.lock``, were found in one plugin data
+        directory (2026-10-14).
 
-    source: ADR-1106"""
+    source: ADR-1108
+    source: ADR-1108"""
     parent, base = os.path.split(os.path.abspath(deps_dir))
-    pattern = re.compile(rf"^{re.escape(base)}(?:\.uv-[\w.]+)?\.tmp-(?P<pid>\d+)$")
+    _sweep_dead(parent, re.compile(rf"^{re.escape(base)}\.tmp-(?P<pid>\d+)$"))
+    _sweep_dead(os.path.dirname(parent), re.compile(r"^uv-[\w.]+\.tmp-(?P<pid>\d+)$"))
+
+
+def _sweep_dead(directory: str, pattern: re.Pattern[str]) -> None:
     try:
-        children = os.listdir(parent)
+        children = os.listdir(directory)
     except OSError:
         return
     for name in children:
         match = pattern.match(name)
         if match is None or pid_alive(int(match.group("pid"))):
             continue
-        shutil.rmtree(os.path.join(parent, name), ignore_errors=True)
+        shutil.rmtree(os.path.join(directory, name), ignore_errors=True)
 
 
 def prune_superseded_dist_info(deps_dir: str, committed_entry: str) -> None:

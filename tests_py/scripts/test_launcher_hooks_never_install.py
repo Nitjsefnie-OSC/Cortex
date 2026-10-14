@@ -9,7 +9,7 @@ detached install job, and runs nothing. The assertions are on the install
 seams (``ensure_deps``, ``ensure_all_deps``, ``install_locked_set``, any
 ``subprocess.run``), not on elapsed time.
 
-source: docs/adr/ADR-1106-no-dependency-install-inside-a-hook.md
+source: docs/adr/ADR-1108-no-dependency-install-inside-a-hook.md
 """
 
 from __future__ import annotations
@@ -58,6 +58,9 @@ print(json.dumps({'code': code, **seen}))
 
 # source: ADR-1104 (the host's SessionStart timeout, measured)
 _HOST_HOOK_BUDGET_SECONDS = 30
+# source: measured 2026-10-15, Claude Code 2.1.300: a Setup hook with no timeout was
+# killed 599 s after it started (fleet/deps-out-of-hook/lab/dflt)
+_HOST_DEFAULT_COMMAND_TIMEOUT_SECONDS = 600
 _HOOKS = (
     "mcp_server.hooks.session_start",
     "mcp_server.hooks.auto_recall",
@@ -70,6 +73,14 @@ class HooksNeverInstall(unittest.TestCase):
         tree = tempfile.TemporaryDirectory(prefix="cortex-launcher-hook-")
         self.addCleanup(tree.cleanup)
         self.root = Path(tree.name)
+        sys.path.insert(0, str(_ROOT / "scripts"))
+        try:
+            import launcher_layout
+        finally:
+            sys.path.remove(str(_ROOT / "scripts"))
+        self.deps_dir = launcher_layout.project_deps_dir(
+            self.root / "plugin-data", _ROOT
+        )
 
     def launch(self, module, **options):
         env = {
@@ -126,7 +137,7 @@ class HooksNeverInstall(unittest.TestCase):
         finally:
             sys.path.remove(str(_ROOT / "scripts"))
         with launcher_lock.held_if_free(
-            launcher_base_job.job_lock(str(data / "deps"))
+            launcher_base_job.job_lock(self.deps_dir)
         ) as mine:
             self.assertTrue(mine)
             seen, stderr = self.launch(_HOOKS[0])
@@ -149,9 +160,12 @@ class HooksNeverInstall(unittest.TestCase):
         seen, _ = self.launch(_HOOKS[1], INSTALL_DEPS="1")
         self.assertEqual(seen["install"], ["ensure_all_deps"])
 
-    def test_no_hook_asks_the_host_for_more_than_the_30_second_install_budget(self):
+    def test_only_the_setup_hook_asks_the_host_for_more_than_30_seconds(self):
         """The SessionStart timeout went 30 -> 300 s so that the hook could
-        install (ADR-1104); the install left the hook, so the budget did too."""
+        install (ADR-1104); the install left the hook, so the budget did too.
+        The Setup hook is the one place that installs and waits (ADR-1108):
+        its timeout is explicit because the host's default kills it at 600 s
+        (measured: Claude Code 2.1.300), shorter than a slow network's install."""
         manifest = json.loads((_ROOT / ".claude-plugin" / "plugin.json").read_text())
         timeouts = {
             command["command"].rsplit("launcher.py", 1)[1]: command.get("timeout")
@@ -159,7 +173,12 @@ class HooksNeverInstall(unittest.TestCase):
             for group in groups
             for command in group["hooks"]
         }
+        setup = [t for module, t in timeouts.items() if module.endswith("--setup'")]
+        self.assertEqual(len(setup), 1)
+        self.assertGreater(setup[0], _HOST_DEFAULT_COMMAND_TIMEOUT_SECONDS)
         for module, timeout in timeouts.items():
+            if module.endswith("--setup'"):
+                continue
             with self.subTest(module=module):
                 self.assertLessEqual(timeout or 0, _HOST_HOOK_BUDGET_SECONDS)
 

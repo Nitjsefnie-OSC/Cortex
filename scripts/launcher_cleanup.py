@@ -3,7 +3,8 @@
 Runbook: set CORTEX_CLAUDE_DIR and CLAUDE_PLUGIN_DATA to explicit absolute
 paths, stop sessions using the selected plugin, then run launcher.py
 --cleanup-deps --dry-run --plugin-id old@marketplace; review the JSON, then
-replace --dry-run with --apply. Only deps is removed, never the identity folder.
+replace --dry-run with --apply. Only the sets (and the legacy flat deps) are
+removed, never the identity folder.
 
 source: ADR-0744"""
 
@@ -24,7 +25,12 @@ from launcher_cleanup_fs import (
     remove_deps,
     require_removal_support,
 )
+import launcher_layout
 from launcher_cleanup_registry import CleanupScope, identity, protections
+
+# The directories of an identity that hold installed sets: the per-lock sets and
+# the flat layout before them (source: ADR-1108).
+CHILDREN = (launcher_layout.SETS, launcher_layout.LEGACY_DEPS)
 
 logger = logging.getLogger(__name__)
 
@@ -60,16 +66,17 @@ def _audit(scope: CleanupScope, selected: set[str], report: CleanupReport) -> No
     with directory(scope.current_deps.parent):
         names = child_names(scope.data_root)
     for name in names:
-        path = scope.data_root / name / "deps"
-        if not inspect_deps(path):
-            continue
-        if name in protected:
-            report.protected.append(str(path))
-        elif name in selected:
-            inspect_deps(path, recursive=True)
-            report.candidates.append(str(path))
-        else:
-            report.indeterminate.append(str(path))
+        for child in CHILDREN:
+            path = scope.data_root / name / child
+            if not inspect_deps(path):
+                continue
+            if name in protected:
+                report.protected.append(str(path))
+            elif name in selected:
+                inspect_deps(path, recursive=True)
+                report.candidates.append(str(path))
+            else:
+                report.indeterminate.append(str(path))
     missing = selected - {Path(path).parent.name for path in report.candidates}
     if missing:
         raise CleanupRefusedError(
@@ -118,7 +125,7 @@ def _scope_from_environment() -> CleanupScope:
         raise CleanupRefusedError(
             "CORTEX_CLAUDE_DIR and CLAUDE_PLUGIN_DATA are required for cleanup"
         )
-    return CleanupScope(Path(root), Path(current) / "deps")
+    return CleanupScope(Path(root), Path(current) / launcher_layout.SETS)
 
 
 def audit_startup() -> None:

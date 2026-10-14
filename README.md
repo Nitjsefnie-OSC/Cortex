@@ -51,12 +51,20 @@ publish **no CO₂ or energy figure**, because we have not measured one.
 ```bash
 claude plugin marketplace add cdeust/Cortex
 claude plugin install hypermnesia-mcp
+claude --init-only
 ```
 
-Update the same way, one command:
+`claude --init-only` runs the plugin's Setup hook, which installs Cortex's runtime (base
+dependencies, semantic search and its embedding model) before your first session. It prints
+nothing and exits 0 even when the install fails (Claude Code discards a Setup hook's output), so
+to watch the progress and get a failing exit code, run `scripts/init_plugin.py` from the installed
+plugin instead (its path is `installPath` in `claude plugin list --json`).
+
+Update the same way, one command, then initialise again:
 
 ```bash
 claude plugin update hypermnesia-mcp
+claude --init-only
 ```
 
 **Claude Desktop** — download `hypermnesia-mcp.mcpb` from
@@ -85,13 +93,15 @@ server and get the same tools. See [launch commands](#every-other-mcp-host).
 WSL, TLS client certificates and corporate proxies are covered in
 [deployment scenarios](docs/deployment-scenarios.md).
 
-The first session installs Cortex's runtime into the plugin's data directory in the background
-(about a minute on a cold machine; a Mac whose `python3` is older than 3.10 also gets a private
-CPython 3.12). No hook installs anything, so until it finishes each hook exits with
-`Cortex not ready:`, the cause and the install log's path; the next session shows
-`Cortex ready: <store>, <n> memories; <how recall ranks>`, or `Cortex not ready:` with the
-cause. Semantic search installs in the background too; until it lands the same line says
-recall is keyword-only.
+Cortex's dependencies live in the plugin's data directory, one directory per locked
+dependency set (`sets/<key>`), so an update that does not change the locked dependencies (most
+releases: 21 of 29 from v4.9.0 to v4.23.5) finds its set installed. After an update that does
+change them, `claude --init-only` installs the new set; a session started before that prints
+`Cortex not ready:` with the cause and the log's path, exits non-zero (the Edit/Write guards exit 2
+and block the edit), and a background install is already running; the next session shows
+`Cortex ready: <store>, <n> memories; <how recall ranks>`. While a session of the current version
+runs, a background job also installs the next version's set as soon as the marketplace clone
+holds it, and removes sets no installed version references.
 
 The first use creates a local SQLite store under `~/.claude/methodology/`. Models are downloaded
 once when needed and then run offline. The embedding and reranking model files are both fetched

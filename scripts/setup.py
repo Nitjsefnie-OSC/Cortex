@@ -32,11 +32,13 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
+import launcher_layout  # noqa: E402 — sibling module, resolvable only once SCRIPT_DIR is on sys.path
 import launcher_site  # noqa: E402 — sibling module, resolvable only once SCRIPT_DIR is on sys.path
 
 PROJECT_DIR = SCRIPT_DIR.parent
 PLUGIN_DATA = os.environ.get("CLAUDE_PLUGIN_DATA", str(PROJECT_DIR))
-DEPS_DIR = os.path.join(PLUGIN_DATA, "deps")
+# The set directory the launcher uses for this plugin tree (source: ADR-1108).
+DEPS_DIR = launcher_layout.project_deps_dir(PLUGIN_DATA, PROJECT_DIR)
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://localhost:5432/cortex")
 
 # SQLite mode: see module docstring. Any other CORTEX_MEMORY_STORE_BACKEND

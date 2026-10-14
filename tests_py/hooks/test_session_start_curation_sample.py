@@ -1,11 +1,12 @@
-"""The SessionStart curation sample reads 500 rows through a narrow index.
+"""The SessionStart curation sample sorts three narrow columns, not whole rows.
 
 Before ADR-1107 the sample sorted every live memory with its content, tags and
 embedding as sort payload (3 x 128 MB spilled to disk, 13.4 s warm and 55.3 s
-cold on 68,496 memories) to keep 500 of them. The sample is now chosen from
-``idx_memories_curation_sample`` and only those rows are read whole. These tests
-run the real statement on a real PostgreSQL: the result is the rows the old
-statement returned, in the same order, and the planner reads the index.
+cold on 68,496 memories) to keep 500 of them. The statement now picks the 500
+ids on three narrow columns and reads only those rows whole; no index is added
+(one on ``last_accessed`` was measured and rejected: it ends HOT updates on
+every recall). These tests run the real statement on a real PostgreSQL: the
+result is the rows the old statement returned, in the same order.
 
 source: ADR-1107
 """

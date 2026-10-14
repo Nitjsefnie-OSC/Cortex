@@ -113,3 +113,41 @@ def persist_first_decision() -> None:
         f"[cortex-launcher] storage: {backend} ({why}); recorded in {path}",
         file=sys.stderr,
     )
+
+
+def apply() -> None:
+    """One storage backend for the server and every hook.
+
+    The host passes the user's ``database_url`` to the MCP server as
+    ``DATABASE_URL`` and to hooks only as ``CLAUDE_PLUGIN_OPTION_DATABASE_URL``;
+    both mean the same setting. Then the shared precedence (backend_marker)
+    with the plugin's default. A HOME nothing decides gets its marker once
+    (launcher_backend): SQLite when fresh, the earlier local PostgreSQL when
+    it still answers. PostgreSQL's local URL default applies only when a
+    marker chose it.
+
+    source: ADR-0505
+    source: ADR-1104
+    """
+    option = os.environ.get("CLAUDE_PLUGIN_OPTION_DATABASE_URL", "").strip()
+    if option and not os.environ.get("DATABASE_URL", "").strip():
+        os.environ["DATABASE_URL"] = option
+    from mcp_server.infrastructure.backend_marker import (  # noqa: PLC0415 — resolvable once plugin_root is on sys.path
+        BackendMarkerError,
+        apply_backend_resolution,
+        environment_decides,
+        read_backend_marker,
+    )
+
+    try:
+        if not environment_decides(os.environ) and read_backend_marker() is None:
+            persist_first_decision()
+        apply_backend_resolution(os.environ, default="sqlite")
+    except (BackendMarkerError, OSError) as exc:
+        print(f"[cortex-launcher] Cortex not ready: {exc}", file=sys.stderr)
+        sys.exit(1)
+    if (
+        "DATABASE_URL" not in os.environ
+        and os.environ.get("CORTEX_MEMORY_STORE_BACKEND", "") == "postgresql"
+    ):
+        os.environ["DATABASE_URL"] = "postgresql://localhost:5432/cortex"

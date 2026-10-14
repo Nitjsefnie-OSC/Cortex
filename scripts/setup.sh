@@ -5,7 +5,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-DEPS_DIR="${CLAUDE_PLUGIN_DATA:-$PROJECT_DIR}/deps"
+# The set directory the launcher uses for this plugin tree (source: ADR-1108).
+DEPS_DIR="$(python3 "$SCRIPT_DIR/launcher_layout.py" "${CLAUDE_PLUGIN_DATA:-$PROJECT_DIR}" "$PROJECT_DIR")"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

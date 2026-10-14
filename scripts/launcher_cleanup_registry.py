@@ -91,7 +91,7 @@ class CleanupScope:
         if (
             not self.claude_root.is_absolute()
             or ".." in self.claude_root.parts
-            or self.current_deps.name != "deps"
+            or self.current_deps.name not in {"sets", "deps"}
             or self.current_deps.parent.parent != self.data_root
         ):
             raise CleanupRefusedError(

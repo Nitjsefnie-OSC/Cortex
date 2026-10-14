@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Zero-ops install check: the owner's three commands on a clean machine.
+"""Zero-ops install check: the owner's commands on a clean machine.
 
     claude plugin marketplace add <checkout | cdeust/Cortex>
     claude plugin install hypermnesia-mcp@cortex-plugins
-    first session -> tools answer, remember -> recall works; its SessionStart
-                     hook installs nothing (it says "Cortex not ready" and
-                     why while the install runs, ADR-1106)
+    claude --init-only      (through scripts/init_plugin.py: the Setup hook
+                             installs every set and the model, and a failure
+                             exits non-zero)
+    first session  -> SessionStart says "Cortex ready", tools answer,
+                      remember -> recall works; no hook installed anything
     second session -> "Cortex ready"
 
 Run on an isolated HOME / ``CLAUDE_CONFIG_DIR`` with the real Claude Code CLI:
@@ -20,13 +22,15 @@ Usage:
     python3 scripts/install_e2e/run.py --marketplace SRC --work DIR
         [--python /usr/bin/python3] [--x86_64] [--settle-seconds N]
 
-source: docs/adr/ADR-1104-zero-ops-plugin-install.md
-source: docs/adr/ADR-1106-no-dependency-install-inside-a-hook.md
+source: ADR-1104
+source: ADR-1108
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import re
 import sys
@@ -38,6 +42,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import evidence  # noqa: E402
 import host  # noqa: E402
 import mcp_session  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import init_plugin  # noqa: E402 — scripts/ is a sibling of this package
 
 # source: mcp_server/hooks/session_start_status.py semantic_clause
 SEMANTIC_ON = "semantic search on"
@@ -61,6 +68,19 @@ def _install(machine: host.Machine, sandbox: list, source: str) -> dict:
     added = host.run_claude(machine, sandbox, "plugin", "marketplace", "add", source)
     installed = host.run_claude(machine, sandbox, "plugin", "install", host.PLUGIN_ID)
     return {"add": added.__dict__, "install": installed.__dict__}
+
+
+def _init(machine: host.Machine, sandbox: list) -> dict:
+    """The documented ``claude --init-only`` step, through the failing wrapper."""
+    started = time.monotonic()
+    shown = io.StringIO()
+    with contextlib.redirect_stdout(shown), contextlib.redirect_stderr(shown):
+        code = init_plugin.init([*sandbox, "claude"], host.PLUGIN_ID, machine.env)
+    return {
+        "returncode": code,
+        "output": shown.getvalue(),
+        "seconds": round(time.monotonic() - started, 2),
+    }
 
 
 def _plugin_root(machine: host.Machine, sandbox: list) -> str | None:
@@ -137,7 +157,12 @@ def _checks(report: dict, expect_semantic: bool) -> dict:
     return {
         "install_exit_0": all(r["returncode"] == 0 for r in report["install"].values()),
         "hook_within_timeout": (hook.get("ms") or 10**9) < timeout_ms,
-        "hook_ready_or_names_its_cause_session_1": hook_ready_or_names_cause(hook),
+        "init_exit_0": report["init"]["returncode"] == 0,
+        "hook_ready_session_1": hook.get("status") == 0 and message_starts_ready(hook),
+        "hook_installed_nothing": not any(
+            "installing" in text
+            for text in (hook.get("stderr", ""), hook.get("stdout", ""))
+        ),
         "mcp_connected_by_host": first["mcp_connected"],
         "tools_listed": stdio.get("required_tools_present", False),
         "tools_arrived_in_session_1": stdio.get("seconds", 10**9) < STDIO_BOUND_SECONDS,
@@ -152,19 +177,6 @@ def _checks(report: dict, expect_semantic: bool) -> dict:
         and ("failed: " in message_2 or expect_semantic),
         "no_forbidden_output": not report["forbidden"],
     }
-
-
-def hook_ready_or_names_cause(hook: dict) -> bool:
-    """Session 1's hook installs nothing: it is ready (a server install won the
-    race) or it exits 1 saying why and where the install logs (ADR-1106)."""
-    if hook.get("status") == 0:
-        return message_starts_ready(hook)
-    stderr = hook.get("stderr", "")
-    return (
-        hook.get("status") == 1
-        and "Cortex not ready" in stderr
-        and "deps-install.log" in stderr
-    )
 
 
 def message_starts_ready(hook: dict) -> bool:
@@ -185,6 +197,7 @@ def run(args: argparse.Namespace) -> dict:
     machine = host.build_machine(Path(args.work).resolve(), args.python, args.x86_64)
     sandbox = host.sandbox_prefix(machine.work)
     report: dict = {"install": _install(machine, sandbox, args.marketplace)}
+    report["init"] = _init(machine, sandbox)
     report["host_notices"] = [
         line
         for r in report["install"].values()

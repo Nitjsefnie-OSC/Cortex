@@ -26,7 +26,9 @@ import sys
 from pathlib import Path
 
 import launcher_deps
+import launcher_layout
 import launcher_lock
+import launcher_logs
 
 WARMUP_MODULE = "mcp_server.infrastructure.embedding_warmup"  # source: ADR-1104
 # The job writes its outcome here; the launcher hands it to the SessionStart
@@ -43,12 +45,12 @@ def job_lock(deps_dir: str) -> str:
 
 def job_log(deps_dir: str) -> Path:
     """Where the job's output goes: the first place to look when it fails."""
-    return Path(deps_dir).parent / "semantic-install.log"
+    return launcher_layout.data_dir(deps_dir) / "semantic-install.log"
 
 
 def status_file(deps_dir: str) -> Path:
     """The job's outcome: ``{"status": "ready"}`` or ``{"status": "failed", ...}``."""
-    return Path(deps_dir).parent / "semantic-install.json"
+    return Path(f"{deps_dir}.semantic.json")
 
 
 def state(deps_dir: str) -> tuple[str, str]:
@@ -92,8 +94,7 @@ def start(deps_dir: str, launcher: str) -> tuple[str, str]:
     with launcher_lock.held_if_free(job_lock(deps_dir)) as free:
         if not free:
             return current  # the job is already running
-    log = job_log(deps_dir)
-    log.parent.mkdir(parents=True, exist_ok=True)
+    log = launcher_logs.rotate(job_log(deps_dir))
     env = dict(os.environ)
     env[STATUS_ENV] = str(status_file(deps_dir))
     with log.open("ab") as sink:

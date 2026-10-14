@@ -4,7 +4,6 @@ source: ADR-1092"""
 
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 import json
 import sys
@@ -16,6 +15,16 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEPS_MODULE_PATH = REPO_ROOT / "scripts" / "launcher_deps.py"
 DIGEST = "d" * 64
 SET = "5" * 64
+
+
+def layout_mod():
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    try:
+        import launcher_layout  # noqa: PLC0415 — scripts/ is not a package; the test puts it on the path
+
+        return launcher_layout
+    finally:
+        sys.path.remove(str(REPO_ROOT / "scripts"))
 
 
 @pytest.fixture
@@ -45,7 +54,7 @@ def calls(deps_mod, monkeypatch) -> list[tuple[str, tuple[str, ...]]]:
         seen.append((deps_dir_arg, tuple(set_args)))
         return True
 
-    monkeypatch.setattr(deps_mod, "lock_digest", lambda: DIGEST)
+    monkeypatch.setattr(deps_mod, "lock_key", lambda: DIGEST)
     monkeypatch.setattr(deps_mod, "_locked_set_digest", lambda *_a: SET)
     monkeypatch.setattr(deps_mod, "_install_locked_set", fake_install)
     monkeypatch.setattr(deps_mod, "_importable", lambda *_a: True)
@@ -56,15 +65,15 @@ def _stamp(deps_mod, deps_dir: Path, kind: str) -> dict:
     return json.loads(Path(deps_mod._stamp_path(str(deps_dir), kind)).read_text())
 
 
-def test_lock_digest_is_the_sha256_of_the_repository_uv_lock(deps_mod):
-    expected = hashlib.sha256((REPO_ROOT / "uv.lock").read_bytes()).hexdigest()
+def test_lock_key_is_the_set_key_of_the_repository_uv_lock(deps_mod):
     assert deps_mod.LOCK_PATH == REPO_ROOT / "uv.lock"
-    assert deps_mod.lock_digest() == expected
+    assert deps_mod.lock_key() == layout_mod().set_key(REPO_ROOT / "uv.lock")
+    assert len(deps_mod.lock_key()) == layout_mod().KEY_LENGTH
 
 
-def test_lock_digest_is_none_without_a_lock(deps_mod, tmp_path, monkeypatch):
+def test_lock_key_is_none_without_a_lock(deps_mod, tmp_path, monkeypatch):
     monkeypatch.setattr(deps_mod, "LOCK_PATH", tmp_path / "absent.lock")
-    assert deps_mod.lock_digest() is None
+    assert deps_mod.lock_key() is None
 
 
 def test_stamp_round_trip_and_exact_payload(deps_mod, deps_dir):
@@ -183,7 +192,7 @@ def test_ensure_deps_checks_every_base_import_in_deps_dir(
 def test_missing_lock_installs_nothing_and_says_why(
     deps_mod, deps_dir, calls, monkeypatch, capsys
 ):
-    monkeypatch.setattr(deps_mod, "lock_digest", lambda: None)
+    monkeypatch.setattr(deps_mod, "lock_key", lambda: None)
     deps_mod.ensure_all_deps(str(deps_dir))
     assert calls == []
     assert (

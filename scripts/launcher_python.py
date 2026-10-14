@@ -21,6 +21,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import launcher_layout as _layout
 import launcher_uv as _uv
 
 # source: pyproject.toml requires-python = ">=3.10"
@@ -40,8 +41,8 @@ class NotProvidedError(InterpreterError):
 
 
 def managed_dir(deps_dir: str) -> Path:
-    """Where the pinned CPython lives: beside ``deps_dir``, in plugin data."""
-    return Path(deps_dir).parent / "python"
+    """Where the pinned CPython lives: in plugin data, shared by every set."""
+    return _layout.data_dir(deps_dir) / "python"
 
 
 def _uv_python(deps_dir: str, *args: str) -> subprocess.CompletedProcess:

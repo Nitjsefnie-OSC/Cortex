@@ -34,7 +34,7 @@ class Guard(importlib.abc.MetaPathFinder):
 sys.meta_path.insert(0, Guard())
 launcher.launcher_deps.ensure_deps = lambda path: bootstrap.append('base')
 launcher.launcher_deps.ensure_all_deps = lambda path: bootstrap.append('all')
-# A hook installs nothing and needs the base set ready (ADR-1106).
+# A hook installs nothing and needs the base set ready (ADR-1108).
 launcher.launcher_deps.set_ready = lambda path, kind: True
 def dispatch(module, **kwargs):
     replay = isinstance(getattr(sys.stdin, 'buffer', None), io.BytesIO)
@@ -128,7 +128,7 @@ class LauncherCaptureModes(unittest.TestCase):
 
     def test_other_entries_and_explicit_install_preserve_original_stdin(self):
         cases = (
-            ("full", {}, None),  # a hook: ready deps, no install (ADR-1106)
+            ("full", {}, None),  # a hook: ready deps, no install (ADR-1108)
             # The server as the stand-in's child runs it (ADR-1104): an
             # uninstalled runtime gets the stand-in, tested on its own.
             ("off", {"TARGET_MODULE": "mcp_server", "CORTEX_MCP_DIRECT": "1"}, "base"),

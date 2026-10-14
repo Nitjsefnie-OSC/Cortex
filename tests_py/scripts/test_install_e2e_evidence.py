@@ -1,11 +1,11 @@
 """scripts/install_e2e/evidence.py reads a SessionStart hook that exits non-zero.
 
-A hook that refuses (ADR-1106) finishes with ``error: status code 1`` and only a
+A hook that refuses (ADR-1108) finishes with ``error: status code 1`` and only a
 stderr section; the check that session 1 "names its cause" needs that stderr.
 The lines below are the host's own (claude 2.1.300, install_e2e run
 2026-10-14), shortened.
 
-source: ADR-1106
+source: ADR-1108
 """
 
 from __future__ import annotations

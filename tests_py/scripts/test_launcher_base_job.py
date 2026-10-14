@@ -3,7 +3,7 @@
 A hook installs nothing; it starts this job (once, whatever the number of
 hooks starting together) and exits 1 with the cause.
 
-source: ADR-1106
+source: ADR-1108
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ def job_mod(monkeypatch):
 
 @pytest.fixture
 def deps_dir(tmp_path: Path) -> str:
-    return str(tmp_path / "deps")
+    return str(tmp_path / "data" / "sets" / "k1")
 
 
 @pytest.fixture
@@ -49,7 +49,7 @@ def test_start_spawns_one_detached_job_logging_beside_the_deps(
     ((argv, kwargs),) = spawned
     assert argv == [sys.executable, "/plugin/scripts/launcher.py", job_mod.JOB]
     assert kwargs["stdin"] is job_mod.subprocess.DEVNULL
-    assert job_mod.job_log(deps_dir).parent == Path(deps_dir).parent
+    assert job_mod.job_log(deps_dir).parent == Path(deps_dir).parent.parent
 
 
 def test_start_does_nothing_while_the_job_runs(job_mod, deps_dir, spawned):
@@ -137,3 +137,47 @@ def test_a_second_job_returns_without_installing(
     with job_mod.launcher_lock.held_if_free(job_mod.job_lock(deps_dir)):
         assert job_mod.run(deps_dir, "launcher.py") == 0
     assert ml_started == []
+
+
+def test_a_blocking_gate_exits_2_other_hooks_exit_1(job_mod, deps_dir, spawned, capsys):
+    for module, code in (
+        ("mcp_server.hooks.decision_gate", 2),
+        ("mcp_server.hooks.no_deps_gate", 2),
+        ("mcp_server.hooks.auto_recall", 1),
+        ("", 1),
+    ):
+        with pytest.raises(SystemExit) as stopped:
+            job_mod.refuse(deps_dir, "launcher.py", "cause", module)
+        assert stopped.value.code == code, module
+    assert "Cortex not ready: cause" in capsys.readouterr().err
+
+
+def test_a_failed_job_is_not_restarted_by_the_next_hook(
+    job_mod, deps_dir, ml_started, spawned, monkeypatch, capsys
+):
+    monkeypatch.setattr(job_mod.launcher_deps, "ensure_deps", lambda d: None)
+    monkeypatch.setattr(job_mod.launcher_deps, "set_ready", lambda d, k: False)
+    assert job_mod.run(deps_dir, "launcher.py") == 1
+    assert job_mod.last_failure(deps_dir)
+    for _ in range(3):  # three more hook calls: none starts a job
+        with pytest.raises(SystemExit):
+            job_mod.refuse(deps_dir, "launcher.py", "cause")
+    assert spawned == []
+    assert "the last background install failed" in capsys.readouterr().err
+
+
+def test_a_successful_install_clears_the_failure(
+    job_mod, deps_dir, ml_started, monkeypatch
+):
+    monkeypatch.setattr(job_mod.launcher_deps, "ensure_deps", lambda d: None)
+    monkeypatch.setattr(job_mod.launcher_deps, "set_ready", lambda d, k: False)
+    job_mod.run(deps_dir, "launcher.py")
+    monkeypatch.setattr(job_mod.launcher_deps, "set_ready", lambda d, k: True)
+    assert job_mod.run(deps_dir, "launcher.py") == 0
+    assert job_mod.last_failure(deps_dir) == ""
+
+
+def test_start_does_nothing_while_a_setup_run_holds_the_set(job_mod, deps_dir, spawned):
+    with job_mod.launcher_lock.held_if_free(job_mod.launcher_setup.job_lock(deps_dir)):
+        assert job_mod.start(deps_dir, "launcher.py") is False
+    assert spawned == []
