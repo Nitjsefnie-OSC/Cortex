@@ -9,6 +9,9 @@ from mcp_server.infrastructure.row_factory import DICT_ROW
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from psycopg import Connection
+    from psycopg.rows import DictRow
+
     from mcp_server.infrastructure.db_types import StoreConnection
 
 
@@ -21,8 +24,38 @@ DEFAULT_TOP_K = 30
 DEFAULT_ANCHOR_LIMIT = 20000
 
 
+# source: pgvector README, "Iterative Index Scans" (0.8.0+): strict_order
+# keeps exact distance order, which the per-anchor ORDER BY ... LIMIT needs.
+_ITERATIVE_SCAN = "SET LOCAL hnsw.iterative_scan = strict_order"
+# source: PostgreSQL docs, current_setting(name, missing_ok): NULL when the
+# parameter does not exist. Loading vector.so (any vector value) defines the
+# hnsw.* parameters, so the question is answered by the library in use.
+_LOAD_VECTOR = "SELECT '[1]'::vector"
+_ITERATIVE_SCAN_SETTING = (
+    "SELECT current_setting('hnsw.iterative_scan', true) AS setting"
+)
+
+
+def _require_iterative_scan(cur) -> None:
+    """Refuse to scan on a pgvector that cannot do it (before 0.8.0).
+
+    PostgreSQL accepts the SET on a connection that has not loaded the
+    extension yet and, on a library without the parameter, drops it with a
+    server WARNING only (measured in review of #754): the scan would run the
+    old, lossy way without a word. The loaded library decides, not the
+    catalogue's extversion, which can lag an upgraded binary."""
+    cur.execute(_LOAD_VECTOR)
+    cur.execute(_ITERATIVE_SCAN_SETTING)
+    row = cur.fetchone()
+    if row is None or row["setting"] is None:
+        raise RuntimeError(
+            "the near-duplicate scan needs hnsw.iterative_scan (pgvector >= "
+            "0.8.0); the pgvector library loaded by this server does not define it"
+        )
+
+
 def list_candidate_pairs(
-    conn: StoreConnection,
+    conn: Connection[DictRow],
     *,
     top_k: int = DEFAULT_TOP_K,
     min_similarity: float = SCAN_FLOOR,
@@ -30,7 +63,8 @@ def list_candidate_pairs(
 ) -> list[CandidatePair]:
     """Find undirected candidate pairs using per-row top-K vector scans.
 
-    Pre-condition: top_k >= 1 and min_similarity is in [0, 1].
+    Pre-condition: top_k >= 1 and min_similarity is in [0, 1]; ``conn`` is a
+    PostgreSQL connection (pgvector >= 0.8.0: ``hnsw.iterative_scan``).
 
     Post-condition: return distinct CandidatePair entries with id_a < id_b and
     cosine similarity >= min_similarity, discovered from either member’s scan.
@@ -63,7 +97,14 @@ def list_candidate_pairs(
          GROUP BY 1, 2
          ORDER BY 1, 2
     """
-    with conn.cursor(row_factory=DICT_ROW) as cur:
+    # The LATERAL top-K uses the HNSW index, which yields at most
+    # hnsw.ef_search candidates before the view's superseded_by_id filter,
+    # NOT is_stale and dead tuples are applied; a duplicate behind those rows
+    # was never paired. An iterative scan keeps reading the index, in exact
+    # distance order, until top_k rows pass (bounded by hnsw.max_scan_tuples).
+    with conn.transaction(), conn.cursor(row_factory=DICT_ROW) as cur:
+        _require_iterative_scan(cur)
+        cur.execute(_ITERATIVE_SCAN)
         cur.execute(
             sql,
             {
