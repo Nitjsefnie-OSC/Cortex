@@ -137,3 +137,23 @@ def test_provide_runs_the_pinned_uv_with_a_private_install_dir(
     ]  # fmt: skip
     assert env["UV_PYTHON_INSTALL_DIR"] == str(Path("/data/python"))
     assert env["UV_NO_CACHE"] == "1"
+
+
+def test_a_hook_never_downloads_a_python(py_mod, execs, monkeypatch):
+    """A hook's time budget does not fit a CPython download (ADR-1106): with
+    none installed it raises before ``provide`` or any uv call."""
+    monkeypatch.setattr(py_mod, "supported", lambda: False)
+    monkeypatch.setattr(py_mod, "installed", lambda d: None)
+    monkeypatch.setattr(py_mod, "provide", lambda d: pytest.fail("provided"))
+    with pytest.raises(py_mod.NotProvidedError, match="not installed yet"):
+        py_mod.ensure_supported("/data/deps", "launcher.py", may_provide=False)
+    assert execs == []
+
+
+def test_a_hook_still_reexecs_on_an_installed_python(py_mod, execs, monkeypatch):
+    monkeypatch.setattr(py_mod, "supported", lambda: False)
+    monkeypatch.setattr(py_mod, "installed", lambda d: "/data/python/bin/python3.12")
+    monkeypatch.setattr(py_mod, "provide", lambda d: pytest.fail("provided"))
+    monkeypatch.setattr(py_mod.sys, "argv", ["launcher.py", "mcp_server.hooks.x"])
+    py_mod.ensure_supported("/data/deps", "launcher.py", may_provide=False)
+    assert len(execs) == 1

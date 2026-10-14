@@ -190,6 +190,31 @@ def sweep_stale_backups(deps_dir: str) -> None:
                 os.remove(target)
 
 
+def sweep_stale_scratch(deps_dir: str) -> None:
+    """Best-effort removal of install scratch left by a process that died.
+
+        Precondition: none -- a missing/unreadable parent is a silent no-op.
+        Postcondition: every sibling ``<deps>.tmp-<pid>`` (an install's
+        ``--target``) and ``<deps>.uv-<version>.tmp-<pid>`` (the uv bootstrap's
+        scratch) of ``deps_dir`` whose ``<pid>`` no longer identifies a live
+        process has been best-effort removed. A killed install never reaches
+        its own cleanup: 64 such directories, each holding only uv's
+        ``.lock``, were found in one plugin data directory (2026-10-14).
+
+    source: ADR-1106"""
+    parent, base = os.path.split(os.path.abspath(deps_dir))
+    pattern = re.compile(rf"^{re.escape(base)}(?:\.uv-[\w.]+)?\.tmp-(?P<pid>\d+)$")
+    try:
+        children = os.listdir(parent)
+    except OSError:
+        return
+    for name in children:
+        match = pattern.match(name)
+        if match is None or pid_alive(int(match.group("pid"))):
+            continue
+        shutil.rmtree(os.path.join(parent, name), ignore_errors=True)
+
+
 def prune_superseded_dist_info(deps_dir: str, committed_entry: str) -> None:
     """Best-effort removal of stale ``dist-info`` siblings after a commit.
 

@@ -1,0 +1,28 @@
+---
+created: 2026-10-14T20:59:22Z
+kind: adr
+number: 1106
+status: accepted
+tags: [install, launcher, hooks, timeout]
+title: No dependency install inside a hook
+---
+# ADR-1106: No dependency install inside a hook
+
+## Status
+
+accepted
+
+## Context
+
+Every Cortex hook runs `scripts/launcher.py <module>`, and until now every one of them called `ensure_deps` (the base set) before running: an install whenever the stamp (uv.lock digest, Python minor) did not match. Each hook has a host time budget of 5 to 30 s (5 s UserPromptSubmit and PreToolUse, 10 s PostToolUse, 30 s SessionStart and SessionEnd). Measured 2026-10-14: the pinned uv bootstrap with pip 29.3 s, the base set 28.5 s (ADR-1104), a cold SessionStart on 4.23.5 109 s and the next one 68 s, warm 2.9 to 3.8 s. A hook the host cancels mid-install never reaches its own cleanup: the plugin data directory of the owner held 64 `deps.tmp-<pid>` scratch directories (3 dated 2026-10-10, 8 on 12th, 19 on 13th, 34 on 14th), each holding only uv's `.lock` file, i.e. installs started and killed before any package was written; nothing ever removed them. ADR-1104 answered the 30 s SessionStart cancellation by raising its timeout to 300 s in both manifests (#749) so the hook could install; that moved the budget instead of the cost, left the eleven hooks with 5 to 30 s budgets still installing, and left a first session without the hook's output for as long as the install took. The Python provisioning (`launcher_python.provide`, a CPython download) was installing inside the hook the same way.
+
+## Decision
+
+1. **A hook never installs.** `scripts/launcher.py` installs only for `mcp_server` (the host waits on the stand-in, ADR-1104), for the two detached jobs and for an explicit `--install-deps`. Any other module is a hook: it returns from `_ensure_runtime` only when the base set is stamped for this uv.lock and Python (`launcher_deps.set_ready`, no subprocess); otherwise `launcher_base_job.refuse` prints `Cortex not ready: <cause>` with the install log path and the explicit command to stderr and exits 1, having run nothing. The same holds for the CPython download: `launcher_python.ensure_supported(may_provide=False)` re-executes on an installed Python but raises `NotProvidedError` instead of downloading.
+2. **One detached job installs.** The refusing hook starts at most one `launcher.py --install-base-job` (detached, `launcher_base_job`, a job lock held for its life, output in `deps-install.log` beside `deps/`), which runs `ensure_deps` under the deps lock; ten hooks starting together start one job, and it never runs beside the MCP server's own install (the deps lock). Once the base set is stamped that job starts the semantic-search job (ADR-1104: ML set and model, `launcher_ml.start`, which honours `CORTEX_EMBEDDING_ZERO_DOWNLOAD`), because the launch that used to start it, the SessionStart hook, now refuses before reaching that line; the semantic-search job itself is unchanged.
+3. **The SessionStart timeout returns to 30 s** in the Claude and the Codex manifests (the Codex contract test pins their parity); a test fails when any hook of the Claude manifest asks for more. Supersedes ADR-1104 decision 4 (the hook installs the base set, 300 s); the rest of ADR-1104 stands, including the `Cortex ready` / `Cortex not ready` status line the hook prints when it runs.
+4. **Residue is reclaimed.** `launcher_deps_fs.sweep_stale_scratch` removes `<deps>.tmp-<pid>` and `<deps>.uv-<version>.tmp-<pid>` whose pid is dead, at every install start, beside the existing `.bak-<pid>` sweep.
+
+## Consequences
+
+Positive: no hook is ever cancelled mid-install, so no scratch is orphaned, no deps directory is left half-written by a hook, and every hook either runs or exits within a bounded time with the cause; the hot path of a ready hook is unchanged (the stamp read `ensure_deps` already did). Negative, known: on a fresh install or after an update that changes uv.lock, the first SessionStart prints `Cortex not ready` and injects no context, and each hook event until the install finishes (about one base install, 30 to 110 s on the measured network) exits 1 with one stderr line; the user sees these and the next session is ready. The `install-e2e` job's first-session check is now `hook ready or names its cause`, and the second session must still say `Cortex ready`. The Codex plugin runs its hooks through `uvx`, not this launcher, so this ADR bounds only its manifest timeout; a cold `uvx` resolve inside Codex's 30 s SessionStart is not addressed here. A hook launched on Python below 3.10 with no managed CPython yet exits 1 the same way until the job has installed it.

@@ -35,6 +35,10 @@ class InterpreterError(RuntimeError):
     """No supported Python could be provided; the message is uv's own error."""
 
 
+class NotProvidedError(InterpreterError):
+    """No supported Python is installed and this launch may not install one."""
+
+
 def managed_dir(deps_dir: str) -> Path:
     """Where the pinned CPython lives: beside ``deps_dir``, in plugin data."""
     return Path(deps_dir).parent / "python"
@@ -96,16 +100,26 @@ def supported() -> bool:
     return sys.version_info[:2] >= SUPPORTED
 
 
-def ensure_supported(deps_dir: str, launcher: str) -> None:
+def ensure_supported(deps_dir: str, launcher: str, may_provide: bool = True) -> None:
     """Return on a supported Python; otherwise re-exec the launcher on one.
 
     Postcondition: returns only when ``sys.version_info >= SUPPORTED``. Exits
-    1 with the real cause when no supported Python can be provided.
+    1 with the real cause when no supported Python can be provided. With
+    ``may_provide`` False (a hook: its host time budget does not fit a
+    download) an installed Python is still used, and a missing one raises
+    ``NotProvidedError`` before anything is downloaded.
     """
     if supported():
         return
+    python = installed(deps_dir)
+    if python is None and not may_provide:
+        raise NotProvidedError(
+            f"Python {sys.version.split()[0]} is older than "
+            f"{SUPPORTED[0]}.{SUPPORTED[1]} and Python {MANAGED_PYTHON} is "
+            "not installed yet"
+        )
     try:
-        python = installed(deps_dir) or provide(deps_dir)
+        python = python or provide(deps_dir)
     except (OSError, _uv.UvUnavailableError, InterpreterError) as exc:
         print(
             f"[cortex-launcher] cannot run on Python {sys.version.split()[0]} "

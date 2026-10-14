@@ -25,8 +25,11 @@ READY = "Cortex ready"  # source: the owner's acceptance, brief step 0
 _HOOK = r"SessionStart:startup \[.*\] \(plugin hypermnesia-mcp@[^)]*\) "
 _FINISHED = re.compile(_HOOK + r"finished with status (-?\d+) \((\d+)ms\)")
 _TIMED_OUT = re.compile(_HOOK + r"timed out after \d+ms \((\d+)ms\)")
+# A finished hook's output line: ``success:`` carries stdout, a non-zero exit
+# ``error: status code N`` carries only stderr (claude 2.1.296/2.1.300 debug log).
 _PAYLOAD = re.compile(
-    r'"Hook SessionStart:startup \(SessionStart\) [a-z ]+:\\nstdout:\\n.*"'
+    r'"Hook SessionStart:startup \(SessionStart\) '
+    r"[a-z ]+:(?: status code \d+)?\\n(?:stdout|stderr):\\n.*\""
 )
 SETTLE_POLL_SECONDS = (
     2  # source: ps cost is milliseconds; two seconds keeps the loop cheap
@@ -66,6 +69,8 @@ def session_start_outcome(debug_log: Path) -> dict:
 
 
 def _split_payload(message: str) -> dict:
+    if "stdout:\n" not in message:  # a non-zero exit: stderr only
+        return {"stdout": "", "stderr": message.partition("stderr:\n")[2]}
     _, _, rest = message.partition("stdout:\n")
     stdout, _, stderr = rest.partition("\nstderr:\n")
     return {"stdout": stdout, "stderr": stderr}

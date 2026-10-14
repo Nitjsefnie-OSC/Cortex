@@ -4,9 +4,10 @@ The ML set (sentence-transformers, torch: about 1 GB) and the pinned embedding
 model take minutes on a first install; Claude Code cancels the SessionStart
 hook at its 30 s timeout and discards its output, and the MCP server must
 answer ``initialize`` within the host's startup timeout. So the SessionStart
-launch installs only the base set and starts ONE detached job that installs
-the ML set from uv.lock and downloads the model; until it finishes, recall is
-keyword-only and the SessionStart message says so.
+launch installs nothing (a hook never does, ``launcher_base_job``) and starts
+ONE detached job that installs the ML set from uv.lock and downloads the
+model; until it finishes, recall is keyword-only and the SessionStart message
+says so.
 
 The job is ``launcher.py mcp_server.embedding_warmup``: the launcher installs
 base + ML for that module, then the module downloads the model. A job lock
@@ -70,7 +71,7 @@ def state(deps_dir: str) -> tuple[str, str]:
     return "installing", ""
 
 
-def _detached() -> dict:
+def detached() -> dict:
     if sys.platform == "win32":
         flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
         return {"creationflags": flags}
@@ -102,7 +103,7 @@ def start(deps_dir: str, launcher: str) -> tuple[str, str]:
             stdout=sink,
             stderr=sink,
             env=env,
-            **_detached(),
+            **detached(),
         )
     return current
 

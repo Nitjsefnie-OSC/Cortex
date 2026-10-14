@@ -3,7 +3,10 @@
 
     claude plugin marketplace add <checkout | cdeust/Cortex>
     claude plugin install hypermnesia-mcp@cortex-plugins
-    first session -> "Cortex ready", tools answer, remember -> recall works
+    first session -> tools answer, remember -> recall works; its SessionStart
+                     hook installs nothing (it says "Cortex not ready" and
+                     why while the install runs, ADR-1106)
+    second session -> "Cortex ready"
 
 Run on an isolated HOME / ``CLAUDE_CONFIG_DIR`` with the real Claude Code CLI:
 ``claude --init-only`` runs the plugin's SessionStart hook under the host's own
@@ -18,6 +21,7 @@ Usage:
         [--python /usr/bin/python3] [--x86_64] [--settle-seconds N]
 
 source: docs/adr/ADR-1104-zero-ops-plugin-install.md
+source: docs/adr/ADR-1106-no-dependency-install-inside-a-hook.md
 """
 
 from __future__ import annotations
@@ -132,9 +136,8 @@ def _checks(report: dict, expect_semantic: bool) -> dict:
     message_2 = hook_2.get("system_message", "")
     return {
         "install_exit_0": all(r["returncode"] == 0 for r in report["install"].values()),
-        "hook_status_0": hook.get("status") == 0,
         "hook_within_timeout": (hook.get("ms") or 10**9) < timeout_ms,
-        "ready_shown_session_1": message_starts_ready(hook),
+        "hook_ready_or_names_its_cause_session_1": hook_ready_or_names_cause(hook),
         "mcp_connected_by_host": first["mcp_connected"],
         "tools_listed": stdio.get("required_tools_present", False),
         "tools_arrived_in_session_1": stdio.get("seconds", 10**9) < STDIO_BOUND_SECONDS,
@@ -143,11 +146,25 @@ def _checks(report: dict, expect_semantic: bool) -> dict:
             report.get(key, {}).get("remaining", ["not run"])
             for key in ("settle", "settle_2")
         ),
+        "hook_status_0_session_2": hook_2.get("status") == 0,
         "ready_shown_session_2": message_starts_ready(hook_2),
         "semantic_outcome_session_2": (SEMANTIC_ON in message_2) == expect_semantic
         and ("failed: " in message_2 or expect_semantic),
         "no_forbidden_output": not report["forbidden"],
     }
+
+
+def hook_ready_or_names_cause(hook: dict) -> bool:
+    """Session 1's hook installs nothing: it is ready (a server install won the
+    race) or it exits 1 saying why and where the install logs (ADR-1106)."""
+    if hook.get("status") == 0:
+        return message_starts_ready(hook)
+    stderr = hook.get("stderr", "")
+    return (
+        hook.get("status") == 1
+        and "Cortex not ready" in stderr
+        and "deps-install.log" in stderr
+    )
 
 
 def message_starts_ready(hook: dict) -> bool:

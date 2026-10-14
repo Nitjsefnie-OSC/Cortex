@@ -26,6 +26,7 @@ _SCRIPTS_DIR = str(Path(__file__).resolve().parent)
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 import launcher_backend  # noqa: E402
+import launcher_base_job  # noqa: E402
 import launcher_deps  # noqa: E402
 import launcher_mcp_bootstrap  # noqa: E402
 import launcher_ml  # noqa: E402
@@ -36,6 +37,14 @@ _MIN_ARGC = 2  # source: ADR-0742
 _LAUNCHER = str(
     Path(__file__).resolve()
 )  # source: ADR-1104 (re-exec and background job target)
+
+
+# The launches that may install: the MCP server (its host waits on the stand-in,
+# not on this process) and the two detached jobs. Every other module is a hook
+# inside a host time budget and never installs (source: ADR-1106).
+_INSTALLING = frozenset(
+    {"mcp_server", launcher_ml.WARMUP_MODULE, launcher_base_job.JOB}
+)
 
 
 def _resolve_paths() -> tuple[str, str]:
@@ -134,15 +143,22 @@ def _apply_backend() -> None:
 def _ensure_runtime(module: str, install_deps: bool, deps_dir: str) -> None:
     """The dependency sets ``module`` needs, then semantic search in background.
 
-    Only the semantic-search job installs the ML set (launcher_ml); the
-    SessionStart launch starts that job and tells the hook where it stands.
+    Precondition: ``module`` is a hook, the MCP server or a job.
+    Postcondition: a hook returns only when the base set is installed and
+    installs nothing (``launcher_base_job.require_ready`` exits 1 otherwise);
+    the server installs the base set; the semantic-search job and
+    ``--install-deps`` install base + ML. The SessionStart launch then starts
+    the semantic-search job and tells the hook where it stands.
     source: ADR-0742
     source: ADR-1104
+    source: ADR-1106
     """
     if install_deps:
         launcher_deps.ensure_all_deps(deps_dir)
-    else:
+    elif module in _INSTALLING:
         launcher_deps.ensure_deps(deps_dir)
+    else:
+        launcher_base_job.require_ready(deps_dir, _LAUNCHER)
     # The import system cached deps_dir as it was before this install
     # (source: ADR-1104).
     importlib.invalidate_caches()
@@ -186,6 +202,19 @@ def _needs_stand_in(module: str, deps_dir: str) -> bool:
     return not launcher_deps.set_ready(deps_dir, "base")
 
 
+def _require_python(module: str, install_deps: bool, deps_dir: str) -> None:
+    """Return on a supported Python (re-executing onto the managed one).
+
+    A hook never downloads one: with none installed it refuses (ADR-1106).
+    """
+    try:
+        launcher_python.ensure_supported(
+            deps_dir, _LAUNCHER, may_provide=install_deps or module in _INSTALLING
+        )
+    except launcher_python.NotProvidedError as exc:
+        launcher_base_job.refuse(deps_dir, _LAUNCHER, str(exc))
+
+
 def main() -> None:
     # source: ADR-1098 (supersedes the output half of ADR-0742)
     plugin_root, deps_dir = _resolve_paths()
@@ -200,9 +229,11 @@ def main() -> None:
     if _needs_stand_in(module, deps_dir):
         launcher_mcp_bootstrap.serve([sys.executable, _LAUNCHER, *sys.argv[1:]])
         return
-    launcher_python.ensure_supported(deps_dir, _LAUNCHER)
     install_deps = "--install-deps" in sys.argv
+    _require_python(module, install_deps, deps_dir)
     _set_import_paths(plugin_root, deps_dir)
+    if module == launcher_base_job.JOB:
+        sys.exit(launcher_base_job.run(deps_dir, _LAUNCHER))
     if (
         module == "mcp_server.hooks.post_tool_capture"
         and not install_deps

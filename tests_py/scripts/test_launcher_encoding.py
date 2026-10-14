@@ -24,6 +24,7 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from tests_py._launcher_ready import ready_launcher_argv
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LAUNCHER_PATH = REPO_ROOT / "scripts" / "launcher.py"
@@ -99,7 +100,7 @@ def _run_marker_module(
         env.pop("PYTHONIOENCODING", None)
 
     return subprocess.run(
-        [sys.executable, str(LAUNCHER_PATH), "cortex_marker_mod"],
+        ready_launcher_argv(LAUNCHER_PATH, "cortex_marker_mod"),
         cwd=str(REPO_ROOT),
         env=env,
         capture_output=True,

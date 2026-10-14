@@ -85,10 +85,12 @@ server and get the same tools. See [launch commands](#every-other-mcp-host).
 WSL, TLS client certificates and corporate proxies are covered in
 [deployment scenarios](docs/deployment-scenarios.md).
 
-The first session installs Cortex's runtime into the plugin's data directory (about a minute
-on a cold machine; a Mac whose `python3` is older than 3.10 also gets a private CPython 3.12),
-then shows `Cortex ready: <store>, <n> memories; <how recall ranks>`, or `Cortex not ready:`
-with the cause. Semantic search installs in the background; until it lands the same line says
+The first session installs Cortex's runtime into the plugin's data directory in the background
+(about a minute on a cold machine; a Mac whose `python3` is older than 3.10 also gets a private
+CPython 3.12). No hook installs anything, so until it finishes each hook exits with
+`Cortex not ready:`, the cause and the install log's path; the next session shows
+`Cortex ready: <store>, <n> memories; <how recall ranks>`, or `Cortex not ready:` with the
+cause. Semantic search installs in the background too; until it lands the same line says
 recall is keyword-only.
 
 The first use creates a local SQLite store under `~/.claude/methodology/`. Models are downloaded

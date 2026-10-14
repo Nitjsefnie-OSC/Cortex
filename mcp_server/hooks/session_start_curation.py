@@ -10,15 +10,25 @@ from mcp_server.hooks.session_start_common import _log
 # used in _fetch_hot_memories. Without the (m, NOW()) call form, Postgres
 # rejects with `column "effective_heat" does not exist` and the schema
 # integrity test catches it.
-# source: ADR-0498
+# The newest 500 are chosen on the three narrow columns that order them
+# (`NOT is_stale AND superseded_by_id IS NULL` keeps the rows `current_memories`
+# keeps) and only those 500 rows are read whole: sorting every live row with its
+# content, tags and embedding as sort payload spilled 3 x ~128 MB to disk and
+# took 55.3 s cold, 13.4 s warm on 68,496 memories (EXPLAIN ANALYZE 2026-10-14;
+# ADR-1107). No index on last_accessed: update_memory_access writes that column
+# on every recall and an indexed column ends heap-only updates. `id DESC` makes
+# the cut deterministic when two rows share both timestamps.
+# source: ADR-0498 (the sample), ADR-1107 (the narrow cut)
 _CURATION_SAMPLE_SQL = (
     "SELECT m.id, m.content, m.tags, "
     "effective_heat(m, NOW()) AS effective_heat, "
     "m.created_at, m.domain "
-    "FROM memories m JOIN current_memories cm ON cm.id = m.id "
-    "WHERE NOT m.is_stale "
-    "ORDER BY m.last_accessed DESC NULLS LAST, m.created_at DESC "
-    "LIMIT 500"
+    "FROM (SELECT id FROM memories "
+    "WHERE NOT is_stale AND superseded_by_id IS NULL "
+    "ORDER BY last_accessed DESC NULLS LAST, created_at DESC, id DESC "
+    "LIMIT 500) newest "
+    "JOIN memories m ON m.id = newest.id "
+    "ORDER BY m.last_accessed DESC NULLS LAST, m.created_at DESC, m.id DESC"
 )
 
 # Materialize the indexed lesson subset before MAX: otherwise the

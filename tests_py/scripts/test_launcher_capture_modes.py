@@ -34,6 +34,8 @@ class Guard(importlib.abc.MetaPathFinder):
 sys.meta_path.insert(0, Guard())
 launcher.launcher_deps.ensure_deps = lambda path: bootstrap.append('base')
 launcher.launcher_deps.ensure_all_deps = lambda path: bootstrap.append('all')
+# A hook installs nothing and needs the base set ready (ADR-1106).
+launcher.launcher_deps.set_ready = lambda path, kind: True
 def dispatch(module, **kwargs):
     replay = isinstance(getattr(sys.stdin, 'buffer', None), io.BytesIO)
     fd_child = None
@@ -111,7 +113,7 @@ class LauncherCaptureModes(unittest.TestCase):
         raw = ' \n{"tool_name":"Bash", "tool_response":"été 漢字 🧠"}\n '
         result, _ = self.run_child("writes-only", raw)
         self.assertIn("mcp_server.infrastructure.backend_marker", result["attempted"])
-        self.assertEqual(result["bootstrap"], ["base"])
+        self.assertEqual(result["bootstrap"], [])  # a hook never installs
         dispatched = result["dispatched"][0]
         self.assertEqual(dispatched["raw"], raw)
         self.assertTrue(dispatched["replay"])
@@ -122,11 +124,11 @@ class LauncherCaptureModes(unittest.TestCase):
             with self.subTest(raw=raw):
                 result, _ = self.run_child("writes-only", raw)
                 self.assertEqual(result["dispatched"][0]["raw"], raw)
-                self.assertEqual(result["bootstrap"], ["base"])
+                self.assertEqual(result["bootstrap"], [])
 
     def test_other_entries_and_explicit_install_preserve_original_stdin(self):
         cases = (
-            ("full", {}, "base"),
+            ("full", {}, None),  # a hook: ready deps, no install (ADR-1106)
             # The server as the stand-in's child runs it (ADR-1104): an
             # uninstalled runtime gets the stand-in, tested on its own.
             ("off", {"TARGET_MODULE": "mcp_server", "CORTEX_MCP_DIRECT": "1"}, "base"),
@@ -136,7 +138,7 @@ class LauncherCaptureModes(unittest.TestCase):
         for mode, options, bootstrap in cases:
             with self.subTest(mode=mode, options=options):
                 result, _ = self.run_child(mode, raw, options)
-                self.assertEqual(result["bootstrap"], [bootstrap])
+                self.assertEqual(result["bootstrap"], [bootstrap] if bootstrap else [])
                 self.assertFalse(result["dispatched"][0]["replay"])
                 self.assertEqual(result["dispatched"][0]["raw"], raw)
 
