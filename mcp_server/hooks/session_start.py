@@ -32,6 +32,7 @@ from mcp_server.handlers.injection_receipts import (
     session_id_from_transcript,
 )
 from mcp_server.hooks._telemetry import observe_hook
+from mcp_server.hooks import session_start_status as _status
 from mcp_server.hooks.launcher_command import child_command, launcher_child_command
 from mcp_server.shared import detached_spawn
 from mcp_server.shared.freshness import provenance_suffix
@@ -73,20 +74,6 @@ def _read_event() -> dict:
         return json.loads(raw) if raw else {}
     except (OSError, ValueError):
         return {}
-
-
-def _sentence_transformers_installed() -> bool:
-    """Check distribution presence; this does not validate semantic readiness.
-
-    source: docs/verification/codex-session-start-query-20261002.md
-    """
-    from importlib.metadata import PackageNotFoundError, version  # noqa: PLC0415 — banner needs package metadata without importing its ML dependencies
-
-    try:
-        version("sentence-transformers")
-        return True
-    except PackageNotFoundError:
-        return False
 
 
 def _short(text: str, max_len: int = 120) -> str:
@@ -736,14 +723,6 @@ def _build_context(
             "read the full memory with `recall(memory_id=id)`.*"
         )
 
-    # Report missing installation without importing the semantic stack.
-    if not _sentence_transformers_installed():
-        lines.append("")
-        lines.append(
-            "*sentence-transformers is not installed in this runtime. "
-            "Semantic search requires that package.*"
-        )
-
     return "\n".join(lines)
 
 
@@ -752,17 +731,15 @@ def _build_cold_start_message(setup_result: dict | None) -> str:
     lines = ["## Cortex — First Run\n"]
 
     if setup_result and setup_result.get("status") == "needs_install":
+        # source: ADR-1104 -- the configured server's own error, no install recipe
         lines.append(
-            "Cortex needs PostgreSQL to store memories. Here's how to set it up:\n"
+            "The PostgreSQL server configured for Cortex is not reachable: "
+            f"{setup_result.get('message', 'no detail')}\n"
         )
-        lines.append("```bash")
-        lines.append("# macOS")
-        lines.append("brew install postgresql@17 pgvector")
-        lines.append("brew services start postgresql@17")
-        lines.append("")
-        lines.append("# Then restart Claude Code")
-        lines.append("```\n")
-        lines.append("Cortex will auto-create the database and schema on next start.")
+        lines.append(
+            "Start that server, or clear the plugin's database URL option "
+            "(/plugin, Configure options) to use the local SQLite store."
+        )
         return "\n".join(lines)
 
     if setup_result and setup_result.get("status") == "auth_failed":
@@ -1064,6 +1041,8 @@ def _lookup_cached_graph_path(project_root: str) -> str | None:
         )
     except ImportError:
         return None
+    if _backend_is_sqlite():
+        return _sqlite_cached_graph_path(code_graph_tag(project_root))
     conn = _connect_pg()
     if conn is None:
         return None
@@ -1086,6 +1065,17 @@ def _lookup_cached_graph_path(project_root: str) -> str | None:
             conn.close()
         except Exception as exc:  # noqa: BLE001 — teardown must not mask the lookup result
             _log(f"pg connection close failed: {exc}")
+    return None
+
+
+def _sqlite_cached_graph_path(tag: str) -> str | None:
+    """The SQLite twin of the lookup above, through the store (ADR-1104)."""
+    from mcp_server.infrastructure.memory_store import get_shared_store  # noqa: PLC0415 — hook latency boundary (see _sqlite_context)
+
+    for row in get_shared_store().get_memories_by_tag(tag, limit=5):
+        content = row.get("content") or ""
+        if not row.get("is_stale") and content.startswith("graph_path="):
+            return content[len("graph_path=") :].strip()
     return None
 
 
@@ -1201,8 +1191,8 @@ def _sqlite_banner_rows(
     return anchors, hot, checkpoint
 
 
-def _sqlite_context(event: dict) -> None:
-    """Build and print the SessionStart banner on the SQLite backend."""
+def _sqlite_context(event: dict) -> str:
+    """Print the SessionStart banner on the SQLite backend; return the status line."""
     project_root = resolve_project_root(event, os.environ)
     if project_root is None:
         _log(
@@ -1212,11 +1202,15 @@ def _sqlite_context(event: dict) -> None:
     try:
         from mcp_server.infrastructure.memory_store import get_shared_store  # noqa: PLC0415 — hook latency boundary: the per-event hook process defers the handler/store stack (hook boot ~0.05 s vs ~0.6 s registry import, measured 2026-07-28)
 
+        from mcp_server.infrastructure.memory_config import get_memory_settings  # noqa: PLC0415 — same latency boundary
+
         store = get_shared_store()
         total = int(store.count_memories().get("total") or 0)
-    except Exception as exc:  # noqa: BLE001 — hook boundary — failure is logged to the hook log; the hook stays non-fatal
-        _log(f"SQLite store unavailable (non-fatal): {exc}")
-        return
+        where = _status.home_relative(get_memory_settings().SQLITE_FALLBACK_PATH)
+    except Exception as exc:  # noqa: BLE001 — hook boundary: the cause reaches the user as "not ready"
+        _log(f"SQLite store unavailable: {exc}")
+        return _status.not_ready(f"the SQLite memory store did not open: {exc}")
+    ready = _status.ready(f"SQLite memory at {where}", total)
 
     if total == 0:
         session_files = _count_session_files()
@@ -1226,7 +1220,7 @@ def _sqlite_context(event: dict) -> None:
         )
         if msg:
             print(msg)
-        return
+        return ready
 
     anchors, hot, checkpoint = _sqlite_banner_rows(store, project_root)
     receipt_id = None
@@ -1250,11 +1244,18 @@ def _sqlite_context(event: dict) -> None:
         _log("No memories above threshold (backend: sqlite)")
 
     _print_external_sources()
+    return ready
 
 
 @observe_hook("session_start")
 def main() -> None:
-    """Entry point — print context block to stdout."""
+    """Entry point — one JSON object: the context, and the status line shown
+    to the user (``session_start_status``, ADR-1104)."""
+    _status.run_and_report(_session_start)
+
+
+def _session_start() -> str:
+    """Print the context block; return the status line."""
 
     # source: ADR-0498
     event = _read_event()
@@ -1276,53 +1277,56 @@ def main() -> None:
     # SQLite backend (zero-config plugin default): banner via the store
     # abstraction — no psycopg connection to attempt.
     if _backend_is_sqlite():
-        _sqlite_context(event)
-        return
-
-    # Try connecting to PostgreSQL directly first
-    conn = _connect_pg()
-
-    if conn is None:
-        # Can't connect — try auto-setup
-        _log("No PostgreSQL connection, attempting setup...")
-        setup_result = _try_setup_db()
-
-        if setup_result and setup_result.get("status") == "ready":
-            # Setup succeeded, try connecting again
-            conn = _connect_pg()
-            if conn is None:
-                _log("Setup reported ready but still can't connect")
-                msg = _build_cold_start_message(setup_result)
-                if msg:
-                    print(msg)
-                return
-        else:
-            # Setup failed or PostgreSQL not available
-            msg = _build_cold_start_message(setup_result)
-            if msg:
-                print(msg)
-            return
-
-    # Connected — check memory count
+        return _sqlite_context(event)
+    conn, failure = _pg_connection()
+    if failure is not None:
+        return failure
     memory_count = _count_memories(conn)
-
     if memory_count == 0:
-        # Empty database — first run with working DB
-        session_files = _count_session_files()
-        _log(f"Empty database, {session_files} session files found")
-        conn.close()
+        return _pg_empty_store(conn)
+    return _pg_banner(event, conn, memory_count)
 
-        setup_result = {
-            "status": "ready",
-            "memories": 0,
-            "session_files": session_files,
-        }
-        msg = _build_cold_start_message(setup_result)
-        if msg:
-            print(msg)
-        return
 
-    # Normal flow — fetch and inject context
+def _pg_connection():
+    """``(conn, None)``, or ``(None, status)`` after printing the first-run text."""
+    conn = _connect_pg()
+    if conn is not None:
+        return conn, None
+    # Can't connect — try auto-setup
+    _log("No PostgreSQL connection, attempting setup...")
+    setup_result = _try_setup_db()
+    if setup_result and setup_result.get("status") == "ready":
+        # Setup succeeded, try connecting again
+        conn = _connect_pg()
+        if conn is not None:
+            return conn, None
+        _log("Setup reported ready but still can't connect")
+        cause = "PostgreSQL setup reported ready, but no connection opened"
+    else:
+        cause = "the configured PostgreSQL store is unavailable: " + (
+            (setup_result or {}).get("message", "setup_db.py gave no result")
+        )
+    msg = _build_cold_start_message(setup_result)
+    if msg:
+        print(msg)
+    return None, _status.not_ready(cause)
+
+
+def _pg_empty_store(conn) -> str:
+    """Empty database — first run with a working PostgreSQL."""
+    session_files = _count_session_files()
+    _log(f"Empty database, {session_files} session files found")
+    conn.close()
+    msg = _build_cold_start_message(
+        {"status": "ready", "memories": 0, "session_files": session_files}
+    )
+    if msg:
+        print(msg)
+    return _status.ready("PostgreSQL memory store", 0)
+
+
+def _pg_banner(event: dict, conn, memory_count: int) -> str:
+    """Normal flow — fetch and inject context."""
     project_root = resolve_project_root(event, os.environ)
     if project_root is None:
         _log(
@@ -1333,25 +1337,19 @@ def main() -> None:
     anchor_ids = {a["id"] for a in anchors}
     hot = _fetch_hot_memories(conn, anchor_ids, project_root)
     team_decisions = _fetch_team_decisions(conn, anchor_ids, project_root)
-    checkpoint = _fetch_checkpoint(conn)
-    pending_curations = _count_pending_curations(conn)
-    stale_grooming = _fetch_grooming_staleness(conn)
     # Receipt BEFORE rendering: the banner header carries the ⟦rcpt:id⟧
     # marker, so the id must exist when the context is built. A failed
     # write degrades to a marker-less banner (read path intact).
-    receipt_id = _emit_banner_receipt(conn, event, anchors, team_decisions, hot)
-    conn.close()
-
     context = _build_context(
         anchors,
         hot,
-        checkpoint,
+        _fetch_checkpoint(conn),
         team_decisions,
-        pending_curations=pending_curations,
-        stale_grooming=stale_grooming,
-        receipt_id=receipt_id,
+        pending_curations=_count_pending_curations(conn),
+        stale_grooming=_fetch_grooming_staleness(conn),
+        receipt_id=_emit_banner_receipt(conn, event, anchors, team_decisions, hot),
     )
-
+    conn.close()
     if context:
         print(context)
         _log(
@@ -1360,9 +1358,9 @@ def main() -> None:
         )
     else:
         _log("No memories above threshold")
-
     # Always check for external memory sources that can be imported
     _print_external_sources()
+    return _status.ready("PostgreSQL memory store", memory_count)
 
 
 def _print_external_sources() -> None:

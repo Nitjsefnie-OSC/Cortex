@@ -35,6 +35,32 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A marketplace install reaches "Cortex ready" at the first session with
+  no other step** (ADR-1104). Measured on main with the real Claude Code CLI
+  on a clean HOME (`scripts/install_e2e/run.py`): the plugin's `postInstall`
+  is not a manifest field the host runs, so no backend marker existed and
+  every process got `DATABASE_URL=postgresql://localhost:5432/cortex`; the
+  Mac's `/usr/bin/python3` (3.9.6) could not install the locked sets; a cold
+  install (58 s) outlived both 30 s host timeouts, so the hook output was
+  discarded and the MCP server was marked failed for the session; the
+  SessionStart hook installed the 1 GB ML set inline and the server started
+  an unpinned `pip install sentence-transformers`; the deps lock let a waiter
+  proceed unlocked after 30 s. Now: no configured database means the SQLite
+  store (a configured `database_url`, `CORTEX_MEMORY_STORE_BACKEND` or an
+  installer marker still wins, and hooks read the same option as the
+  server); below Python 3.10 the launcher installs CPython 3.12.13 with the
+  pinned uv and re-runs on it; an uninstalled MCP server is fronted by a
+  stdlib stand-in that answers the host at once and hands over with
+  `list_changed`; the SessionStart hook (timeout 300 s) installs the base
+  set and shows "Cortex ready: <store>, <n> memories; <how recall ranks>"
+  or "Cortex not ready: <cause>"; semantic search installs in one background
+  job from `uv.lock`; installs hold an OS lock released on the holder's
+  death. A backend marker that exists but is invalid is an error naming the
+  file, never read as absent; a stand-in whose server cannot start answers
+  every request with that cause. The `postInstall` field and the PostgreSQL install recipes printed
+  by the hook are removed. `scripts/install_e2e/run.py` runs in CI on Linux
+  and macOS.
+
 - **The background code-graph re-analysis ingests the session's project,
   never the plugin root.** `scripts/launcher.py` `chdir`s to the plugin root
   before it runs a hook, yet `session_start._maybe_background_reanalyze` and

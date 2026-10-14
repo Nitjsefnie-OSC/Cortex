@@ -18,6 +18,7 @@ import pytest
 from mcp_server.infrastructure.backend_marker import (
     apply_backend_resolution,
     effective_backend,
+    BackendMarkerError,
     read_backend_marker,
     resolve_backend_env,
 )
@@ -39,14 +40,17 @@ class TestReadBackendMarker:
     def test_missing_file_returns_none(self, tmp_path):
         assert read_backend_marker(tmp_path / "absent.json") is None
 
-    def test_invalid_json_returns_none(self, tmp_path):
-        assert read_backend_marker(_marker(tmp_path, "{not json")) is None
-
-    def test_non_dict_returns_none(self, tmp_path):
-        assert read_backend_marker(_marker(tmp_path, ["sqlite"])) is None
-
-    def test_unknown_backend_returns_none(self, tmp_path):
-        assert read_backend_marker(_marker(tmp_path, {"backend": "mongodb"})) is None
+    @pytest.mark.parametrize(
+        "content", ["{not json", ["sqlite"], {"backend": "mongodb"}]
+    )
+    def test_an_invalid_marker_is_an_error_not_an_absence(self, tmp_path, content):
+        """ADR-1104: an absent marker lets the plugin default apply; a corrupt
+        one must not, or a PostgreSQL user lands on SQLite."""
+        path = _marker(tmp_path, content)
+        with pytest.raises(BackendMarkerError, match=str(path)):
+            read_backend_marker(path)
+        with pytest.raises(BackendMarkerError):
+            apply_backend_resolution({}, marker_path=path, default="sqlite")
 
     @pytest.mark.parametrize("backend", ["sqlite", "postgresql"])
     def test_valid_marker_returned(self, tmp_path, backend):
@@ -109,6 +113,29 @@ class TestResolveBackendEnv:
     def test_no_marker_no_config_is_noop(self):
         assert resolve_backend_env({}, None) == {}
 
+    def test_the_plugin_default_applies_when_nothing_is_configured(self):
+        """ADR-1104: the plugin launcher names SQLite; nothing dials PostgreSQL."""
+        assert resolve_backend_env({}, None, "sqlite") == {
+            "CORTEX_MEMORY_STORE_BACKEND": "sqlite"
+        }
+
+    @pytest.mark.parametrize(
+        "env",
+        [
+            {"DATABASE_URL": "postgresql://db.example:5432/cortex"},
+            {"CORTEX_MEMORY_DATABASE_URL": "postgresql://db.example:5432/cortex"},
+            {"CORTEX_MEMORY_STORE_BACKEND": "postgresql"},
+        ],
+    )
+    def test_any_configuration_beats_the_plugin_default(self, env):
+        assert resolve_backend_env(env, None, "sqlite") == {}
+
+    def test_a_postgresql_marker_beats_the_plugin_default(self):
+        """The installer's opt-in (the owner's own machine) keeps PostgreSQL."""
+        assert resolve_backend_env({}, {"backend": "postgresql"}, "sqlite") == {
+            "CORTEX_MEMORY_STORE_BACKEND": "postgresql"
+        }
+
     def test_never_mutates_input(self):
         env = {"CORTEX_BACKEND": "sqlite"}
         resolve_backend_env(env, None)
@@ -163,3 +190,28 @@ class TestEffectiveBackend:
 
     def test_unconfigured_is_empty(self, tmp_path):
         assert effective_backend({}, marker_path=tmp_path / "absent.json") == ""
+
+
+class TestAnInvalidMarkerOnlyMattersWhenItWouldApply:
+    """Review of #749: explicit settings never read the marker (ADR-1104)."""
+
+    @pytest.mark.parametrize(
+        "env",
+        [
+            {"DATABASE_URL": "postgresql://db.example:5432/cortex"},
+            {"CORTEX_MEMORY_DATABASE_URL": "postgresql://db.example:5432/cortex"},
+            {"CORTEX_BACKEND": "postgres"},
+            {"CORTEX_MEMORY_STORE_BACKEND": "postgresql"},
+        ],
+    )
+    def test_explicit_settings_ignore_an_invalid_marker(self, tmp_path, env):
+        path = _marker(tmp_path, {"backend": "postgres"})
+        environ = dict(env)
+        apply_backend_resolution(environ, marker_path=path, default="sqlite")
+        assert environ.get("CORTEX_MEMORY_STORE_BACKEND") != "sqlite"
+        assert effective_backend(dict(env), marker_path=path) in ("", "postgresql")
+
+    def test_nothing_configured_still_fails_on_an_invalid_marker(self, tmp_path):
+        path = _marker(tmp_path, {"backend": "postgres"})
+        with pytest.raises(BackendMarkerError):
+            effective_backend({}, marker_path=path)

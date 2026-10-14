@@ -23,6 +23,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from mcp_server.hooks import session_start as hook
 from mcp_server.shared import detached_spawn, log_rotation
 from tests_py.hooks.stdin_support import utf8_stdin
@@ -567,9 +569,13 @@ def test_emit_banner_receipt_payload_mirrors_banner_order():
 # ── Cold-start message ────────────────────────────────────────────────
 
 
-def test_cold_start_needs_install_shows_postgres_instructions():
-    msg = hook._build_cold_start_message({"status": "needs_install"})
-    assert "brew install postgresql" in msg
+def test_cold_start_needs_install_names_the_configured_server_not_a_recipe():
+    """ADR-1104: the real cause, never an install recipe."""
+    msg = hook._build_cold_start_message(
+        {"status": "needs_install", "message": "connection refused"}
+    )
+    assert "configured for Cortex is not reachable: connection refused" in msg
+    assert "brew" not in msg
 
 
 def test_cold_start_auth_failed_relays_the_message():
@@ -727,6 +733,28 @@ def test_sqlite_context_unavailable_store_logs_and_returns(capsys, monkeypatch):
 # ── Cached graph path ─────────────────────────────────────────────────
 
 
+@pytest.fixture
+def pg_backend(monkeypatch):
+    """The PostgreSQL arm of the lookup, whatever backend the job runs on."""
+    monkeypatch.setattr(hook, "_backend_is_sqlite", lambda: False)
+
+
+def test_lookup_cached_graph_path_on_sqlite_reads_the_store(monkeypatch):
+    """ADR-1104: on SQLite the memo comes from the store, no PostgreSQL dial."""
+    store = MagicMock()
+    store.get_memories_by_tag.return_value = [
+        {"content": "graph_path=/old.db", "is_stale": True},
+        {"content": "graph_path=/tmp/graph.db  "},
+    ]
+    from mcp_server.infrastructure import memory_store
+
+    monkeypatch.setattr(hook, "_backend_is_sqlite", lambda: True)
+    monkeypatch.setattr(memory_store, "get_shared_store", lambda: store)
+    monkeypatch.setattr(hook, "_connect_pg", lambda: pytest.fail("dialed PostgreSQL"))
+    assert hook._lookup_cached_graph_path("/repo") == "/tmp/graph.db"
+
+
+@pytest.mark.usefixtures("pg_backend")
 def test_lookup_cached_graph_path_reads_the_memo():
     conn = MagicMock()
     conn.execute.return_value.fetchall.return_value = [
@@ -737,11 +765,13 @@ def test_lookup_cached_graph_path_reads_the_memo():
     conn.close.assert_called_once()
 
 
+@pytest.mark.usefixtures("pg_backend")
 def test_lookup_cached_graph_path_without_pg_returns_none():
     with patch.object(hook, "_connect_pg", return_value=None):
         assert hook._lookup_cached_graph_path("/repo") is None
 
 
+@pytest.mark.usefixtures("pg_backend")
 def test_lookup_cached_graph_path_ignores_non_memo_rows():
     conn = MagicMock()
     conn.execute.return_value.fetchall.return_value = [{"content": "unrelated"}]
@@ -1209,6 +1239,11 @@ def _patched_main(**overrides):
     return [patch.object(hook, name, m) for name, m in defaults.items()]
 
 
+def _emitted(out: str) -> dict:
+    """The hook's one JSON object (ADR-1104): status line and context."""
+    return json.loads(out)
+
+
 def _run_main(*extra_patches, **overrides):
     from contextlib import ExitStack
 
@@ -1220,14 +1255,17 @@ def _run_main(*extra_patches, **overrides):
         hook.main()
 
 
-def test_main_sqlite_backend_dispatches_to_the_sqlite_path():
-    sqlite_ctx = MagicMock()
+def test_main_sqlite_backend_dispatches_to_the_sqlite_path(capsys):
+    sqlite_ctx = MagicMock(return_value="Cortex ready: SQLite memory at ~/m.db")
     _run_main(
         patch.object(hook, "_backend_is_sqlite", return_value=True),
         patch.object(hook, "_sqlite_context", sqlite_ctx),
         patch.object(hook, "_connect_pg"),
     )
     sqlite_ctx.assert_called_once()
+    assert _emitted(capsys.readouterr().out)["systemMessage"] == (
+        "Cortex ready: SQLite memory at ~/m.db"
+    )
 
 
 def test_main_without_pg_and_failed_setup_prints_cold_start(capsys):
@@ -1236,9 +1274,10 @@ def test_main_without_pg_and_failed_setup_prints_cold_start(capsys):
         patch.object(hook, "_connect_pg", return_value=None),
         patch.object(hook, "_try_setup_db", return_value={"status": "needs_install"}),
     )
-    out = capsys.readouterr().out
-    assert "## Cortex — First Run" in out
-    assert "brew install postgresql" in out
+    emitted = _emitted(capsys.readouterr().out)
+    assert "## Cortex — First Run" in emitted["hookSpecificOutput"]["additionalContext"]
+    assert emitted["systemMessage"].startswith("Cortex not ready: ")
+    assert "brew" not in json.dumps(emitted)
 
 
 def test_main_setup_ready_but_still_unreachable_prints_the_ready_message(capsys):
@@ -1287,8 +1326,13 @@ def test_main_normal_flow_prints_banner_receipt_and_closes_conn(capsys):
         patch.object(hook, "_print_external_sources"),
     )
     out, err = capsys.readouterr()
-    assert "## Cortex Memory Context" in out
-    assert hook.receipt_marker(11) in out
+    emitted = _emitted(out)
+    context = emitted["hookSpecificOutput"]["additionalContext"]
+    assert "## Cortex Memory Context" in context
+    assert hook.receipt_marker(11) in context
+    assert emitted["systemMessage"].startswith(
+        "Cortex ready: PostgreSQL memory store, 7 memories; "
+    )
     assert "Injected 1 anchors + 1 hot memories (total: 7)" in err
     conn.close.assert_called_once()
 
@@ -1309,5 +1353,5 @@ def test_main_normal_flow_with_nothing_to_inject_logs_the_absence(capsys):
         patch.object(hook, "_print_external_sources"),
     )
     out, err = capsys.readouterr()
-    assert out == ""
+    assert _emitted(out)["hookSpecificOutput"]["additionalContext"] == ""
     assert "No memories above threshold" in err

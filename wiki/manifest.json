@@ -3575,6 +3575,10 @@
     "ADR-1102": {
       "mirror": "ADR-1102-detach-windows-children-with-create_no_window-and-a-breakaway-decided-from-the-m.md",
       "path": "adr/cortex/1102-detach-windows-children-with-create_no_window-and-a-breakaway-decided-from-the-m.md"
+    },
+    "ADR-1104": {
+      "mirror": "ADR-1104-zero-ops-plugin-install.md",
+      "path": "adr/cortex/1104-zero-ops-plugin-install.md"
     }
   },
   "project": "cortex",
