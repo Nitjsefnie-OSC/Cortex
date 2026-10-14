@@ -65,7 +65,11 @@ class SqliteEntityMixin:
         return cur.lastrowid  # type: ignore[return-value]
 
     def get_entity_by_name(self, name: str) -> dict[str, Any] | None:
-        cur = self._conn.execute("SELECT * FROM entities WHERE name = ?", (name,))
+        cur = self._conn.execute(
+            # source: ADR-1106 -- the oldest row when a name repeats.
+            "SELECT * FROM entities WHERE name = ? ORDER BY id LIMIT 1",
+            (name,),
+        )
         row = cur.fetchone()
         return dict(row) if row else None
 
@@ -141,7 +145,10 @@ class SqliteEntityMixin:
         rows = self._conn.execute(
             "SELECT e.* FROM entities e "
             "JOIN memory_entities me ON me.entity_id = e.id "
-            "WHERE me.memory_id = ? ORDER BY e.heat DESC",
+            "WHERE me.memory_id = ? "
+            # source: ADR-1106 -- a heat ranking cut by the caller's slice:
+            # exact ties go to the newer entity.
+            "ORDER BY e.heat DESC, e.created_at DESC, e.id DESC",
             (memory_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -177,7 +184,8 @@ class SqliteEntityMixin:
                 f"SELECT m.* FROM {src} m "  # noqa: S608 — identifier is the two-literal in-code ternary memories/current_memories; values are bound parameters (docs/ASSURANCE-CASE.md §5)
                 "JOIN memories_fts f ON f.rowid = m.id "
                 "WHERE memories_fts MATCH ? "
-                "ORDER BY m.heat_base DESC LIMIT ?",
+                # source: ADR-1106 -- exact ties go to the newer memory.
+                "ORDER BY m.heat_base DESC, m.id DESC LIMIT ?",
                 (match, limit),
             ).fetchall()
             if match
@@ -187,7 +195,8 @@ class SqliteEntityMixin:
             # Fallback to LIKE
             rows = self._conn.execute(
                 f"SELECT * FROM {src} WHERE content LIKE ? "  # noqa: S608 — identifier is the two-literal in-code ternary memories/current_memories; values are bound parameters (docs/ASSURANCE-CASE.md §5)
-                "AND NOT is_stale ORDER BY heat_base DESC LIMIT ?",
+                "AND NOT is_stale "
+                "ORDER BY heat_base DESC, id DESC LIMIT ?",
                 (f"%{entity_name}%", limit),
             ).fetchall()
         return [self._normalize_memory_row(r) for r in rows]
