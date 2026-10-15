@@ -95,7 +95,7 @@ def lock_key() -> str | None:
     """The key of this plugin tree's uv.lock set, None when it carries no lock.
 
     source: ADR-1108"""
-    return _layout.set_key(LOCK_PATH)
+    return _layout.set_key(LOCK_PATH.parent)
 
 
 def _stamp(deps_dir: str, kind: str) -> dict:

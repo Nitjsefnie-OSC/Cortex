@@ -211,6 +211,8 @@ def main() -> None:
         )
         sys.exit(1)
     module = sys.argv[1]
+    if module == launcher_setup.SETUP:
+        launcher_setup.require_host_data()
     if module == launcher_maintain.JOB:  # stdlib only: any Python runs it
         sys.exit(launcher_maintain.main(plugin_root, deps_dir))
     if _needs_stand_in(module, deps_dir):

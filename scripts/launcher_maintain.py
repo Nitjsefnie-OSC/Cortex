@@ -76,7 +76,7 @@ def plan(running_root: str, data: str) -> Plan:
         != launcher_installed.version_of(Path(running_root))
         and (following / "scripts" / "launcher_setup.py").is_file()
     ):
-        key = launcher_layout.set_key(following / "uv.lock")
+        key = launcher_layout.set_key(following)
         if key is not None and not _both_stamped(data, key):
             install = following
     keep = launcher_gc.referenced_keys(running_root, data)

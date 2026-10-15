@@ -23,13 +23,10 @@ from pathlib import Path
 
 import launcher_layout as _layout
 import launcher_uv as _uv
+from launcher_sets import MANAGED_PYTHON
 
 # source: pyproject.toml requires-python = ">=3.10"
 SUPPORTED = (3, 10)
-# The newest 3.12 build uv 0.11.3 (launcher_uv.UV_VERSION) can download; 3.12
-# has a wheel for every package of uv.lock's launcher sets.
-# source: `uv python list --only-downloads` with uv 0.11.3, 2026-10-14
-MANAGED_PYTHON = "3.12.13"
 
 
 class InterpreterError(RuntimeError):

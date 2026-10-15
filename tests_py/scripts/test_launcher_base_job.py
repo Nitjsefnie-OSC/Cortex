@@ -181,3 +181,30 @@ def test_start_does_nothing_while_a_setup_run_holds_the_set(job_mod, deps_dir, s
     with job_mod.launcher_lock.held_if_free(job_mod.launcher_setup.job_lock(deps_dir)):
         assert job_mod.start(deps_dir, "launcher.py") is False
     assert spawned == []
+
+
+def test_the_not_ready_message_names_only_ways_out_that_work_from_any_shell(
+    job_mod, deps_dir, spawned, capsys
+):
+    """A printed `launcher.py --setup` run from a user shell has no
+    CLAUDE_PLUGIN_DATA and installs into the plugin tree, where no hook looks:
+    the message names `claude --init-only` and the offline way out instead."""
+    with pytest.raises(SystemExit):
+        job_mod.refuse(deps_dir, "/plugin/scripts/launcher.py", "no psycopg")
+    err = capsys.readouterr().err
+    assert "`claude --init-only`" in err
+    assert f"`claude plugin disable {job_mod.PLUGIN_ID}`" in err
+    assert "--setup" not in err
+    assert "launcher.py" not in err
+
+
+def test_the_plugin_id_is_the_manifests_plugin_at_marketplace(job_mod):
+    import json
+
+    manifest = json.loads(
+        (REPO_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+    )
+    market = json.loads(
+        (REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8")
+    )
+    assert job_mod.PLUGIN_ID == f"{manifest['name']}@{market['name']}"

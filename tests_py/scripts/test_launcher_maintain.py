@@ -74,7 +74,7 @@ def test_the_job_runs_the_clones_own_launcher_setup_for_its_data(
     def fake_run(argv, **kwargs):
         runs.append((argv, kwargs["env"]))
         # what the clone's Setup run leaves: both stamps under ITS key
-        host.make_set(layout.set_key(clone / "uv.lock"))
+        host.make_set(layout.set_key(clone))
 
         class Done:
             returncode = 0
@@ -96,8 +96,8 @@ def test_a_stamped_next_set_starts_no_job(mods, tmp_path, spawned):
     maintain, layout = mods
     host = Host(tmp_path)
     clone = host.add_clone("1.1.0", "scipy")
-    host.make_set(layout.set_key(clone / "uv.lock"))
-    host.make_set(layout.set_key(host.running / "uv.lock"))
+    host.make_set(layout.set_key(clone))
+    host.make_set(layout.set_key(host.running))
     assert (
         maintain.start_if_needed(str(host.running), _deps(layout, host), "l.py")
         is False
@@ -111,7 +111,7 @@ def test_the_same_version_or_the_same_set_needs_nothing(mods, tmp_path, spawned)
     host.add_clone("1.0.0", "scipy")  # same version: not an update
     assert maintain.plan(str(host.running), str(host.data)).install is None
     host.add_clone("1.1.0", "numpy")  # new version, same dependency set
-    host.make_set(layout.set_key(host.running / "uv.lock"))
+    host.make_set(layout.set_key(host.running))
     assert maintain.plan(str(host.running), str(host.data)).empty()
 
 

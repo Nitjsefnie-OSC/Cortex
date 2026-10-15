@@ -67,7 +67,7 @@ def _stamp(deps_mod, deps_dir: Path, kind: str) -> dict:
 
 def test_lock_key_is_the_set_key_of_the_repository_uv_lock(deps_mod):
     assert deps_mod.LOCK_PATH == REPO_ROOT / "uv.lock"
-    assert deps_mod.lock_key() == layout_mod().set_key(REPO_ROOT / "uv.lock")
+    assert deps_mod.lock_key() == layout_mod().set_key(REPO_ROOT)
     assert len(deps_mod.lock_key()) == layout_mod().KEY_LENGTH
 
 

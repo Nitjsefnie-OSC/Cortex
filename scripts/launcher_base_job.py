@@ -42,6 +42,19 @@ BLOCKING = frozenset(
 _BLOCK_EXIT = 2
 
 
+# What the user is told to do. These are the only commands that are right wherever
+# they are typed: neither depends on an environment variable only the host sets
+# (a `launcher.py --setup` typed by hand installs into the wrong directory, so it
+# is never printed), and the second works offline.
+# source: .claude-plugin/marketplace.json (plugin name @ marketplace name)
+PLUGIN_ID = "hypermnesia-mcp@cortex-plugins"
+# source: `claude --init-only` and `claude plugin disable`, Claude Code 2.1.300
+WAYS_OUT = (
+    "To install now and wait, run `claude --init-only` (needs the network). "
+    f"To work without Cortex, offline or not, run `claude plugin disable {PLUGIN_ID}`."
+)
+
+
 def job_lock(deps_dir: str) -> str:
     """The lock the running job holds: beside ``deps_dir``, in plugin data."""
     return f"{deps_dir}.base-job.lock"
@@ -111,8 +124,7 @@ def refuse(deps_dir: str, launcher: str, cause: str, module: str = "") -> None:
     print(
         f"[cortex-launcher] Cortex not ready: {cause}. This hook ran nothing and "
         f"installed nothing (a hook's time budget does not fit an install); "
-        f"{job} (log: {job_log(deps_dir)}). To install now and wait, run "
-        f"`claude --init-only`, or: {sys.executable} {launcher} {launcher_setup.SETUP}",
+        f"{job} (log: {job_log(deps_dir)}). {WAYS_OUT}",
         file=sys.stderr,
     )
     sys.exit(_BLOCK_EXIT if module in BLOCKING else 1)

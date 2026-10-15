@@ -40,6 +40,25 @@ SETUP = (
 _LOCK_WAIT_SECONDS = 1800  # source: scripts/launcher_deps.py _LOCK_WAIT_SECONDS
 
 
+def require_host_data() -> None:
+    """Exit 1 unless the host's plugin data directory is in the environment.
+
+    ``--setup`` installs into ``<CLAUDE_PLUGIN_DATA>/sets``; the host sets that
+    variable for its Setup hook, a user's shell does not, and the launcher then
+    falls back to the plugin tree (``launcher._resolve_paths``): an install the
+    hooks never look in. Refuse that rather than install in the wrong place.
+    """
+    if os.environ.get("CLAUDE_PLUGIN_DATA"):
+        return
+    print(
+        "[cortex-setup] refused: CLAUDE_PLUGIN_DATA is not set, so this would "
+        "install into the plugin tree, where Cortex's hooks do not look. Run "
+        "`claude --init-only` instead: Claude Code sets the directory.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
 def job_lock(deps_dir: str) -> str:
     return f"{deps_dir}.setup.lock"
 

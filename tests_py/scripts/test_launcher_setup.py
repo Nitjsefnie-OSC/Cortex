@@ -127,3 +127,51 @@ def test_a_successful_setup_clears_the_base_job_failure(setup_env, monkeypatch):
     stamp.write_text("{}")
     setup.run(deps, "launcher.py")
     assert not stamp.exists()
+
+
+def _plugin_copy(root: Path) -> None:
+    """The files a launch needs, copied so a wrongly placed install lands in tmp."""
+    import shutil
+
+    ignore = shutil.ignore_patterns("__pycache__")
+    shutil.copytree(REPO_ROOT / "scripts", root / "scripts", ignore=ignore)
+    for part in ("hooks", "shared"):
+        shutil.copytree(
+            REPO_ROOT / "mcp_server" / part, root / "mcp_server" / part, ignore=ignore
+        )
+    shutil.copy(
+        REPO_ROOT / "mcp_server" / "__init__.py", root / "mcp_server" / "__init__.py"
+    )
+    shutil.copy(REPO_ROOT / "uv.lock", root / "uv.lock")
+
+
+def test_setup_typed_by_hand_without_the_host_data_directory_installs_nothing(
+    tmp_path,
+):
+    """Without CLAUDE_PLUGIN_DATA the launcher would install into the plugin tree
+    (<root>/sets/<key>), where no hook looks; --setup refuses instead."""
+    import os
+    import subprocess
+    import sys
+
+    root = tmp_path / "plugin"
+    _plugin_copy(root)
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in ("CLAUDE_PLUGIN_DATA", "CLAUDE_PLUGIN_ROOT")
+    }
+    # A launcher that did not refuse would download a gigabyte: no network.
+    env["HTTPS_PROXY"] = env["HTTP_PROXY"] = "http://127.0.0.1:9"
+    done = subprocess.run(
+        [sys.executable, str(root / "scripts" / "launcher.py"), "--setup"],
+        capture_output=True,
+        text=True,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        timeout=60,
+    )
+    assert done.returncode == 1
+    assert "CLAUDE_PLUGIN_DATA is not set" in done.stderr
+    assert "claude --init-only" in done.stderr
+    assert not (root / "sets").exists()

@@ -22,8 +22,27 @@ _LOCK = (
 )
 
 
-def plugin_tree(path: Path, version: str, dep: str = "numpy") -> Path:
-    """A plugin tree whose uv.lock locks ``dep`` (and the project's own version)."""
+_SELECTION = (
+    'BASE = ("--only-group", "launcher-base")\n'
+    'ML = ("--only-group", "launcher-ml")\n'
+    'MANAGED_PYTHON = "{python}"\n'
+)
+
+
+def write_selection(path: Path, python: str = "3.12.13", base: str = "launcher-base"):
+    """The ``scripts/launcher_sets.py`` a tree declares its install selection in."""
+    (path / "scripts").mkdir(parents=True, exist_ok=True)
+    text = _SELECTION.format(python=python).replace("launcher-base", base)
+    (path / "scripts" / "launcher_sets.py").write_text(text)
+
+
+def plugin_tree(
+    path: Path, version: str, dep: str = "numpy", flat: bool = False
+) -> Path:
+    """A plugin tree whose uv.lock locks ``dep`` (and the project's own version).
+
+    ``flat``: a pre-per-lock-sets release, which has no ``launcher_layout.py``.
+    """
     (path / ".claude-plugin").mkdir(parents=True, exist_ok=True)
     (path / ".claude-plugin" / "plugin.json").write_text(
         json.dumps({"name": PLUGIN, "version": version})
@@ -32,6 +51,9 @@ def plugin_tree(path: Path, version: str, dep: str = "numpy") -> Path:
     (path / "scripts").mkdir(exist_ok=True)
     (path / "scripts" / "launcher.py").write_text("")
     (path / "scripts" / "launcher_setup.py").write_text("")
+    write_selection(path)
+    if not flat:
+        (path / "scripts" / "launcher_layout.py").write_text("")
     return path
 
 
