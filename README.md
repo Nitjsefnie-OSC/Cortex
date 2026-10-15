@@ -95,13 +95,18 @@ WSL, TLS client certificates and corporate proxies are covered in
 
 Cortex's dependencies live in the plugin's data directory, one directory per locked
 dependency set (`sets/<key>`), so an update that does not change the locked dependencies (most
-releases: 21 of 29 from v4.9.0 to v4.23.5) finds its set installed. After an update that does
-change them, `claude --init-only` installs the new set; a session started before that prints
-`Cortex not ready:` with the cause and the log's path, exits non-zero (the Edit/Write guards exit 2
-and block the edit), and a background install is already running; the next session shows
-`Cortex ready: <store>, <n> memories; <how recall ranks>`. While a session of the current version
-runs, a background job also installs the next version's set as soon as the marketplace clone
-holds it, and removes sets no installed version references.
+releases: 21 of 29 from v4.9.0 to v4.23.5) finds its set installed. While a session of the current
+version runs, a background job asks the Cortex git remote once per session start whether the next
+release is out and, when its dependency set differs, installs it ahead of the update; it also
+removes sets no installed version references. When a set is missing anyway (the first session after
+an install, or after an update nobody pre-installed), no hook installs: SessionStart says
+`Cortex is installing its dependencies (about 2 minutes, about 5 with semantic search); memory is
+available when it is done`, the Edit/Write guards let edits through and say that the Cortex gate is
+inactive until then, and the MCP server installs the set in the background; the next session (or
+the same one, once done) shows `Cortex ready: <store>, <n> memories; <how recall ranks>`.
+`claude --init-only` (or `python3 scripts/init_plugin.py`, which shows progress) installs
+everything before the first session; it is the fastest way to be ready, not a requirement. To work
+without Cortex, offline or not, run `claude plugin disable hypermnesia-mcp@cortex-plugins`.
 
 The first use creates a local SQLite store under `~/.claude/methodology/`. Models are downloaded
 once when needed and then run offline. The embedding and reranking model files are both fetched

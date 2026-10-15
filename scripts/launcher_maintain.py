@@ -8,11 +8,10 @@ installed, or an installed set is no longer referenced, it starts ONE detached
 the unreferenced sets. The hook itself reads three small JSON files and hashes
 at most three uv.lock files; it installs and removes nothing.
 
-Where this can and cannot help: it runs only while a session of the CURRENT
-version runs and finds the clone already holding the next version. Measured
-(Claude Code 2.1.300): ``claude plugin update`` refreshes the clone and applies
-the update in one command, so with no session running there is no such moment
-(ADR-1108, "Residual").
+At a session start the job also asks the git remote (``launcher_remote``) whether
+the next release is out, because ``claude plugin update`` refreshes the clone and
+applies the update in one command (measured, Claude Code 2.1.300): the clone alone
+cannot announce an update before it is applied.
 
 source: ADR-1108
 """
