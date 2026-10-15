@@ -3584,6 +3584,10 @@
       "mirror": "ADR-1105-every-ann-query-scans-the-hnsw-index-iteratively.md",
       "path": "adr/cortex/1105-every-ann-query-scans-the-hnsw-index-iteratively.md"
     },
+    "ADR-1106": {
+      "mirror": "ADR-1106-recall-breaks-exact-score-ties-newest-first.md",
+      "path": "adr/cortex/1106-recall-breaks-exact-score-ties-newest-first.md"
+    },
     "ADR-1107": {
       "mirror": "ADR-1107-the-sessionstart-curation-sample-sorts-three-narrow-columns-not-whole-rows.md",
       "path": "adr/cortex/1107-the-sessionstart-curation-sample-sorts-three-narrow-columns-not-whole-rows.md"

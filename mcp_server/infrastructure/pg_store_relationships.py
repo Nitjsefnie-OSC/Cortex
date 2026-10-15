@@ -79,13 +79,14 @@ class PgRelationshipMixin(PgStoreHost):
     def get_relationships_for_entity(
         self, entity_id: int, direction: str = "both", limit: int = 50
     ) -> list[dict[str, Any]]:
+        # source: ADR-1106 -- in every branch exact weight ties go to the newer edge.
         if direction == "outgoing":
             rows = self._execute(
                 "SELECT r.*, e.name AS target_name, e.type AS target_type "
                 "FROM relationships r "
                 "JOIN entities e ON e.id = r.target_entity_id "
                 "WHERE r.source_entity_id = %s "
-                "ORDER BY r.weight DESC LIMIT %s",
+                "ORDER BY r.weight DESC, r.created_at DESC, r.id DESC LIMIT %s",
                 (entity_id, limit),
             ).fetchall()
         elif direction == "incoming":
@@ -94,14 +95,14 @@ class PgRelationshipMixin(PgStoreHost):
                 "FROM relationships r "
                 "JOIN entities e ON e.id = r.source_entity_id "
                 "WHERE r.target_entity_id = %s "
-                "ORDER BY r.weight DESC LIMIT %s",
+                "ORDER BY r.weight DESC, r.created_at DESC, r.id DESC LIMIT %s",
                 (entity_id, limit),
             ).fetchall()
         else:
             rows = self._execute(
                 "SELECT r.* FROM relationships r "
                 "WHERE r.source_entity_id = %s OR r.target_entity_id = %s "
-                "ORDER BY r.weight DESC LIMIT %s",
+                "ORDER BY r.weight DESC, r.created_at DESC, r.id DESC LIMIT %s",
                 (entity_id, entity_id, limit),
             ).fetchall()
         return [dict(r) for r in rows]
@@ -145,11 +146,13 @@ class PgRelationshipMixin(PgStoreHost):
 
         source: ADR-0563"""
         src = self._execute(
-            "SELECT id FROM entities WHERE LOWER(name) = LOWER(%s) LIMIT 1",
+            "SELECT id FROM entities WHERE LOWER(name) = LOWER(%s) "
+            "ORDER BY id LIMIT 1",  # source: ADR-1106
             (source_name,),
         ).fetchone()
         tgt = self._execute(
-            "SELECT id FROM entities WHERE LOWER(name) = LOWER(%s) LIMIT 1",
+            "SELECT id FROM entities WHERE LOWER(name) = LOWER(%s) "
+            "ORDER BY id LIMIT 1",  # source: ADR-1106
             (target_name,),
         ).fetchone()
         if not src or not tgt:
