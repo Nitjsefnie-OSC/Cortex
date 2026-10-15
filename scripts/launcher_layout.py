@@ -111,6 +111,15 @@ def project_deps_dir(data: str | Path, project: str | Path) -> str:
     return deps_dir(data, key)
 
 
+def both_stamped(data: str | Path, key: str) -> bool:
+    """True iff set ``key`` carries the base and the semantic-search stamps."""
+    stamps = Path(deps_dir(data, key))
+    return all(
+        (stamps / f".cortex-deps-stamp-{kind}.json").is_file()
+        for kind in ("base", "ml")
+    )
+
+
 def key_of(deps: str | Path) -> str:
     """The key a set directory ``deps_dir`` is named by."""
     return Path(deps).name

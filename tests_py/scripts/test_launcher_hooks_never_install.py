@@ -4,7 +4,8 @@ Every hook has a host time budget (5-30 s) that a dependency install (uv
 bootstrap 29 s, base set 28-58 s, cold 109 s measured 2026-10-14) does not
 fit; a hook the host cancels mid-install leaves an empty ``deps.tmp-<pid>``
 scratch directory behind (64 of them in the owner's plugin data). So a hook
-launch with the base set missing exits 1 with the cause, starts the one
+launch with the base set missing says so (exit 1; exit 0 with a user-visible
+notice for the gates and SessionStart), starts the one
 detached install job, and runs nothing. The assertions are on the install
 seams (``ensure_deps``, ``ensure_all_deps``, ``install_locked_set``, any
 ``subprocess.run``), not on elapsed time.
@@ -61,6 +62,7 @@ _HOST_HOOK_BUDGET_SECONDS = 30
 # source: measured 2026-10-15, Claude Code 2.1.300: a Setup hook with no timeout was
 # killed 599 s after it started (fleet/deps-out-of-hook/lab/dflt)
 _HOST_DEFAULT_COMMAND_TIMEOUT_SECONDS = 600
+_SESSION = "mcp_server.hooks.session_start"
 _HOOKS = (
     "mcp_server.hooks.session_start",
     "mcp_server.hooks.auto_recall",
@@ -108,13 +110,18 @@ class HooksNeverInstall(unittest.TestCase):
             check=False,
         )
         self.assertEqual(done.returncode, 0, done.stderr)
-        return json.loads(done.stdout), done.stderr
+        *hook_out, last = done.stdout.strip().splitlines()
+        seen = json.loads(last)
+        seen["stdout"] = "\n".join(hook_out)
+        return seen, done.stderr
 
     def test_missing_deps_fail_loudly_install_nothing_and_start_the_job(self):
         for module in _HOOKS:
             with self.subTest(module=module):
                 seen, stderr = self.launch(module)
-                self.assertEqual(seen["code"], 1)
+                self.assertEqual(seen["code"], 0 if module == _SESSION else 1)
+                if module == _SESSION:
+                    self.assertIn("installing its dependencies", seen["stdout"])
                 self.assertEqual(seen["install"], [])
                 self.assertEqual(seen["run"], [])
                 self.assertEqual(seen["dispatched"], [])
@@ -141,7 +148,7 @@ class HooksNeverInstall(unittest.TestCase):
         ) as mine:
             self.assertTrue(mine)
             seen, stderr = self.launch(_HOOKS[0])
-        self.assertEqual((seen["code"], seen["popen"]), (1, []))
+        self.assertEqual((seen["code"], seen["popen"]), (0, []))
         self.assertIn("already running", stderr)
 
     def test_ready_deps_run_the_hook_without_an_install_or_a_job(self):

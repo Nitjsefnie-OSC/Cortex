@@ -27,20 +27,20 @@ import launcher_layout
 import launcher_logs
 import launcher_lock
 import launcher_ml
+import launcher_notice
 import launcher_setup
 
 # The argument the detached job is started with (launcher.py <JOB>).
 JOB = "--install-base-job"  # source: ADR-1108
 
-# The hooks whose exit code 2 blocks the tool call they guard (Claude Code: exit
-# 1 is non-blocking, exit 2 blocks). Without the base set these must fail closed.
-BLOCKING = frozenset(
+# The PreToolUse gates: they guard edits with Cortex's own memory and decisions,
+# which do not exist before Cortex is installed. While it is not ready they let
+# the edit through and say so (owner decision 2026-10-15, ADR-1108): one window,
+# from the first session after an install or update until the set is stamped.
+GATES = frozenset(
     {"mcp_server.hooks.decision_gate", "mcp_server.hooks.no_deps_gate"}
 )  # source: .claude-plugin/plugin.json PreToolUse
-# source: Claude Code 2.1.300 PreToolUse hook help: "Exit code 2 - show stderr
-# to model and block tool call; other exit codes - ... continue with tool call"
-_BLOCK_EXIT = 2
-
+SESSION_START = "mcp_server.hooks.session_start"  # source: .claude-plugin/plugin.json
 
 # What the user is told to do. These are the only commands that are right wherever
 # they are typed: neither depends on an environment variable only the host sets
@@ -107,27 +107,63 @@ def start(deps_dir: str, launcher: str) -> bool:
     return True
 
 
+def _status(deps_dir: str, started: bool) -> tuple[str, str]:
+    """(what the user is told, what the log line says) about the install."""
+    failure = last_failure(deps_dir)
+    if failure:
+        said = f"Cortex could not install its dependencies: {failure}"
+        return said, f"the last background install failed: {failure}"
+    return launcher_notice.INSTALLING, (
+        "started the install in the background"
+        if started
+        else "an install is already running in the background"
+    )
+
+
+def _announce(module: str, said: str) -> bool:
+    """Tell the user through the hook's JSON output; True iff this hook has one.
+
+    ``systemMessage`` is shown to the user by every hook event; SessionStart also
+    hands the model the same line as context.
+    source: Claude Code 2.1.300 hook JSON output help: "systemMessage - Display a
+    message to the user (all hooks)"; additionalContext "Text injected into model
+    context" (hookSpecificOutput.hookEventName)
+    """
+    if module in GATES:
+        notice = (
+            f"{said}. The Cortex gate is inactive until then: this edit is not checked."
+        )
+        out: dict = {"systemMessage": notice}
+    elif module == SESSION_START:
+        out = {
+            "systemMessage": f"{said}.",
+            "hookSpecificOutput": {
+                "hookEventName": "SessionStart",
+                "additionalContext": f"{said}.",
+            },
+        }
+    else:
+        return False
+    print(json.dumps(out))
+    return True
+
+
 def refuse(deps_dir: str, launcher: str, cause: str, module: str = "") -> None:
     """Report that Cortex is not ready, start the job, exit. Installs nothing.
 
-    Exit 2 for a blocking gate (fail closed: the guarded edit does not run),
-    1 for every other hook.
+    The ONE place the behaviour of a hook during the not-ready window is
+    decided. A gate and the SessionStart hook exit 0 with a user-visible JSON
+    notice (an edit is not blocked: before Cortex is installed there is
+    nothing to guard); every other hook exits 1, non-blocking.
     """
-    started = start(deps_dir, launcher)
-    failure = last_failure(deps_dir)
-    if failure:
-        job = f"the last background install failed: {failure}"
-    elif started:
-        job = "started the install in the background"
-    else:
-        job = "an install is already running in the background"
+    said, job = _status(deps_dir, start(deps_dir, launcher))
     print(
         f"[cortex-launcher] Cortex not ready: {cause}. This hook ran nothing and "
         f"installed nothing (a hook's time budget does not fit an install); "
         f"{job} (log: {job_log(deps_dir)}). {WAYS_OUT}",
         file=sys.stderr,
     )
-    sys.exit(_BLOCK_EXIT if module in BLOCKING else 1)
+    sys.exit(0 if _announce(module, said) else 1)
 
 
 def require_ready(deps_dir: str, launcher: str, module: str = "") -> None:

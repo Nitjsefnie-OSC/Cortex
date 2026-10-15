@@ -9,6 +9,7 @@ source: ADR-1108
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -139,17 +140,54 @@ def test_a_second_job_returns_without_installing(
     assert ml_started == []
 
 
-def test_a_blocking_gate_exits_2_other_hooks_exit_1(job_mod, deps_dir, spawned, capsys):
-    for module, code in (
-        ("mcp_server.hooks.decision_gate", 2),
-        ("mcp_server.hooks.no_deps_gate", 2),
-        ("mcp_server.hooks.auto_recall", 1),
-        ("", 1),
-    ):
-        with pytest.raises(SystemExit) as stopped:
-            job_mod.refuse(deps_dir, "launcher.py", "cause", module)
-        assert stopped.value.code == code, module
-    assert "Cortex not ready: cause" in capsys.readouterr().err
+def _refused(job_mod, deps_dir, module):
+    with pytest.raises(SystemExit) as stopped:
+        job_mod.refuse(deps_dir, "launcher.py", "cause", module)
+    return stopped.value.code
+
+
+def test_a_gate_lets_the_edit_through_and_says_the_gate_is_inactive(
+    job_mod, deps_dir, spawned, capsys
+):
+    """Before Cortex is installed there is nothing to guard (owner, 2026-10-15):
+    exit 0 and a user-visible systemMessage, on stdout, as the only stdout."""
+    for module in ("mcp_server.hooks.decision_gate", "mcp_server.hooks.no_deps_gate"):
+        assert _refused(job_mod, deps_dir, module) == 0, module
+        out = capsys.readouterr()
+        notice = json.loads(out.out)
+        assert set(notice) == {"systemMessage"}
+        assert "installing its dependencies" in notice["systemMessage"]
+        assert "gate is inactive" in notice["systemMessage"]
+        assert "Cortex not ready: cause" in out.err
+
+
+def test_session_start_announces_the_install_to_the_user_and_the_model(
+    job_mod, deps_dir, spawned, capsys
+):
+    assert _refused(job_mod, deps_dir, job_mod.SESSION_START) == 0
+    notice = json.loads(capsys.readouterr().out)
+    context = notice["hookSpecificOutput"]
+    assert context["hookEventName"] == "SessionStart"
+    assert "memory is available when it is done" in context["additionalContext"]
+    assert "about 2 minutes" in notice["systemMessage"]
+
+
+def test_a_failed_install_is_announced_as_failed_not_as_installing(
+    job_mod, deps_dir, spawned, capsys
+):
+    job_mod._failure_stamp(deps_dir).parent.mkdir(parents=True)
+    job_mod._failure_stamp(deps_dir).write_text('{"error": "offline"}')
+    assert _refused(job_mod, deps_dir, job_mod.SESSION_START) == 0
+    message = json.loads(capsys.readouterr().out)["systemMessage"]
+    assert "could not install" in message and "offline" in message
+
+
+def test_every_other_hook_exits_1_without_stdout(job_mod, deps_dir, spawned, capsys):
+    for module in ("mcp_server.hooks.auto_recall", ""):
+        assert _refused(job_mod, deps_dir, module) == 1, module
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert "Cortex not ready: cause" in out.err
 
 
 def test_a_failed_job_is_not_restarted_by_the_next_hook(

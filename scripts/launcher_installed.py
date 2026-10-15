@@ -75,6 +75,16 @@ def version_of(tree: Path) -> str | None:
     return version if isinstance(version, str) else None
 
 
+def clone_dir(installed: Installed) -> Path | None:
+    """The marketplace's local clone of this plugin's marketplace, None if absent."""
+    marketplace = installed.plugin_id.partition("@")[2]
+    known = (_read(installed.plugins_dir / "known_marketplaces.json") or {}).get(
+        marketplace
+    )
+    location = known.get("installLocation") if isinstance(known, dict) else None
+    return Path(location) if isinstance(location, str) else None
+
+
 def next_tree(installed: Installed) -> Path | None:
     """The plugin tree the marketplace would install next: its local clone.
 
@@ -84,14 +94,10 @@ def next_tree(installed: Installed) -> Path | None:
     path inside the clone, or the clone is unreadable. This is the one seam
     that says where the next uv.lock comes from.
     """
-    name, _, marketplace = installed.plugin_id.partition("@")
-    known = (_read(installed.plugins_dir / "known_marketplaces.json") or {}).get(
-        marketplace
-    )
-    location = known.get("installLocation") if isinstance(known, dict) else None
-    if not isinstance(location, str):
+    name = installed.plugin_id.partition("@")[0]
+    clone = clone_dir(installed)
+    if clone is None:
         return None
-    clone = Path(location)
     plugins = (_read(clone / _MARKETPLACE_MANIFEST) or {}).get("plugins")
     for entry in plugins if isinstance(plugins, list) else []:
         if isinstance(entry, dict) and entry.get("name") == name:

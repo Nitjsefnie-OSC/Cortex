@@ -30,6 +30,7 @@ from pathlib import Path
 import launcher_deps_fs
 import launcher_installed
 import launcher_layout
+import launcher_remote
 
 # The file launcher_deps writes into a set when its base install succeeded.
 BASE_STAMP = (
@@ -86,13 +87,14 @@ def referenced_keys(running_root: str, data: str) -> set[str] | None:
     a referenced tree has no readable uv.lock (the caller removes nothing).
     """
     installed = launcher_installed.find(running_root, data)
-    return None if installed is None else _keys(installed, running_root)
+    return None if installed is None else _keys(installed, running_root, data)
 
 
 def _keys(
-    installed: launcher_installed.Installed, running_root: str
+    installed: launcher_installed.Installed, running_root: str, data: str
 ) -> set[str] | None:
-    """The keys of the trees that own sets; a flat-layout tree owns none."""
+    """The keys of the trees that own sets, and of a set pre-installed from the
+    remote for an update no installed copy has reached; a flat-layout tree owns none."""
     trees = list(installed.trees)
     following = launcher_installed.next_tree(installed)
     if following is not None:
@@ -100,7 +102,11 @@ def _keys(
     trees = [t for t in trees if (t / "scripts" / _LAYOUT_MODULE).is_file()]
     trees.append(Path(running_root))
     keys = {launcher_layout.set_key(tree) for tree in trees}
-    return None if None in keys else {k for k in keys if k}
+    if None in keys:
+        return None
+    versions = [v for v in map(launcher_installed.version_of, trees) if v]
+    remote = launcher_remote.referenced_key(data, versions)
+    return {k for k in keys if k} | ({remote} if remote else set())
 
 
 def doomed(data: Path, keep: set[str]) -> list[Path]:
@@ -157,7 +163,7 @@ def collect(running_root: str, data: str) -> list[str]:
     empty (no copy that imports from it is installed or cached).
     """
     installed = launcher_installed.find(running_root, data)
-    keep = None if installed is None else _keys(installed, running_root)
+    keep = None if installed is None else _keys(installed, running_root, data)
     if installed is None or keep is None:
         return []
     root = Path(data)

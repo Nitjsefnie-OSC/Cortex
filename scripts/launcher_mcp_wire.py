@@ -16,6 +16,8 @@ import subprocess
 import sys
 import threading
 
+import launcher_notice
+
 # The initialize-handshake revisions of the locked MCP SDK (uv.lock mcp
 # 2.3.0). source: mcp_types/version.py HANDSHAKE_PROTOCOL_VERSIONS (2.3.0)
 HANDSHAKE_VERSIONS = ("2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25")
@@ -100,10 +102,7 @@ def local_answer(message: dict, failure: str = "") -> dict:
         return {"jsonrpc": "2.0", "id": request_id, "error": error}
     error = {
         "code": NOT_READY_CODE,
-        "message": (
-            "Cortex is installing its runtime (first launch); "
-            "its tools appear when it is ready"
-        ),
+        "message": f"{launcher_notice.INSTALLING}; its tools appear then",
     }
     return {"jsonrpc": "2.0", "id": request_id, "error": error}
 
