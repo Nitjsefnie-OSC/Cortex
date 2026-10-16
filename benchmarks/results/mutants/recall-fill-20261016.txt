@@ -1,0 +1,17 @@
+killed     | boost after the trust factor | 3 failed, 125 passed in 7.72s
+killed     | seek misses NULL agents (= instead of IS) | 15 failed, 113 passed in 7.80s
+killed     | group credit starts one position late | 8 failed, 120 passed in 7.93s
+killed     | one-row credit one position late | 8 failed, 120 passed in 8.37s
+killed     | superseded rows kept in a column group | 55 failed, 73 passed in 8.65s
+killed     | rows scored row by row not excluded | 2 failed, 126 passed in 7.66s
+killed     | fill oldest first | 11 failed, 117 passed in 8.15s
+killed     | inclusion-exclusion sign flipped | 53 failed, 75 passed in 8.30s
+killed     | seek keeps one row fewer | 3 failed, 125 passed in 8.26s
+killed     | pair trust inverted | 32 failed, 96 passed in 7.34s
+killed     | pair agent match inverted | 15 failed, 113 passed in 7.96s
+killed     | second group's pass keeps the rows shared with the first | 101 failed, 27 passed in 7.30s
+killed     | shared rows dropped from totals without the earlier group | 103 failed, 25 passed in 7.57s
+killed     | shared rows read without the group itself | 101 failed, 27 passed in 7.65s
+killed     | pairs only in an earlier group dropped | 56 failed, 72 passed in 7.93s
+killed     | member test on the counted group's own column | 73 failed, 55 passed in 8.15s
+equivalent | empty pairs seeked too | 128 passed in 8.12s | a pair without class rows returns no row from its seek
