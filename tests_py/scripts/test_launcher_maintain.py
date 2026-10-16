@@ -7,6 +7,7 @@ source: ADR-1108
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -152,3 +153,59 @@ def test_with_nothing_to_install_the_job_collects_old_sets(mods, tmp_path):
     old = host.make_set("old0000000000000")
     assert maintain.run(str(host.running), str(host.data)) == 0
     assert not old.exists()
+
+
+def test_a_set_that_could_not_be_removed_starts_no_job_per_prompt(
+    mods, tmp_path, spawned
+):
+    """The failed path is recorded; only a NEW unreferenced set starts a job."""
+    maintain, layout = mods
+    host = Host(tmp_path)
+    host.make_set(layout.set_key(host.running))
+    old = host.make_set("old0000000000000")
+    (old / "pkg").mkdir()
+    (old / "pkg" / "module.py").write_text("")
+    (old / "pkg").chmod(0o555)
+    try:
+        if os.access(old / "pkg", os.W_OK):
+            pytest.skip("permissions are not enforced for this user")
+        assert maintain.run(str(host.running), str(host.data)) == 1
+        assert old.exists()
+        prompt = "mcp_server.hooks.auto_recall"
+        maintain.after_runtime(prompt, str(host.running), _deps(layout, host), "l.py")
+        assert spawned == []
+        host.make_set("new0000000000000")
+        maintain.after_runtime(prompt, str(host.running), _deps(layout, host), "l.py")
+        assert len(spawned) == 1
+    finally:
+        (old / "pkg").chmod(0o755)
+
+
+def test_a_session_start_with_nothing_to_do_starts_no_job(mods, tmp_path, spawned):
+    """No job asks a git remote any more, so a session start alone is no work."""
+    maintain, layout = mods
+    host = Host(tmp_path)
+    host.make_set(layout.set_key(host.running))
+    maintain.after_runtime(
+        "mcp_server.hooks.session_start",
+        str(host.running),
+        _deps(layout, host),
+        "l.py",
+    )
+    assert spawned == []
+
+
+def test_the_job_runs_no_git_and_reaches_no_remote(mods, tmp_path, monkeypatch):
+    """Owner decision 2026-10-16: the job never fetches from the marketplace's
+    remote; its only subprocess is the local clone's own Setup."""
+    maintain, layout = mods
+    host = Host(tmp_path)
+    host.add_clone("1.0.0", "numpy")  # the clone is at the running version
+    host.make_set(layout.set_key(host.running))
+    monkeypatch.setenv("CORTEX_REMOTE_CHECK", "1")  # what a session start used to set
+    monkeypatch.setattr(
+        maintain.subprocess,
+        "run",
+        lambda argv, **kw: pytest.fail(f"the job ran {argv}"),
+    )
+    assert maintain.run(str(host.running), str(host.data)) == 0

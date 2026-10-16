@@ -169,9 +169,34 @@ def test_setup_typed_by_hand_without_the_host_data_directory_installs_nothing(
         text=True,
         env=env,
         stdin=subprocess.DEVNULL,
-        timeout=60,
     )
     assert done.returncode == 1
     assert "CLAUDE_PLUGIN_DATA is not set" in done.stderr
     assert "claude --init-only" in done.stderr
     assert not (root / "sets").exists()
+
+
+def test_a_setup_waits_for_a_concurrent_setup_however_long_it_holds_the_lock(
+    setup_env, monkeypatch
+):
+    """The kernel releases the lock when its holder exits, so the holder is
+    alive and installing for as long as the lock is held: no wall-clock bound
+    turns that into a recorded failure. The clock is a seam here, not waited on."""
+    import itertools
+    from types import SimpleNamespace
+
+    setup, _, deps, _, _ = setup_env
+    _warm(monkeypatch, setup)
+    lock = setup.launcher_lock
+    busy = [False, False, False]  # the other Setup holds it for three polls
+    real_try = lock._try
+    monkeypatch.setattr(lock, "_try", lambda fd: busy.pop() if busy else real_try(fd))
+    clock = itertools.count(0, 10**6)  # each poll a million seconds later
+    monkeypatch.setattr(
+        lock,
+        "time",
+        SimpleNamespace(monotonic=lambda: next(clock), sleep=lambda _s: None),
+    )
+    assert setup.run(deps, "launcher.py") == 0
+    assert busy == []
+    assert setup.outcome(deps)["status"] == "ready"

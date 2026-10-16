@@ -197,7 +197,8 @@ def sweep_stale_scratch(deps_dir: str) -> None:
         Postcondition: every sibling ``<deps>.tmp-<pid>`` (an install's
         ``--target``) of ``deps_dir`` and every ``uv-<version>.tmp-<pid>`` (the
         uv bootstrap's scratch) in the plugin data directory whose ``<pid>`` no
-        longer identifies a live process has been best-effort removed. A
+        longer identifies a live process has been removed, or is named on
+        stderr with the cause it could not be removed (the next sweep retries). A
         killed install never reaches its own cleanup: 64 such directories,
         each holding only uv's ``.lock``, were found in one plugin data
         directory (2026-10-14).
@@ -218,7 +219,14 @@ def _sweep_dead(directory: str, pattern: re.Pattern[str]) -> None:
         match = pattern.match(name)
         if match is None or pid_alive(int(match.group("pid"))):
             continue
-        shutil.rmtree(os.path.join(directory, name), ignore_errors=True)
+        try:
+            shutil.rmtree(os.path.join(directory, name))
+        except OSError as exc:  # left for the next sweep, and said so
+            print(
+                f"[cortex-launcher] could not remove dead install scratch "
+                f"{os.path.join(directory, name)}: {exc}",
+                file=sys.stderr,
+            )
 
 
 def prune_superseded_dist_info(deps_dir: str, committed_entry: str) -> None:

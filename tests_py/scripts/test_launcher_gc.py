@@ -161,3 +161,46 @@ def test_mark_in_use_registers_this_process_until_it_exits(mods, tmp_path):
     assert gc.in_use(deps) is False
     gc.mark_in_use(deps)
     assert gc.in_use(deps) is True
+
+
+def _undeletable_set(host, key="old0000000000000"):
+    """A set whose content this user cannot unlink: rmtree raises inside it."""
+    old = host.make_set(key)
+    locked = old / "pkg"
+    locked.mkdir()
+    (locked / "module.py").write_text("")
+    locked.chmod(0o555)
+    if os.access(locked, os.W_OK):
+        locked.chmod(0o755)
+        pytest.skip("permissions are not enforced for this user")
+    return old, locked
+
+
+def test_a_set_that_cannot_be_removed_is_reported_not_declared_removed(
+    mods, tmp_path, capsys
+):
+    """rmtree(ignore_errors=True) used to report the set removed while it stayed."""
+    gc, _ = mods
+    host = Host(tmp_path)
+    old, locked = _undeletable_set(host)
+    try:
+        removed = gc.collect(str(host.running), str(host.data))
+        assert old.exists()
+        assert str(old) not in removed
+        assert str(old) in gc.failed_removals(str(host.data))
+        assert str(old) in capsys.readouterr().err
+    finally:
+        locked.chmod(0o755)
+
+
+def test_a_later_collection_that_removes_it_clears_the_record(mods, tmp_path):
+    gc, _ = mods
+    host = Host(tmp_path)
+    old, locked = _undeletable_set(host)
+    try:
+        gc.collect(str(host.running), str(host.data))
+    finally:
+        locked.chmod(0o755)
+    assert str(old) in gc.collect(str(host.running), str(host.data))
+    assert not old.exists()
+    assert gc.failed_removals(str(host.data)) == {}

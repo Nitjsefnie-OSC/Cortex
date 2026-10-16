@@ -10,7 +10,7 @@ detached install job, and runs nothing. The assertions are on the install
 seams (``ensure_deps``, ``ensure_all_deps``, ``install_locked_set``, any
 ``subprocess.run``), not on elapsed time.
 
-source: docs/adr/ADR-1108-no-dependency-install-inside-a-hook.md
+source: docs/adr/ADR-1108-dependencies-install-at-setup-and-live-in-per-lock-sets.md
 """
 
 from __future__ import annotations

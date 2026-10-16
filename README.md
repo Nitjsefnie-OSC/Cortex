@@ -95,17 +95,16 @@ WSL, TLS client certificates and corporate proxies are covered in
 
 Cortex's dependencies live in the plugin's data directory, one directory per locked
 dependency set (`sets/<key>`), so an update that does not change the locked dependencies (most
-releases: 21 of 29 from v4.9.0 to v4.23.5) finds its set installed. While a session of the current
-version runs, a background job asks the Cortex git remote once per session start whether the next
-release is out and, when its dependency set differs, installs it ahead of the update; it also
-removes sets no installed version references. When a set is missing anyway (the first session after
-an install, or after an update nobody pre-installed), no hook installs: SessionStart says
+releases: 21 of 29 from v4.9.0 to v4.23.5) finds its set installed. A background job removes the
+sets no installed version references; it makes no network call. When a set is missing (the first
+session after an install, or after an update that changes the locked dependencies, when
+`claude --init-only` did not run first), no hook installs: SessionStart says
 `Cortex is installing its dependencies (about 2 minutes, about 5 with semantic search); memory is
 available when it is done`, the Edit/Write guards let edits through and say that the Cortex gate is
 inactive until then, and the MCP server installs the set in the background; the next session (or
 the same one, once done) shows `Cortex ready: <store>, <n> memories; <how recall ranks>`.
 `claude --init-only` (or `python3 scripts/init_plugin.py`, which shows progress) installs
-everything before the first session; it is the fastest way to be ready, not a requirement. To work
+everything before the first session; only with it does that session start ready. To work
 without Cortex, offline or not, run `claude plugin disable hypermnesia-mcp@cortex-plugins`.
 
 The first use creates a local SQLite store under `~/.claude/methodology/`. Models are downloaded

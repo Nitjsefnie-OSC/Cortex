@@ -35,9 +35,6 @@ import launcher_ml
 SETUP = (
     "--setup"  # source: ADR-1108 (the argument the Setup hook starts the launcher with)
 )
-# One cold install moves about 1 GB and 28 s + 86 s (ADR-1104); a holder of
-# this lock that outlives the lock wait of the install itself is reported.
-_LOCK_WAIT_SECONDS = 1800  # source: scripts/launcher_deps.py _LOCK_WAIT_SECONDS
 
 
 def require_host_data() -> None:
@@ -163,8 +160,10 @@ def run(deps_dir: str, launcher: str) -> int:
     Postcondition: 0 iff both sets are stamped for this uv.lock and the model
     is cached (or the operator opted out of the download); otherwise 1 with the
     cause printed and recorded. A concurrent Setup of the same set is waited
-    for, not duplicated. On success the sets no installed version references
-    are removed.
+    for as long as it runs (the kernel releases its lock when it exits, so no
+    clock decides that it failed), not duplicated. On success the sets no
+    installed version references are removed; a path that could not be removed
+    is printed and recorded, and does not change the exit code.
     """
     log_file = launcher_logs.rotate(log_path(deps_dir))
     with log_file.open("a", encoding="utf-8") as log:
@@ -177,12 +176,9 @@ def run(deps_dir: str, launcher: str) -> int:
 
 
 def _run_locked(deps_dir: str, launcher: str, log) -> int:
-    try:
-        with launcher_lock.held(job_lock(deps_dir), _LOCK_WAIT_SECONDS):
-            _record(deps_dir, "installing")
-            code = _install(deps_dir, launcher, log)
-    except launcher_lock.LockTimeoutError as exc:
-        return _fail(deps_dir, str(exc))
+    with launcher_lock.held(job_lock(deps_dir), None):
+        _record(deps_dir, "installing")
+        code = _install(deps_dir, launcher, log)
     if code == 0:
         root = os.environ.get("CORTEX_RUNNING_ROOT") or os.environ.get(
             "CLAUDE_PLUGIN_ROOT", ""
@@ -191,4 +187,10 @@ def _run_locked(deps_dir: str, launcher: str, log) -> int:
         removed = launcher_gc.collect(root, data) if root else []
         if removed:
             _say(f"removed {len(removed)} unreferenced paths of earlier sets")
+        left = launcher_gc.failed_removals(data) if root else {}
+        if left:
+            _say(
+                f"could not remove {len(left)} paths of earlier sets (listed "
+                f"above, recorded in {Path(data) / launcher_gc.FAILED})"
+            )
     return code

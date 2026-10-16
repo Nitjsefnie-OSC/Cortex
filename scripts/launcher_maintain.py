@@ -8,10 +8,9 @@ installed, or an installed set is no longer referenced, it starts ONE detached
 the unreferenced sets. The hook itself reads three small JSON files and hashes
 at most three uv.lock files; it installs and removes nothing.
 
-At a session start the job also asks the git remote (``launcher_remote``) whether
-the next release is out, because ``claude plugin update`` refreshes the clone and
-applies the update in one command (measured, Claude Code 2.1.300): the clone alone
-cannot announce an update before it is applied.
+The job reads only what is on this machine: it never asks the marketplace's
+git remote whether a release is out (owner decision 2026-10-16), so the next
+version's set is installed ahead only when the local clone already holds it.
 
 source: ADR-1108
 """
@@ -24,18 +23,15 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-import launcher_base_job
 import launcher_gc
 import launcher_installed
 import launcher_layout
 import launcher_lock
 import launcher_logs
 import launcher_ml
-import launcher_remote
 import launcher_setup
 
 JOB = "--maintain-job"  # source: ADR-1108
-REMOTE_ENV = "CORTEX_REMOTE_CHECK"  # source: ADR-1108 (set by a session start)
 
 
 @dataclass(frozen=True)
@@ -44,10 +40,9 @@ class Plan:
 
     install: Path | None
     stale: bool
-    check_remote: bool = False
 
     def empty(self) -> bool:
-        return self.install is None and not self.stale and not self.check_remote
+        return self.install is None and not self.stale
 
 
 def job_lock(data: str) -> str:
@@ -58,11 +53,13 @@ def job_log(data: str) -> Path:
     return Path(data) / "maintain.log"
 
 
-def plan(running_root: str, data: str, remote: bool = False) -> Plan:
+def plan(running_root: str, data: str) -> Plan:
     """The work to do now. Reads only; installs and removes nothing.
 
-    ``remote``: this is a session start, so the job also asks the git remote
-    whether the next release is out (the one network call, made by the job).
+    Old sets are work only when a doomed path is not already recorded as
+    impossible to remove (``launcher_gc.failed_removals``): a path the last
+    collection could not remove does not start a job on every prompt; a new
+    unreferenced set, or a successful Setup, collects again.
     """
     installed = launcher_installed.find(running_root, data)
     if installed is None:
@@ -79,20 +76,18 @@ def plan(running_root: str, data: str, remote: bool = False) -> Plan:
         if key is not None and not launcher_layout.both_stamped(data, key):
             install = following
     keep = launcher_gc.referenced_keys(running_root, data)
-    stale = bool(keep is not None and launcher_gc.doomed(Path(data), keep))
-    return Plan(install, stale, remote)
+    stale = keep is not None and launcher_gc.has_new_work(data, keep)
+    return Plan(install, stale)
 
 
-def start_if_needed(
-    running_root: str, deps_dir: str, launcher: str, remote: bool = False
-) -> bool:
+def start_if_needed(running_root: str, deps_dir: str, launcher: str) -> bool:
     """Start the detached job when there is work and none runs; True iff started.
 
     Never waits, installs or removes. A failure to read the host's records is
     "no work".
     """
     data = str(launcher_layout.data_dir(deps_dir))
-    if plan(running_root, data, remote).empty():
+    if plan(running_root, data).empty():
         return False
     with launcher_lock.held_if_free(job_lock(data)) as free:
         if not free:
@@ -100,7 +95,6 @@ def start_if_needed(
     log = launcher_logs.rotate(job_log(data))
     env = dict(os.environ)
     env["CORTEX_RUNNING_ROOT"] = running_root
-    env[REMOTE_ENV] = "1" if remote else ""
     with log.open("ab") as sink:
         subprocess.Popen(
             [sys.executable, launcher, JOB],
@@ -129,29 +123,21 @@ def _setup(tree: Path, running_root: str, data: str) -> int:
 def run(running_root: str, data: str) -> int:
     """The job body: install the next set when due, then collect old sets.
 
-    Postcondition: a second job returns at once (the lock); the next tree's
-    own ``launcher.py --setup`` ran to completion (its exit code is returned)
-    or there was none; unreferenced sets were collected (by that Setup run on
-    success, here otherwise). The next tree is the marketplace clone's, or at a
-    session start the git remote's when the remote is ahead of the clone
-    (``launcher_remote``; every failure there is "nothing to do").
+    Postcondition: a second job returns at once (the lock); the marketplace
+    clone's own ``launcher.py --setup`` ran to completion (its exit code is
+    returned) or there was none to run; unreferenced sets were collected (by
+    that Setup run on success, here otherwise). 1 when a path could not be
+    removed: ``launcher_gc.collect`` printed each one with its cause and
+    recorded it. Runs no git and reaches no remote.
     """
     with launcher_lock.held_if_free(job_lock(data)) as mine:
         if not mine:
             return 0
-        work = plan(running_root, data, os.environ.get(REMOTE_ENV) == "1")
+        work = plan(running_root, data)
         if work.install is not None:
             return _setup(work.install, running_root, data)
-        installed = launcher_installed.find(running_root, data)
-        if work.check_remote and installed is not None:
-            tree = launcher_remote.prepare(installed, data, running_root)
-            if tree is not None:
-                try:
-                    return _setup(tree, running_root, data)
-                finally:
-                    launcher_remote.discard(data)
         launcher_gc.collect(running_root, data)
-        return 0
+        return 1 if launcher_gc.failed_removals(data) else 0
 
 
 # The hooks that look for the next version's set and for old sets to drop:
@@ -170,12 +156,7 @@ def after_runtime(module: str, plugin_root: str, deps_dir: str, launcher: str) -
         launcher_gc.mark_in_use(deps_dir)
     elif module in HOOKS:
         try:
-            start_if_needed(
-                plugin_root,
-                deps_dir,
-                launcher,
-                remote=module == launcher_base_job.SESSION_START,
-            )
+            start_if_needed(plugin_root, deps_dir, launcher)
         except OSError as exc:
             print(f"[cortex-launcher] maintenance not started: {exc}", file=sys.stderr)
 
