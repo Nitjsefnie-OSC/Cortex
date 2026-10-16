@@ -75,11 +75,16 @@ def mark_in_use(deps_dir: str) -> None:
 
 
 def in_use(deps_dir: str) -> bool:
-    """True iff a live process registered itself as a user of ``deps_dir``."""
+    """True iff a live process registered itself as a user of ``deps_dir``.
+
+    No registry directory means no user. A registry that exists but cannot be
+    listed raises OSError: the users are unknown, and a set is never removed
+    on a guess (the maintain job's log shows the cause).
+    """
     directory = _users_dir(deps_dir)
     try:
         names = os.listdir(directory)
-    except OSError:
+    except FileNotFoundError:
         return False
     live = False
     for name in names:
@@ -115,11 +120,15 @@ def _keys(
 
 
 def doomed(data: Path, keep: set[str]) -> list[Path]:
-    """The set directories and sidecars of ``data`` whose key is not in ``keep``."""
+    """The set directories and sidecars of ``data`` whose key is not in ``keep``.
+
+    No ``sets/`` directory means nothing to remove; one that cannot be listed
+    raises OSError.
+    """
     sets = data / launcher_layout.SETS
     try:
         names = sorted(os.listdir(sets))
-    except OSError:
+    except FileNotFoundError:
         return []
     by_key: dict[str, list[Path]] = {}
     for name in names:

@@ -246,3 +246,16 @@ def test_the_plugin_id_is_the_manifests_plugin_at_marketplace(job_mod):
         (REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8")
     )
     assert job_mod.PLUGIN_ID == f"{manifest['name']}@{market['name']}"
+
+
+def test_a_corrupt_failure_stamp_is_a_failure_not_none(
+    job_mod, deps_dir, spawned, capsys
+):
+    """Read as "no failure", a corrupt stamp would start a job on every hook."""
+    Path(deps_dir).parent.mkdir(parents=True)
+    Path(f"{deps_dir}.base-job.failed").write_text("{not json", encoding="utf-8")
+    assert "unreadable" in job_mod.last_failure(deps_dir)
+    with pytest.raises(SystemExit):
+        job_mod.refuse(deps_dir, "launcher.py", "cause")
+    assert spawned == []
+    assert "unreadable" in capsys.readouterr().err

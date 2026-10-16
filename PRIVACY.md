@@ -74,15 +74,20 @@ that every optional retrieval source was available.
 
 The only outbound network activity is:
 
-1. **One-time runtime install (Claude Code plugin).** The first launch
-   downloads, into the plugin's data directory
-   (`~/.claude/plugins/data/hypermnesia-mcp-cortex-plugins/`): the pinned uv
-   and the locked Python packages from PyPI (hash-checked against `uv.lock`),
-   then, in one background job, the machine-learning packages and the
-   embedding model below; and, only when the machine's `python3` is older
-   than 3.10, CPython 3.12.13 from the python-build-standalone releases on
-   GitHub, through uv. These transfers fetch software only; no user content
-   is sent. `CORTEX_EMBEDDING_ZERO_DOWNLOAD=1` skips the background job.
+1. **Runtime install, once per locked dependency set (Claude Code plugin).**
+   The plugin's Setup hook (`claude --init-only`), or, when it did not run,
+   the MCP server and one detached background job, download into the plugin's
+   data directory (`~/.claude/plugins/data/hypermnesia-mcp-cortex-plugins/`):
+   the pinned uv and the locked Python packages from PyPI (hash-checked
+   against `uv.lock`), the machine-learning packages and the embedding model
+   below; and, only when the machine's `python3` is older than 3.10, CPython
+   3.12.13 from the python-build-standalone releases on GitHub, through uv.
+   This happens again only for a plugin version whose `uv.lock` locks a
+   different dependency set, including ahead of an update when the local
+   marketplace clone already holds that version. Nothing asks a git remote
+   whether a release is out. These transfers fetch software only; no user
+   content is sent. `CORTEX_EMBEDDING_ZERO_DOWNLOAD=1` skips the
+   machine-learning packages and the model.
 2. **One-time model download.** On first use, the open-source embedding model
    (`sentence-transformers`, all-MiniLM-L6-v2) and the reranking model
    (`flashrank`, ms-marco-MiniLM) are downloaded from the public Hugging Face

@@ -191,9 +191,10 @@ def sweep_stale_backups(deps_dir: str) -> None:
 
 
 def sweep_stale_scratch(deps_dir: str) -> None:
-    """Best-effort removal of install scratch left by a process that died.
+    """Removal of install scratch left by a process that died.
 
-        Precondition: none -- a missing/unreadable parent is a silent no-op.
+        Precondition: none -- a missing parent is a no-op; one that cannot be
+        listed is named on stderr with the cause.
         Postcondition: every sibling ``<deps>.tmp-<pid>`` (an install's
         ``--target``) of ``deps_dir`` and every ``uv-<version>.tmp-<pid>`` (the
         uv bootstrap's scratch) in the plugin data directory whose ``<pid>`` no
@@ -203,7 +204,6 @@ def sweep_stale_scratch(deps_dir: str) -> None:
         each holding only uv's ``.lock``, were found in one plugin data
         directory (2026-10-14).
 
-    source: ADR-1108
     source: ADR-1108"""
     parent, base = os.path.split(os.path.abspath(deps_dir))
     _sweep_dead(parent, re.compile(rf"^{re.escape(base)}\.tmp-(?P<pid>\d+)$"))
@@ -213,7 +213,14 @@ def sweep_stale_scratch(deps_dir: str) -> None:
 def _sweep_dead(directory: str, pattern: re.Pattern[str]) -> None:
     try:
         children = os.listdir(directory)
-    except OSError:
+    except FileNotFoundError:
+        return
+    except OSError as exc:  # the scratch stays; the next sweep retries, and said so
+        print(
+            f"[cortex-launcher] could not list {directory} for dead install "
+            f"scratch: {exc}",
+            file=sys.stderr,
+        )
         return
     for name in children:
         match = pattern.match(name)

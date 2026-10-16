@@ -117,7 +117,8 @@ def _ensure_runtime(module: str, install_deps: bool, deps_dir: str) -> None:
 
     Precondition: ``module`` is a hook, the MCP server or a job.
     Postcondition: a hook returns only when the base set is installed and
-    installs nothing (``launcher_base_job.require_ready`` exits 1 otherwise);
+    installs nothing (otherwise ``launcher_base_job.refuse`` exits: 0 with a
+    notice for a gate and SessionStart, 1 for every other hook);
     the server installs the base set; the semantic-search job and
     ``--install-deps`` install base + ML. The SessionStart launch then starts
     the semantic-search job and tells the hook where it stands.

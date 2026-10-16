@@ -204,3 +204,21 @@ def test_a_later_collection_that_removes_it_clears_the_record(mods, tmp_path):
     assert str(old) in gc.collect(str(host.running), str(host.data))
     assert not old.exists()
     assert gc.failed_removals(str(host.data)) == {}
+
+
+def test_a_user_registry_that_cannot_be_listed_removes_nothing(mods, tmp_path):
+    """Unknown users are not "no users": the set a live server imports from stays."""
+    gc, _ = mods
+    host = Host(tmp_path)
+    old = host.make_set("old0000000000000")
+    users = Path(f"{old}.users")
+    users.mkdir()
+    users.chmod(0o000)
+    try:
+        if os.access(users, os.R_OK):
+            pytest.skip("permissions are not enforced for this user")
+        with pytest.raises(PermissionError):
+            gc.collect(str(host.running), str(host.data))
+        assert old.exists()
+    finally:
+        users.chmod(0o755)

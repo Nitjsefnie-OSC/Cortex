@@ -70,11 +70,20 @@ def _failure_stamp(deps_dir: str) -> Path:
 
 
 def last_failure(deps_dir: str) -> str:
-    """Why the last job for this set failed, "" when it did not (or was retried)."""
+    """Why the last job for this set failed, "" when no failure stamp exists.
+
+    A stamp that exists but cannot be read or parsed is a failure too, named
+    as such: reading it as "no failure" would start a job on every hook call,
+    the loop the stamp exists to stop. Setup removes the stamp on success.
+    """
+    stamp = _failure_stamp(deps_dir)
     try:
-        return json.loads(_failure_stamp(deps_dir).read_text(encoding="utf-8"))["error"]
-    except (OSError, ValueError, KeyError):
+        error = json.loads(stamp.read_text(encoding="utf-8"))["error"]
+    except FileNotFoundError:
         return ""
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return f"the failure stamp {stamp} is unreadable ({exc!r})"
+    return str(error) or f"the failure stamp {stamp} names no cause"
 
 
 def _running(deps_dir: str) -> bool:
