@@ -4,7 +4,7 @@ uv.lock is the only dependency source. ``uv export`` turns one set of it
 into a ``pylock.toml`` whose every wheel carries its exact URL and sha256,
 and ``uv pip install --target`` installs that file, verifying each hash.
 When no uv at the pinned version is on PATH, pip installs that uv wheel,
-hash-checked, into a private directory next to ``deps_dir``.
+hash-checked, into a private directory in the plugin data directory.
 
 source: ADR-1092"""
 
@@ -18,6 +18,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import launcher_layout as _layout
 import launcher_pip as _pip
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -68,8 +69,9 @@ class LockedSetError(RuntimeError):
 
 
 def private_dir(deps_dir: str) -> Path:
-    """Where the bootstrapped uv lives: beside ``deps_dir``, one per version."""
-    return Path(f"{deps_dir}.uv-{UV_VERSION}")
+    """Where the bootstrapped uv lives: in plugin data, one per version, shared
+    by every set (source: ADR-1108)."""
+    return _layout.data_dir(deps_dir) / f"uv-{UV_VERSION}"
 
 
 def _binary_in(directory: Path) -> Path | None:

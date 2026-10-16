@@ -139,5 +139,50 @@ class MainCliTests(unittest.TestCase):
         self.assertEqual(kwargs.get("file"), sys.stderr)
 
 
+class StampedSetLayoutTests(unittest.TestCase):
+    """The check reads ``<data>/sets/<key>/``, the set the installer wrote,
+    never the pre-ADR-1108 flat ``<data>/deps/`` (the CI regression)."""
+
+    def _data_with_set(self, *dist_infos: str) -> Path:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        data = Path(tmp.name)
+        set_dir = parity.installed_set_dir(str(data))
+        for dist_info in dist_infos:
+            name = dist_info.split("-")[0].replace("_", "-")
+            d = set_dir / dist_info
+            d.mkdir(parents=True)
+            (d / "METADATA").write_text(
+                f"Metadata-Version: 2.1\nName: {name}\nVersion: 0.0.0\n",
+                encoding="utf-8",
+            )
+        return data
+
+    def test_set_dir_is_under_sets_in_the_data_dir(self) -> None:
+        set_dir = parity.installed_set_dir("/data")
+        self.assertEqual(set_dir.parent, Path("/data") / "sets")
+
+    def test_passes_when_the_declared_package_is_in_the_set(self) -> None:
+        data = self._data_with_set("sqlite_vec-0.1.9.dist-info")
+        with mock.patch("builtins.print"):
+            self.assertEqual(parity.main([str(data)]), 0)
+
+    def test_fails_when_the_declared_package_is_missing_from_the_set(self) -> None:
+        data = self._data_with_set("other_pkg-1.0.dist-info")
+        with mock.patch("builtins.print"):
+            self.assertEqual(parity.main([str(data)]), 1)
+
+    def test_a_package_only_in_the_legacy_flat_dir_does_not_count(self) -> None:
+        data = self._data_with_set()
+        legacy = data / "deps" / "sqlite_vec-0.1.9.dist-info"
+        legacy.mkdir(parents=True)
+        (legacy / "METADATA").write_text(
+            "Metadata-Version: 2.1\nName: sqlite-vec\nVersion: 0.1.9\n",
+            encoding="utf-8",
+        )
+        with mock.patch("builtins.print"):
+            self.assertEqual(parity.main([str(data)]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

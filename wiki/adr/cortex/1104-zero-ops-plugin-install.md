@@ -12,6 +12,8 @@ title: Zero-ops plugin install
 
 accepted
 
+Decision 4 below (the SessionStart hook installs the base set, 300 s) is superseded by ADR-1108: Setup installs, no hook does, and sets live per lock. The other decisions stand.
+
 ## Context
 
 The owner's requirement: `claude plugin marketplace add cdeust/Cortex` then `claude plugin install hypermnesia-mcp@cortex-plugins` gives "Cortex ready" at the first session, with working tools and a working remember then recall, and no other intervention. `scripts/install_e2e/run.py` runs exactly that on an isolated HOME with the real Claude Code CLI (2.1.296): `claude --init-only --debug-file` runs the plugin's SessionStart hook under the host's own timeout while `claude mcp list` connects the plugin's MCP server, then the server is driven over stdio. On main (eb2c2acc), 2026-10-14, it measured:

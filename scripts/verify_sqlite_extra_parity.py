@@ -4,16 +4,20 @@ package (issue #634's root cause, generalized).
 
 The launcher-base group and the installer set (scripts/launcher_sets.py)
 are what ``ensure_deps()``/``scripts/setup.py::install_deps()`` actually
-install into ``deps/``. pyproject.toml's own [sqlite] extra is the source
-of truth for what the SQLite backend needs. Issue #634 shipped because the
-launcher never named sqlite-vec while a CI shortcut that always inherited
-[sqlite] did -- so Windows CI ran a dependency set no real user ever
-received. This checks the deps directory the REAL install path
-(``install-plugin.sh`` -> ``scripts/setup.py``) actually populated,
-against pyproject.toml directly.
+install into the set directory ``<data>/sets/<key>/``. pyproject.toml's own
+[sqlite] extra is the source of truth for what the SQLite backend needs.
+Issue #634 shipped because the launcher never named sqlite-vec while a CI
+shortcut that always inherited [sqlite] did -- so Windows CI ran a
+dependency set no real user ever received. This checks the set directory
+the REAL install path (``install-plugin.sh`` -> ``scripts/setup.py``)
+actually populated, against pyproject.toml directly. The caller names the
+plugin DATA directory; the set directory is resolved here with the
+launcher's own layout API (``launcher_layout.project_deps_dir``), so the
+check never hardcodes where a set lives.
 
 source: ADR-1092
-source: ADR-1091"""
+source: ADR-1091
+source: ADR-1108"""
 
 from __future__ import annotations
 
@@ -22,7 +26,12 @@ import re
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+import launcher_layout  # noqa: E402 — sibling module, resolvable only once SCRIPT_DIR is on sys.path
+
+REPO_ROOT = SCRIPT_DIR.parent
 PYPROJECT_TOML = REPO_ROOT / "pyproject.toml"
 
 # The `sqlite = [...]` TOML array under [project.optional-dependencies]:
@@ -79,13 +88,23 @@ def missing_from_deps_dir(names: list[str], deps_dir: Path) -> list[str]:
     return sorted(name for name in names if _normalize(name) not in installed)
 
 
+def installed_set_dir(data_dir: str, project: Path = REPO_ROOT) -> Path:
+    """The set directory plugin tree ``project`` installs into under ``data_dir``.
+
+    postcondition: the directory the real install path writes for this
+    tree's uv.lock key (``launcher_layout.project_deps_dir``); it may not
+    exist, and ``missing_from_deps_dir`` then reports every name missing.
+    """
+    return Path(launcher_layout.project_deps_dir(data_dir, project))
+
+
 def main(argv: list[str]) -> int:
     """Standalone entry point:
-    ``python3 scripts/verify_sqlite_extra_parity.py <deps_dir>``."""
+    ``python3 scripts/verify_sqlite_extra_parity.py <plugin_data_dir>``."""
     if len(argv) != 1:
-        print("usage: verify_sqlite_extra_parity.py <deps_dir>", file=sys.stderr)
+        print("usage: verify_sqlite_extra_parity.py <plugin_data_dir>", file=sys.stderr)
         return 2
-    deps_dir = Path(argv[0])
+    deps_dir = installed_set_dir(argv[0])
 
     names = sqlite_extra_names(PYPROJECT_TOML.read_text(encoding="utf-8"))
     missing = missing_from_deps_dir(names, deps_dir)

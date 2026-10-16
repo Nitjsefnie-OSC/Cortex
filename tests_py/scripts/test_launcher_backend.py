@@ -1,4 +1,4 @@
-"""scripts/launcher.py ``_apply_backend``: one backend for the server and hooks.
+"""scripts/launcher_backend.py ``apply``: one backend for the server and hooks.
 
 Measured on main (2026-10-14, isolated HOME, no marker): the launcher set
 ``DATABASE_URL=postgresql://localhost:5432/cortex`` for every process, so a
@@ -25,7 +25,8 @@ import json, os, sys
 sys.path.insert(0, sys.argv[1])
 import launcher
 launcher._set_import_paths(sys.argv[2], sys.argv[3])
-launcher._apply_backend()
+import launcher_backend
+launcher_backend.apply()
 print(json.dumps({k: os.environ.get(k) for k in
     ("CORTEX_MEMORY_STORE_BACKEND", "DATABASE_URL")}))
 """

@@ -190,6 +190,52 @@ def sweep_stale_backups(deps_dir: str) -> None:
                 os.remove(target)
 
 
+def sweep_stale_scratch(deps_dir: str) -> None:
+    """Removal of install scratch left by a process that died.
+
+        Precondition: none -- a missing parent is a no-op; one that cannot be
+        listed is named on stderr with the cause.
+        Postcondition: every sibling ``<deps>.tmp-<pid>`` (an install's
+        ``--target``) of ``deps_dir`` and every ``uv-<version>.tmp-<pid>`` (the
+        uv bootstrap's scratch) in the plugin data directory whose ``<pid>`` no
+        longer identifies a live process has been removed, or is named on
+        stderr with the cause it could not be removed (the next sweep retries). A
+        killed install never reaches its own cleanup: 64 such directories,
+        each holding only uv's ``.lock``, were found in one plugin data
+        directory (2026-10-14).
+
+    source: ADR-1108"""
+    parent, base = os.path.split(os.path.abspath(deps_dir))
+    _sweep_dead(parent, re.compile(rf"^{re.escape(base)}\.tmp-(?P<pid>\d+)$"))
+    _sweep_dead(os.path.dirname(parent), re.compile(r"^uv-[\w.]+\.tmp-(?P<pid>\d+)$"))
+
+
+def _sweep_dead(directory: str, pattern: re.Pattern[str]) -> None:
+    try:
+        children = os.listdir(directory)
+    except FileNotFoundError:
+        return
+    except OSError as exc:  # the scratch stays; the next sweep retries, and said so
+        print(
+            f"[cortex-launcher] could not list {directory} for dead install "
+            f"scratch: {exc}",
+            file=sys.stderr,
+        )
+        return
+    for name in children:
+        match = pattern.match(name)
+        if match is None or pid_alive(int(match.group("pid"))):
+            continue
+        try:
+            shutil.rmtree(os.path.join(directory, name))
+        except OSError as exc:  # left for the next sweep, and said so
+            print(
+                f"[cortex-launcher] could not remove dead install scratch "
+                f"{os.path.join(directory, name)}: {exc}",
+                file=sys.stderr,
+            )
+
+
 def prune_superseded_dist_info(deps_dir: str, committed_entry: str) -> None:
     """Best-effort removal of stale ``dist-info`` siblings after a commit.
 

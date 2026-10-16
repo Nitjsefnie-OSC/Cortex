@@ -51,12 +51,20 @@ publish **no CO₂ or energy figure**, because we have not measured one.
 ```bash
 claude plugin marketplace add cdeust/Cortex
 claude plugin install hypermnesia-mcp
+claude --init-only
 ```
 
-Update the same way, one command:
+`claude --init-only` runs the plugin's Setup hook, which installs Cortex's runtime (base
+dependencies, semantic search and its embedding model) before your first session. It prints
+nothing and exits 0 even when the install fails (Claude Code discards a Setup hook's output), so
+to watch the progress and get a failing exit code, run `scripts/init_plugin.py` from the installed
+plugin instead (its path is `installPath` in `claude plugin list --json`).
+
+Update the same way, one command, then initialise again:
 
 ```bash
 claude plugin update hypermnesia-mcp
+claude --init-only
 ```
 
 **Claude Desktop** — download `hypermnesia-mcp.mcpb` from
@@ -85,11 +93,19 @@ server and get the same tools. See [launch commands](#every-other-mcp-host).
 WSL, TLS client certificates and corporate proxies are covered in
 [deployment scenarios](docs/deployment-scenarios.md).
 
-The first session installs Cortex's runtime into the plugin's data directory (about a minute
-on a cold machine; a Mac whose `python3` is older than 3.10 also gets a private CPython 3.12),
-then shows `Cortex ready: <store>, <n> memories; <how recall ranks>`, or `Cortex not ready:`
-with the cause. Semantic search installs in the background; until it lands the same line says
-recall is keyword-only.
+Cortex's dependencies live in the plugin's data directory, one directory per locked
+dependency set (`sets/<key>`), so an update that does not change the locked dependencies (most
+releases: 21 of 29 from v4.9.0 to v4.23.5) finds its set installed. A background job removes the
+sets no installed version references; it makes no network call. When a set is missing (the first
+session after an install, or after an update that changes the locked dependencies, when
+`claude --init-only` did not run first), no hook installs: SessionStart says
+`Cortex is installing its dependencies (about 2 minutes, about 5 with semantic search); memory is
+available when it is done`, the Edit/Write guards let edits through and say that the Cortex gate is
+inactive until then, and the MCP server installs the set in the background; the next session (or
+the same one, once done) shows `Cortex ready: <store>, <n> memories; <how recall ranks>`.
+`claude --init-only` (or `python3 scripts/init_plugin.py`, which shows progress) installs
+everything before the first session; only with it does that session start ready. To work
+without Cortex, offline or not, run `claude plugin disable hypermnesia-mcp@cortex-plugins`.
 
 The first use creates a local SQLite store under `~/.claude/methodology/`. Models are downloaded
 once when needed and then run offline. The embedding and reranking model files are both fetched

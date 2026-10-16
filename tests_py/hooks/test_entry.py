@@ -5,8 +5,7 @@ Source: this PR's specification (Codex plugin wave, PR 1). A Codex plugin
 ships only its own directory and calls
 ``uvx --from "hypermnesia-mcp[postgresql,sqlite]" hypermnesia-mcp-hook
 <module>``, so the eleven hook modules the Claude Code plugin manifest
-wires (.claude-plugin/plugin.json) must be runnable without
-scripts/launcher.py.
+wires (.claude-plugin/plugin.json) must be runnable without scripts/launcher.py.
 
 Parity: mcp_server.hooks.entry must behave exactly like scripts/launcher.py
 for every allowlisted module on a benign event, because both are meant to
@@ -26,6 +25,7 @@ from unittest.mock import patch
 import pytest
 
 from tests_py._hermetic_hook_env import await_capture_worker_exit, hermetic_hook_env
+from tests_py._launcher_ready import ready_launcher_argv
 
 # tomllib is 3.11+; requires-python is >=3.10 (pyproject.toml), so the
 # fallback backport is used on 3.10, exactly like build/hatchling's own
@@ -96,7 +96,7 @@ def test_entry_matches_launcher_on_benign_event(module: str, tmp_path: Path) -> 
         cwd=project,
     )
     via_launcher = subprocess.run(
-        [sys.executable, str(LAUNCHER_PATH), f"mcp_server.hooks.{module}"],
+        ready_launcher_argv(LAUNCHER_PATH, f"mcp_server.hooks.{module}"),
         input=event,
         capture_output=True,
         encoding="utf-8",

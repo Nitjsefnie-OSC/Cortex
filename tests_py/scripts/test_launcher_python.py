@@ -42,7 +42,7 @@ def execs(py_mod, monkeypatch) -> list:
 
 def test_a_supported_python_is_used_as_is(py_mod, execs, monkeypatch):
     monkeypatch.setattr(py_mod, "provide", lambda d: pytest.fail("provided"))
-    py_mod.ensure_supported("/data/deps", "/plugin/scripts/launcher.py")
+    py_mod.ensure_supported("/data/sets/k", "/plugin/scripts/launcher.py")
     assert execs == []
 
 
@@ -50,7 +50,7 @@ def test_an_old_python_reexecs_on_the_installed_one(py_mod, execs, monkeypatch):
     monkeypatch.setattr(py_mod, "supported", lambda: False)
     monkeypatch.setattr(py_mod, "installed", lambda d: "/data/python/bin/python3.12")
     monkeypatch.setattr(py_mod.sys, "argv", ["launcher.py", "mcp_server"])
-    py_mod.ensure_supported("/data/deps", "/plugin/scripts/launcher.py")
+    py_mod.ensure_supported("/data/sets/k", "/plugin/scripts/launcher.py")
     assert execs == [
         (
             "/data/python/bin/python3.12",
@@ -67,7 +67,7 @@ def test_an_old_python_installs_the_pinned_one_first(py_mod, execs, monkeypatch)
     monkeypatch.setattr(py_mod, "supported", lambda: False)
     monkeypatch.setattr(py_mod, "installed", lambda d: None)
     monkeypatch.setattr(py_mod, "provide", lambda d: "/data/python/bin/python3.12")
-    py_mod.ensure_supported("/data/deps", "launcher.py")
+    py_mod.ensure_supported("/data/sets/k", "launcher.py")
     assert execs[0][0] == "/data/python/bin/python3.12"
 
 
@@ -80,7 +80,7 @@ def test_no_python_to_install_is_a_loud_stop(py_mod, execs, monkeypatch, capsys)
 
     monkeypatch.setattr(py_mod, "provide", offline)
     with pytest.raises(SystemExit) as stopped:
-        py_mod.ensure_supported("/data/deps", "launcher.py")
+        py_mod.ensure_supported("/data/sets/k", "launcher.py")
     assert stopped.value.code == 1
     err = capsys.readouterr().err
     assert ">= 3.10" in err and py_mod.MANAGED_PYTHON in err
@@ -89,11 +89,11 @@ def test_no_python_to_install_is_a_loud_stop(py_mod, execs, monkeypatch, capsys)
 
 
 def test_the_managed_python_lives_in_plugin_data(py_mod):
-    assert py_mod.managed_dir("/data/deps") == Path("/data/python")
+    assert py_mod.managed_dir("/data/sets/k") == Path("/data/python")
 
 
 def test_installed_reads_the_record_provide_wrote(py_mod, tmp_path, monkeypatch):
-    deps_dir = str(tmp_path / "deps")
+    deps_dir = str(tmp_path / "sets" / "k")
     assert py_mod.installed(deps_dir) is None
     python = tmp_path / "python" / "cpython" / "bin" / "python3.12"
     python.parent.mkdir(parents=True)
@@ -129,7 +129,7 @@ def test_provide_runs_the_pinned_uv_with_a_private_install_dir(
     monkeypatch.setattr(py_mod._uv, "locate", lambda d: "/data/deps.uv/bin/uv")
     monkeypatch.setattr(py_mod.subprocess, "run", run)
     monkeypatch.setattr(py_mod, "_record", lambda d: tmp_path / "interpreter")
-    assert py_mod.provide("/data/deps") == "/data/python/cpython/bin/python3.12"
+    assert py_mod.provide("/data/sets/k") == "/data/python/cpython/bin/python3.12"
     argv, env = seen[0]
     assert argv == [
         "/data/deps.uv/bin/uv", "python", "find", py_mod.MANAGED_PYTHON,
@@ -137,3 +137,23 @@ def test_provide_runs_the_pinned_uv_with_a_private_install_dir(
     ]  # fmt: skip
     assert env["UV_PYTHON_INSTALL_DIR"] == str(Path("/data/python"))
     assert env["UV_NO_CACHE"] == "1"
+
+
+def test_a_hook_never_downloads_a_python(py_mod, execs, monkeypatch):
+    """A hook's time budget does not fit a CPython download (ADR-1108): with
+    none installed it raises before ``provide`` or any uv call."""
+    monkeypatch.setattr(py_mod, "supported", lambda: False)
+    monkeypatch.setattr(py_mod, "installed", lambda d: None)
+    monkeypatch.setattr(py_mod, "provide", lambda d: pytest.fail("provided"))
+    with pytest.raises(py_mod.NotProvidedError, match="not installed yet"):
+        py_mod.ensure_supported("/data/sets/k", "launcher.py", may_provide=False)
+    assert execs == []
+
+
+def test_a_hook_still_reexecs_on_an_installed_python(py_mod, execs, monkeypatch):
+    monkeypatch.setattr(py_mod, "supported", lambda: False)
+    monkeypatch.setattr(py_mod, "installed", lambda d: "/data/python/bin/python3.12")
+    monkeypatch.setattr(py_mod, "provide", lambda d: pytest.fail("provided"))
+    monkeypatch.setattr(py_mod.sys, "argv", ["launcher.py", "mcp_server.hooks.x"])
+    py_mod.ensure_supported("/data/sets/k", "launcher.py", may_provide=False)
+    assert len(execs) == 1

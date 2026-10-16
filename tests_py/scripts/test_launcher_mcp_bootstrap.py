@@ -103,6 +103,9 @@ def test_answers_locally_until_the_server_is_up(modules):
     assert by_id[1]["result"] == {"tools": []}
     assert by_id[2]["result"] == {}
     assert by_id[3]["error"]["code"] == wire.NOT_READY_CODE
+    # The call a user's model makes during the install is told how long it takes.
+    message = by_id[3]["error"]["message"]
+    assert "installing its dependencies" in message and "about 2 minutes" in message
     stand_in.close()
 
 

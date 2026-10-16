@@ -52,14 +52,14 @@ def test_locate_prefers_path_uv_only_at_the_pinned_version(uv_mod, monkeypatch):
 
 
 def test_locate_reuses_an_already_bootstrapped_copy(uv_mod, monkeypatch, tmp_path):
-    deps = str(tmp_path / "deps")
+    deps = str(tmp_path / "sets" / "k")
     binary = uv_mod.private_dir(deps) / "bin" / "uv"
     binary.parent.mkdir(parents=True)
     binary.write_text("binary")
     monkeypatch.setattr(uv_mod.shutil, "which", lambda _name: None)
     monkeypatch.setattr(uv_mod, "_bootstrap", lambda _d: pytest.fail("bootstrapped"))
     assert uv_mod.locate(deps) == str(binary)
-    assert uv_mod.private_dir(deps).name == f"deps.uv-{uv_mod.UV_VERSION}"
+    assert uv_mod.private_dir(deps).name == f"uv-{uv_mod.UV_VERSION}"
 
 
 @pytest.mark.parametrize(
@@ -123,7 +123,7 @@ def fs_calls(uv_mod, monkeypatch) -> dict[str, list]:
 def test_bootstrap_installs_the_pinned_wheel_beside_deps(
     uv_mod, monkeypatch, tmp_path, fs_calls, capsys
 ):
-    deps = str(tmp_path / "not-yet" / "deps")
+    deps = str(tmp_path / "not-yet" / "sets" / "k")
     seen = {}
 
     def fake_install(command, environment):
@@ -158,7 +158,7 @@ def test_bootstrap_writes_the_exact_hash_pinned_requirement(
         return _done()
 
     monkeypatch.setattr(uv_mod._pip, "run_install", fake_install)
-    uv_mod._bootstrap(str(tmp_path / "deps"))
+    uv_mod._bootstrap(str(tmp_path / "sets" / "k"))
     hashes = " ".join(f"--hash=sha256:{h}" for h in uv_mod.UV_HASHES)
     assert written["text"] == f"uv=={uv_mod.UV_VERSION} {hashes}\n"
 
@@ -166,7 +166,7 @@ def test_bootstrap_writes_the_exact_hash_pinned_requirement(
 def test_bootstrap_replaces_an_interrupted_copy_without_binary(
     uv_mod, monkeypatch, tmp_path, fs_calls
 ):
-    deps = str(tmp_path / "deps")
+    deps = str(tmp_path / "sets" / "k")
     (uv_mod.private_dir(deps) / "uv").mkdir(parents=True)
     monkeypatch.setattr(
         uv_mod._pip,
@@ -178,7 +178,7 @@ def test_bootstrap_replaces_an_interrupted_copy_without_binary(
 
 
 def test_bootstrap_keeps_a_concurrent_winners_copy(uv_mod, monkeypatch, tmp_path):
-    deps = str(tmp_path / "deps")
+    deps = str(tmp_path / "sets" / "k")
     winner = uv_mod.private_dir(deps) / "bin" / "uv"
     winner.parent.mkdir(parents=True)
     winner.write_text("winner")
@@ -199,7 +199,7 @@ def test_bootstrap_without_a_binary_in_the_wheel_is_an_error(
         return _done()
 
     monkeypatch.setattr(uv_mod._pip, "run_install", empty_site)
-    deps = str(tmp_path / "deps")
+    deps = str(tmp_path / "sets" / "k")
     with pytest.raises(uv_mod.UvUnavailableError) as raised:
         uv_mod._bootstrap(deps)
     target = uv_mod.private_dir(deps)
@@ -215,7 +215,7 @@ def test_bootstrap_failure_is_loud_and_leaves_nothing(
     failed = _done(1, stdout="ignored", stderr="@" + "E" * 1500)
     monkeypatch.setattr(uv_mod._pip, "run_install", lambda *_a: failed)
     with pytest.raises(uv_mod.UvUnavailableError) as raised:
-        uv_mod._bootstrap(str(tmp_path / "deps"))
+        uv_mod._bootstrap(str(tmp_path / "sets" / "k"))
     assert str(raised.value) == (
         f"could not install uv {uv_mod.UV_VERSION} from PyPI with pip: {'E' * 1500}\n"
         f"Install uv {uv_mod.UV_VERSION} yourself (https://docs.astral.sh/uv/) "
@@ -232,7 +232,7 @@ def test_bootstrap_failure_reports_stdout_when_stderr_is_empty(
         uv_mod._pip, "run_install", lambda *_a: _done(1, stdout="pip said no")
     )
     with pytest.raises(uv_mod.UvUnavailableError, match="pip said no"):
-        uv_mod._bootstrap(str(tmp_path / "deps"))
+        uv_mod._bootstrap(str(tmp_path / "sets" / "k"))
 
 
 def test_an_interrupted_bootstrap_leaves_no_scratch(uv_mod, monkeypatch, tmp_path):
@@ -241,5 +241,5 @@ def test_an_interrupted_bootstrap_leaves_no_scratch(uv_mod, monkeypatch, tmp_pat
 
     monkeypatch.setattr(uv_mod._pip, "run_install", interrupted)
     with pytest.raises(KeyboardInterrupt):
-        uv_mod._bootstrap(str(tmp_path / "deps"))
+        uv_mod._bootstrap(str(tmp_path / "sets" / "k"))
     assert list(tmp_path.iterdir()) == []

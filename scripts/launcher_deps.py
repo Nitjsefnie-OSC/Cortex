@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Dependency bootstrap for scripts/launcher.py — stdlib only.
 
-Public entry points used by launcher.py: ``ensure_deps`` (base runtime,
-every entry point) and ``ensure_all_deps`` (base + ML stack, SessionStart
-only). ``install_installer_set``, also run as ``python3 launcher_deps.py
+Public entry points used by launcher.py: ``ensure_deps`` (base runtime: the
+MCP server and the detached base job; a hook never installs, ADR-1108),
+``ensure_all_deps`` (base + ML stack: the detached semantic-search job and
+``--install-deps``). ``install_installer_set``, also run as ``python3 launcher_deps.py
 DEPS_DIR``, is the installers' path into the same directory. Every set is
 read from uv.lock through ``launcher_uv``; a stamp keyed on uv.lock's
 digest keeps the hot path free of any subprocess, and the digest of the
@@ -12,12 +13,12 @@ from reinstalling it.
 
 source: ADR-0747
 source: ADR-1063
-source: ADR-1092"""
+source: ADR-1092
+source: ADR-1108"""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import shutil
@@ -29,6 +30,7 @@ _SCRIPTS_DIR = str(Path(__file__).resolve().parent)
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 import launcher_deps_fs as _fs  # noqa: E402
+import launcher_layout as _layout  # noqa: E402
 import launcher_lock as _lock  # noqa: E402
 import launcher_sets as _sets  # noqa: E402
 import importlib  # noqa: E402
@@ -39,6 +41,7 @@ _normalize_dist_key = _fs.normalize_dist_key
 _dist_info_versions = _fs.dist_info_versions
 _entry_dist_key = _fs.entry_dist_key
 _sweep_stale_backups = _fs.sweep_stale_backups
+_sweep_stale_scratch = _fs.sweep_stale_scratch
 _prune_superseded_dist_info = _fs.prune_superseded_dist_info
 
 LOCK_PATH = Path(_SCRIPTS_DIR).parent / "uv.lock"
@@ -88,12 +91,11 @@ def _stamp_path(deps_dir: str, kind: str) -> str:
     return os.path.join(deps_dir, f".cortex-deps-stamp-{kind}.json")
 
 
-def lock_digest() -> str | None:
-    """sha256 of uv.lock, or None when the plugin tree carries no lock."""
-    try:
-        return hashlib.sha256(LOCK_PATH.read_bytes()).hexdigest()
-    except OSError:
-        return None
+def lock_key() -> str | None:
+    """The key of this plugin tree's uv.lock set, None when it carries no lock.
+
+    source: ADR-1108"""
+    return _layout.set_key(LOCK_PATH.parent)
 
 
 def _stamp(deps_dir: str, kind: str) -> dict:
@@ -150,7 +152,8 @@ def _ensure(
     source: ADR-1104"""
     os.makedirs(deps_dir, exist_ok=True)
     _sweep_stale_backups(deps_dir)
-    digest = lock_digest()
+    _sweep_stale_scratch(deps_dir)
+    digest = lock_key()
     if digest is None:
         print(
             f"[cortex-launcher] {LOCK_PATH} is missing; cannot install "
@@ -211,7 +214,7 @@ def set_ready(deps_dir: str, kind: str) -> bool:
     """True iff set ``kind`` ("base", "ml") is installed for this uv.lock and Python.
 
     source: ADR-1104"""
-    digest = lock_digest()
+    digest = lock_key()
     return digest is not None and _stamp_matches(deps_dir, kind, digest)
 
 
@@ -237,6 +240,7 @@ def install_installer_set(deps_dir: str) -> bool:
     source: ADR-1092"""
     os.makedirs(deps_dir, exist_ok=True)
     _sweep_stale_backups(deps_dir)
+    _sweep_stale_scratch(deps_dir)
     try:
         with _deps_lock(deps_dir):
             return _install_locked_set(deps_dir, _sets.INSTALLER)

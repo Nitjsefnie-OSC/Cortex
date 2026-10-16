@@ -86,10 +86,10 @@ def _raise_walk_error(error: OSError) -> None:
     raise error
 
 
-def _check_tree(parent: int) -> None:
+def _check_tree(parent: int, name: str) -> None:
     """Reject existing symlinks throughout a selected dependency tree."""
     for root, dirs, files, descriptor in os.fwalk(
-        "deps", dir_fd=parent, follow_symlinks=False, onerror=_raise_walk_error
+        name, dir_fd=parent, follow_symlinks=False, onerror=_raise_walk_error
     ):
         for name in dirs + files:
             mode = os.stat(name, dir_fd=descriptor, follow_symlinks=False).st_mode
@@ -99,24 +99,24 @@ def _check_tree(parent: int) -> None:
                 )
 
 
-def _has_deps(parent: int) -> bool:
-    """An absent deps child is preserved; a non-directory child is refused."""
+def _has_deps(parent: int, name: str) -> bool:
+    """An absent child is preserved; a non-directory child is refused."""
     try:
-        mode = os.stat("deps", dir_fd=parent, follow_symlinks=False).st_mode
+        mode = os.stat(name, dir_fd=parent, follow_symlinks=False).st_mode
     except FileNotFoundError:
         return False
     if not stat.S_ISDIR(mode):
-        raise CleanupRefusedError("deps is a symlink or is not a directory")
+        raise CleanupRefusedError(f"{name} is a symlink or is not a directory")
     return True
 
 
 def inspect_deps(path: Path, *, recursive: bool = False) -> bool:
     """Inspect only the deps child of an already constrained identity path."""
     with directory(path.parent) as parent:
-        if not _has_deps(parent):
+        if not _has_deps(parent, path.name):
             return False
         if recursive:
-            _check_tree(parent)
+            _check_tree(parent, path.name)
         return True
 
 
@@ -135,9 +135,9 @@ def remove_deps(path: Path) -> None:
     """Delete deps only, retaining its parent and all sibling user data."""
     require_removal_support()
     with directory(path.parent) as parent:
-        if not _has_deps(parent):
+        if not _has_deps(parent, path.name):
             raise CleanupRefusedError(
                 f"dependency tree disappeared before removal: {path}"
             )
-        _check_tree(parent)
-        shutil.rmtree("deps", dir_fd=parent)
+        _check_tree(parent, path.name)
+        shutil.rmtree(path.name, dir_fd=parent)

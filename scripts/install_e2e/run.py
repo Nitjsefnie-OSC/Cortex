@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Zero-ops install check: the owner's three commands on a clean machine.
+"""Zero-ops install check: the owner's commands on a clean machine.
 
     claude plugin marketplace add <checkout | cdeust/Cortex>
     claude plugin install hypermnesia-mcp@cortex-plugins
-    first session -> "Cortex ready", tools answer, remember -> recall works
+    claude --init-only      (through scripts/init_plugin.py: the Setup hook
+                             installs every set and the model, and a failure
+                             exits non-zero)
+    first session  -> SessionStart says "Cortex ready", tools answer,
+                      remember -> recall works; no hook installed anything
+    second session -> "Cortex ready"
 
 Run on an isolated HOME / ``CLAUDE_CONFIG_DIR`` with the real Claude Code CLI:
 ``claude --init-only`` runs the plugin's SessionStart hook under the host's own
@@ -17,12 +22,15 @@ Usage:
     python3 scripts/install_e2e/run.py --marketplace SRC --work DIR
         [--python /usr/bin/python3] [--x86_64] [--settle-seconds N]
 
-source: docs/adr/ADR-1104-zero-ops-plugin-install.md
+source: ADR-1104
+source: ADR-1108
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import re
 import sys
@@ -34,6 +42,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import evidence  # noqa: E402
 import host  # noqa: E402
 import mcp_session  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import init_plugin  # noqa: E402 — scripts/ is a sibling of this package
 
 # source: mcp_server/hooks/session_start_status.py semantic_clause
 SEMANTIC_ON = "semantic search on"
@@ -57,6 +68,19 @@ def _install(machine: host.Machine, sandbox: list, source: str) -> dict:
     added = host.run_claude(machine, sandbox, "plugin", "marketplace", "add", source)
     installed = host.run_claude(machine, sandbox, "plugin", "install", host.PLUGIN_ID)
     return {"add": added.__dict__, "install": installed.__dict__}
+
+
+def _init(machine: host.Machine, sandbox: list) -> dict:
+    """The documented ``claude --init-only`` step, through the failing wrapper."""
+    started = time.monotonic()
+    shown = io.StringIO()
+    with contextlib.redirect_stdout(shown), contextlib.redirect_stderr(shown):
+        code = init_plugin.init([*sandbox, "claude"], host.PLUGIN_ID, machine.env)
+    return {
+        "returncode": code,
+        "output": shown.getvalue(),
+        "seconds": round(time.monotonic() - started, 2),
+    }
 
 
 def _plugin_root(machine: host.Machine, sandbox: list) -> str | None:
@@ -132,9 +156,13 @@ def _checks(report: dict, expect_semantic: bool) -> dict:
     message_2 = hook_2.get("system_message", "")
     return {
         "install_exit_0": all(r["returncode"] == 0 for r in report["install"].values()),
-        "hook_status_0": hook.get("status") == 0,
         "hook_within_timeout": (hook.get("ms") or 10**9) < timeout_ms,
-        "ready_shown_session_1": message_starts_ready(hook),
+        "init_exit_0": report["init"]["returncode"] == 0,
+        "hook_ready_session_1": hook.get("status") == 0 and message_starts_ready(hook),
+        "hook_installed_nothing": not any(
+            "installing" in text
+            for text in (hook.get("stderr", ""), hook.get("stdout", ""))
+        ),
         "mcp_connected_by_host": first["mcp_connected"],
         "tools_listed": stdio.get("required_tools_present", False),
         "tools_arrived_in_session_1": stdio.get("seconds", 10**9) < STDIO_BOUND_SECONDS,
@@ -143,6 +171,7 @@ def _checks(report: dict, expect_semantic: bool) -> dict:
             report.get(key, {}).get("remaining", ["not run"])
             for key in ("settle", "settle_2")
         ),
+        "hook_status_0_session_2": hook_2.get("status") == 0,
         "ready_shown_session_2": message_starts_ready(hook_2),
         "semantic_outcome_session_2": (SEMANTIC_ON in message_2) == expect_semantic
         and ("failed: " in message_2 or expect_semantic),
@@ -168,6 +197,7 @@ def run(args: argparse.Namespace) -> dict:
     machine = host.build_machine(Path(args.work).resolve(), args.python, args.x86_64)
     sandbox = host.sandbox_prefix(machine.work)
     report: dict = {"install": _install(machine, sandbox, args.marketplace)}
+    report["init"] = _init(machine, sandbox)
     report["host_notices"] = [
         line
         for r in report["install"].values()

@@ -286,6 +286,20 @@ else
     say "Pruned $PRUNED stale Cortex install(s)."
 fi
 
+# Setup: install every dependency set and the embedding model now, with the
+# progress shown and a non-zero exit when it fails (claude --init-only alone
+# is silent and always exits 0). Needs the plugin installed in Claude Code.
+# source: ADR-1108
+if command -v claude >/dev/null 2>&1; then
+    INIT_RC=0
+    "$PY" "$PLUGIN_ROOT/scripts/init_plugin.py" || INIT_RC=$?
+    case "$INIT_RC" in
+        0) ;;
+        2) warn "The plugin is not installed in Claude Code; skipping its Setup step" ;;
+        *) fail "Cortex's runtime did not install (see above). Re-run: \"$PY\" \"$PLUGIN_ROOT/scripts/init_plugin.py\"" ;;
+    esac
+fi
+
 if [ "$BACKEND" = "sqlite" ]; then
     say "Cortex v${CURRENT_VERSION} ready (SQLite, zero-config). Restart Claude Code to activate."
     say "Optional PostgreSQL upgrade: bash \"$PLUGIN_ROOT/scripts/install-plugin.sh\" --postgres"

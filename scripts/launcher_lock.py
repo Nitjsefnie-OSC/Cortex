@@ -2,9 +2,10 @@
 
 An OS lock (``flock`` on POSIX, ``msvcrt.locking`` on Windows) is released by
 the kernel when its holder exits, killed or not, so a lock never goes stale
-and is never broken by age: a waiter waits while the holder lives. Waiting
-has a bound, and reaching it is an error that names the lock, never a reason
-to proceed unlocked.
+and is never broken by age: a waiter waits while the holder lives. A caller
+either waits for as long as the holder lives (``wait_seconds=None``) or gives
+a bound, and reaching that bound is an error that names the lock, never a
+reason to proceed unlocked.
 
 source: docs/adr/ADR-1104-zero-ops-plugin-install.md
 """
@@ -51,10 +52,12 @@ def _open(path: str) -> int:
 
 
 @contextlib.contextmanager
-def held(path: str, wait_seconds: float) -> Iterator[None]:
+def held(path: str, wait_seconds: float | None) -> Iterator[None]:
     """Hold ``path`` exclusively, waiting at most ``wait_seconds`` for it.
 
-    Raises ``LockTimeoutError`` when the holder keeps it past the bound.
+    ``None``: wait for as long as the holder keeps it (it is released when the
+    holder exits, killed or not). Raises ``LockTimeoutError`` when the holder
+    keeps it past a given bound.
     """
     with held_unless(path, wait_seconds, lambda: False):
         yield
@@ -62,22 +65,23 @@ def held(path: str, wait_seconds: float) -> Iterator[None]:
 
 @contextlib.contextmanager
 def held_unless(
-    path: str, wait_seconds: float, done: Callable[[], bool]
+    path: str, wait_seconds: float | None, done: Callable[[], bool]
 ) -> Iterator[bool]:
     """Hold ``path``, unless ``done()`` turns true while waiting for it.
 
     Yields True when held, False when ``done()`` made holding unnecessary
     (another holder finished the work this caller needed). Raises
-    ``LockTimeoutError`` when neither happens within ``wait_seconds``.
+    ``LockTimeoutError`` when neither happens within ``wait_seconds``; with
+    ``None`` it waits until one of them happens.
     """
     fd = _open(path)
     try:
-        deadline = time.monotonic() + wait_seconds
+        deadline = None if wait_seconds is None else time.monotonic() + wait_seconds
         while not _try(fd):
             if done():
                 yield False
                 return
-            if time.monotonic() >= deadline:
+            if deadline is not None and time.monotonic() >= deadline:
                 raise LockTimeoutError(
                     f"{path} is still held by another Cortex process after "
                     f"{wait_seconds:.0f} s"

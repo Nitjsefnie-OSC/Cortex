@@ -4,9 +4,10 @@ The ML set (sentence-transformers, torch: about 1 GB) and the pinned embedding
 model take minutes on a first install; Claude Code cancels the SessionStart
 hook at its 30 s timeout and discards its output, and the MCP server must
 answer ``initialize`` within the host's startup timeout. So the SessionStart
-launch installs only the base set and starts ONE detached job that installs
-the ML set from uv.lock and downloads the model; until it finishes, recall is
-keyword-only and the SessionStart message says so.
+launch installs nothing (a hook never does, ``launcher_base_job``) and starts
+ONE detached job that installs the ML set from uv.lock and downloads the
+model; until it finishes, recall is keyword-only and the SessionStart message
+says so.
 
 The job is ``launcher.py mcp_server.embedding_warmup``: the launcher installs
 base + ML for that module, then the module downloads the model. A job lock
@@ -25,7 +26,9 @@ import sys
 from pathlib import Path
 
 import launcher_deps
+import launcher_layout
 import launcher_lock
+import launcher_logs
 
 WARMUP_MODULE = "mcp_server.infrastructure.embedding_warmup"  # source: ADR-1104
 # The job writes its outcome here; the launcher hands it to the SessionStart
@@ -42,12 +45,12 @@ def job_lock(deps_dir: str) -> str:
 
 def job_log(deps_dir: str) -> Path:
     """Where the job's output goes: the first place to look when it fails."""
-    return Path(deps_dir).parent / "semantic-install.log"
+    return launcher_layout.data_dir(deps_dir) / "semantic-install.log"
 
 
 def status_file(deps_dir: str) -> Path:
     """The job's outcome: ``{"status": "ready"}`` or ``{"status": "failed", ...}``."""
-    return Path(deps_dir).parent / "semantic-install.json"
+    return Path(f"{deps_dir}.semantic.json")
 
 
 def state(deps_dir: str) -> tuple[str, str]:
@@ -70,7 +73,7 @@ def state(deps_dir: str) -> tuple[str, str]:
     return "installing", ""
 
 
-def _detached() -> dict:
+def detached() -> dict:
     if sys.platform == "win32":
         flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
         return {"creationflags": flags}
@@ -91,8 +94,7 @@ def start(deps_dir: str, launcher: str) -> tuple[str, str]:
     with launcher_lock.held_if_free(job_lock(deps_dir)) as free:
         if not free:
             return current  # the job is already running
-    log = job_log(deps_dir)
-    log.parent.mkdir(parents=True, exist_ok=True)
+    log = launcher_logs.rotate(job_log(deps_dir))
     env = dict(os.environ)
     env[STATUS_ENV] = str(status_file(deps_dir))
     with log.open("ab") as sink:
@@ -102,7 +104,7 @@ def start(deps_dir: str, launcher: str) -> tuple[str, str]:
             stdout=sink,
             stderr=sink,
             env=env,
-            **_detached(),
+            **detached(),
         )
     return current
 

@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from mcp_server.hooks.launcher_command import child_command, launcher_path
+from tests_py._launcher_ready import ready_launcher_argv
 
 
 def test_with_a_launcher_the_child_runs_through_it(tmp_path, monkeypatch):
@@ -42,19 +43,6 @@ def test_the_unset_plugin_root_resolves_to_this_checkouts_launcher(monkeypatch):
     assert child_command("pkg.mod")[1] == str(expected)
 
 
-# The real scripts/launcher.py main(), with only the dependency installer
-# stubbed (it would pip-install into the test machine), run in-process by
-# runpy as ``python launcher.py <module> <args>`` would be.
-_LAUNCHER_DRIVER = (
-    "import runpy, sys\n"
-    "sys.path.insert(0, sys.argv[1])\n"
-    "import launcher_deps\n"
-    "launcher_deps.ensure_deps = launcher_deps.ensure_all_deps = lambda d: None\n"
-    "sys.argv = sys.argv[2:]\n"
-    "runpy.run_path(sys.argv[0], run_name='__main__')\n"
-)
-
-
 @pytest.mark.skipif(
     sys.platform == "win32", reason="pass_fds does not exist on Windows"
 )
@@ -70,13 +58,7 @@ def test_the_launcher_keeps_a_descriptor_passed_with_pass_fds(tmp_path, monkeypa
     read_end, write_end = os.pipe()
     try:
         command[command.index("FD")] = str(write_end)
-        argv = [
-            command[0],
-            "-c",
-            _LAUNCHER_DRIVER,
-            str(launcher.parent),
-            *command[1:],
-        ]
+        argv = ready_launcher_argv(launcher, *command[2:])
         done = subprocess.run(
             argv, pass_fds=(write_end,), capture_output=True, text=True, check=False
         )

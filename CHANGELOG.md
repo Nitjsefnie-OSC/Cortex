@@ -35,6 +35,25 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **No hook installs dependencies any more; run `claude --init-only` after
+  `claude plugin install` and after `claude plugin update`** (ADR-1108,
+  replacing ADR-1104 decision 4). Every hook used to install whenever its
+  dependency stamp did not match, inside a 5 to 30 s budget (300 s for
+  SessionStart): the host cancelled hooks mid-install, and one plugin data
+  directory held 64 orphaned `deps.tmp-<pid>` scratch directories. The
+  plugin's Setup hook (`claude --init-only`, or `scripts/init_plugin.py`,
+  which shows progress and exits 1 with the cause) now installs the base
+  set, the semantic-search set and the model in the foreground. Without that
+  step, SessionStart says Cortex is installing, the edit gates let edits
+  through and say they are inactive, other hooks exit 1 (non-blocking), and
+  one detached job installs. Sets live in `sets/<key>/`, keyed on the locked
+  dependency set rather than the plugin version, so a release that keeps its
+  dependencies needs no install. Nothing asks a git remote for releases: the
+  next version's set is pre-installed only when the local marketplace clone
+  already holds it (after `claude plugin marketplace update`). Sets no
+  installed version uses are removed, and a path that cannot be removed is
+  reported, never declared removed. Dead installs' scratch is reclaimed.
+
 - **A recall pool no longer chooses which tied rows a signal credits**
   (ADR-1109). Each `recall_memories()` pool (vector, FTS, trigram, heat,
   recency) kept its best `max_results * 10` rows; when more rows shared the

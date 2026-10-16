@@ -26,10 +26,14 @@ _SCRIPTS_DIR = str(Path(__file__).resolve().parent)
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 import launcher_backend  # noqa: E402
+import launcher_base_job  # noqa: E402
 import launcher_deps  # noqa: E402
+import launcher_layout  # noqa: E402
+import launcher_maintain  # noqa: E402
 import launcher_mcp_bootstrap  # noqa: E402
 import launcher_ml  # noqa: E402
 import launcher_python  # noqa: E402
+import launcher_setup  # noqa: E402
 import launcher_site  # noqa: E402
 
 _MIN_ARGC = 2  # source: ADR-0742
@@ -38,8 +42,27 @@ _LAUNCHER = str(
 )  # source: ADR-1104 (re-exec and background job target)
 
 
+# The launches that may install: the MCP server (its host waits on the stand-in,
+# not on this process) and the two detached jobs. Every other module is a hook
+# inside a host time budget and never installs (source: ADR-1108).
+_INSTALLING = frozenset(
+    {
+        "mcp_server",
+        launcher_ml.WARMUP_MODULE,
+        launcher_base_job.JOB,
+        launcher_setup.SETUP,
+    }
+)
+
+
 def _resolve_paths() -> tuple[str, str]:
-    """Resolve plugin root and deps directory."""
+    """Resolve plugin root and the deps directory of its locked set.
+
+    Postcondition: the deps directory is ``<data>/sets/<key>``, ``<key>``
+    naming this plugin tree's uv.lock set (``launcher_layout``), so two
+    plugin versions locking one set share it and a different set never
+    shares one. source: ADR-1108
+    """
     # CLAUDE_PLUGIN_ROOT is set by Claude Code for plugins
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
     if not plugin_root or not Path(plugin_root).is_dir():
@@ -47,13 +70,9 @@ def _resolve_paths() -> tuple[str, str]:
         plugin_root = str(Path(__file__).resolve().parent.parent)
 
     # CLAUDE_PLUGIN_DATA is set by Claude Code — persistent across updates
-    plugin_data = os.environ.get("CLAUDE_PLUGIN_DATA", "")
-    if plugin_data:
-        deps_dir = os.path.join(plugin_data, "deps")
-    else:
-        deps_dir = os.path.join(plugin_root, "deps")
-
-    return plugin_root, deps_dir
+    data = os.environ.get("CLAUDE_PLUGIN_DATA", "") or plugin_root
+    key = launcher_deps.lock_key() or launcher_layout.NO_LOCK
+    return plugin_root, launcher_layout.deps_dir(data, key)
 
 
 def _use_utf8_output(plugin_root: str) -> None:
@@ -93,56 +112,26 @@ def _set_import_paths(plugin_root: str, deps_dir: str) -> None:
     launcher_site.isolate_deps(deps_dir)
 
 
-def _apply_backend() -> None:
-    """One storage backend for the server and every hook.
-
-    The host passes the user's ``database_url`` to the MCP server as
-    ``DATABASE_URL`` and to hooks only as ``CLAUDE_PLUGIN_OPTION_DATABASE_URL``;
-    both mean the same setting. Then the shared precedence (backend_marker)
-    with the plugin's default. A HOME nothing decides gets its marker once
-    (launcher_backend): SQLite when fresh, the earlier local PostgreSQL when
-    it still answers. PostgreSQL's local URL default applies only when a
-    marker chose it.
-
-    source: ADR-0505
-    source: ADR-1104
-    """
-    option = os.environ.get("CLAUDE_PLUGIN_OPTION_DATABASE_URL", "").strip()
-    if option and not os.environ.get("DATABASE_URL", "").strip():
-        os.environ["DATABASE_URL"] = option
-    from mcp_server.infrastructure.backend_marker import (  # noqa: PLC0415 — resolvable once plugin_root is on sys.path
-        BackendMarkerError,
-        apply_backend_resolution,
-        environment_decides,
-        read_backend_marker,
-    )
-
-    try:
-        if not environment_decides(os.environ) and read_backend_marker() is None:
-            launcher_backend.persist_first_decision()
-        apply_backend_resolution(os.environ, default="sqlite")
-    except (BackendMarkerError, OSError) as exc:
-        print(f"[cortex-launcher] Cortex not ready: {exc}", file=sys.stderr)
-        sys.exit(1)
-    if (
-        "DATABASE_URL" not in os.environ
-        and os.environ.get("CORTEX_MEMORY_STORE_BACKEND", "") == "postgresql"
-    ):
-        os.environ["DATABASE_URL"] = "postgresql://localhost:5432/cortex"
-
-
 def _ensure_runtime(module: str, install_deps: bool, deps_dir: str) -> None:
     """The dependency sets ``module`` needs, then semantic search in background.
 
-    Only the semantic-search job installs the ML set (launcher_ml); the
-    SessionStart launch starts that job and tells the hook where it stands.
+    Precondition: ``module`` is a hook, the MCP server or a job.
+    Postcondition: a hook returns only when the base set is installed and
+    installs nothing (otherwise ``launcher_base_job.refuse`` exits: 0 with a
+    notice for a gate and SessionStart, 1 for every other hook);
+    the server installs the base set; the semantic-search job and
+    ``--install-deps`` install base + ML. The SessionStart launch then starts
+    the semantic-search job and tells the hook where it stands.
     source: ADR-0742
     source: ADR-1104
+    source: ADR-1108
     """
     if install_deps:
         launcher_deps.ensure_all_deps(deps_dir)
-    else:
+    elif module in _INSTALLING:
         launcher_deps.ensure_deps(deps_dir)
+    else:
+        launcher_base_job.require_ready(deps_dir, _LAUNCHER, module)
     # The import system cached deps_dir as it was before this install
     # (source: ADR-1104).
     importlib.invalidate_caches()
@@ -186,6 +175,32 @@ def _needs_stand_in(module: str, deps_dir: str) -> bool:
     return not launcher_deps.set_ready(deps_dir, "base")
 
 
+def _require_python(module: str, install_deps: bool, deps_dir: str) -> None:
+    """Return on a supported Python (re-executing onto the managed one).
+
+    A hook never downloads one: with none installed it refuses (ADR-1108).
+    """
+    try:
+        launcher_python.ensure_supported(
+            deps_dir, _LAUNCHER, may_provide=install_deps or module in _INSTALLING
+        )
+    except launcher_python.NotProvidedError as exc:
+        launcher_base_job.refuse(deps_dir, _LAUNCHER, str(exc), module)
+
+
+def _skips_capture(module: str, install_deps: bool) -> bool:
+    """The capture hook, in a non-full capture mode, may skip before any import."""
+    if (
+        module != "mcp_server.hooks.post_tool_capture"
+        or install_deps
+        or os.environ.get("CORTEX_CAPTURE_MODE", "full") == "full"
+    ):
+        return False
+    from launcher_capture import skip_capture  # noqa: PLC0415 — only non-full capture needs the stdlib preflight
+
+    return skip_capture()
+
+
 def main() -> None:
     # source: ADR-1098 (supersedes the output half of ADR-0742)
     plugin_root, deps_dir = _resolve_paths()
@@ -197,22 +212,25 @@ def main() -> None:
         )
         sys.exit(1)
     module = sys.argv[1]
+    if module == launcher_setup.SETUP:
+        launcher_setup.require_host_data()
+    if module == launcher_maintain.JOB:  # stdlib only: any Python runs it
+        sys.exit(launcher_maintain.main(plugin_root, deps_dir))
     if _needs_stand_in(module, deps_dir):
         launcher_mcp_bootstrap.serve([sys.executable, _LAUNCHER, *sys.argv[1:]])
         return
-    launcher_python.ensure_supported(deps_dir, _LAUNCHER)
     install_deps = "--install-deps" in sys.argv
+    _require_python(module, install_deps, deps_dir)
     _set_import_paths(plugin_root, deps_dir)
-    if (
-        module == "mcp_server.hooks.post_tool_capture"
-        and not install_deps
-        and os.environ.get("CORTEX_CAPTURE_MODE", "full") != "full"
-    ):
-        from launcher_capture import skip_capture  # noqa: PLC0415 — only non-full capture needs the stdlib preflight
-
-        if skip_capture():
-            return
-    _apply_backend()
+    jobs = {
+        launcher_base_job.JOB: launcher_base_job.run,
+        launcher_setup.SETUP: launcher_setup.run,
+    }
+    if module in jobs:
+        sys.exit(jobs[module](deps_dir, _LAUNCHER))
+    if _skips_capture(module, install_deps):
+        return
+    launcher_backend.apply()
     if module == launcher_ml.WARMUP_MODULE:
         launcher_ml.run_job(
             deps_dir,
@@ -221,6 +239,7 @@ def main() -> None:
         )
         return
     _ensure_runtime(module, install_deps, deps_dir)
+    launcher_maintain.after_runtime(module, plugin_root, deps_dir, _LAUNCHER)
     _run(module, plugin_root)
 
 

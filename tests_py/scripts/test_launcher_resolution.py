@@ -39,12 +39,19 @@ def launcher_module():
     return module
 
 
+def _set_dir(launcher_module, data) -> str:
+    """``<data>/sets/<key of this repository's uv.lock>`` (ADR-1108)."""
+    key = launcher_module.launcher_deps.lock_key()
+    assert key
+    return str(data / "sets" / key)
+
+
 def test_env_var_set_with_valid_path(launcher_module, tmp_path, monkeypatch):
     monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(tmp_path))
     monkeypatch.delenv("CLAUDE_PLUGIN_DATA", raising=False)
     plugin_root, deps_dir = launcher_module._resolve_paths()
     assert plugin_root == str(tmp_path)
-    assert deps_dir == str(tmp_path / "deps")
+    assert deps_dir == _set_dir(launcher_module, tmp_path)
 
 
 def test_env_var_unset_falls_back_to_file_parent(launcher_module, monkeypatch):
@@ -54,7 +61,7 @@ def test_env_var_unset_falls_back_to_file_parent(launcher_module, monkeypatch):
     plugin_root, deps_dir = launcher_module._resolve_paths()
     # Should resolve to the repo root (launcher.py's grandparent).
     assert plugin_root == str(REPO_ROOT)
-    assert deps_dir == str(REPO_ROOT / "deps")
+    assert deps_dir == _set_dir(launcher_module, REPO_ROOT)
 
 
 def test_env_var_set_but_invalid_falls_back(launcher_module, monkeypatch, tmp_path):
@@ -85,4 +92,4 @@ def test_plugin_data_redirects_deps_dir(launcher_module, monkeypatch, tmp_path):
     monkeypatch.setenv("CLAUDE_PLUGIN_DATA", str(plugin_data_dir))
     plugin_root, deps_dir = launcher_module._resolve_paths()
     assert plugin_root == str(plugin_root_dir)
-    assert deps_dir == str(plugin_data_dir / "deps")
+    assert deps_dir == _set_dir(launcher_module, plugin_data_dir)

@@ -463,7 +463,8 @@ jobs:
           CLAUDE_PLUGIN_ROOT: ${{ github.workspace }}
           CLAUDE_PLUGIN_DATA: ${{ runner.temp }}/cortex-plugin-data
         # A user machine has no uv: drop the one setup-uv put on PATH so the
-        # installer must bootstrap its own pinned copy. source: ADR-1092
+        # installer must bootstrap its own pinned copy, which lives in
+        # <data>/uv-<version>/ shared by every set. source: ADR-1092, ADR-1108
         run: |
           set -euo pipefail
           while uv_bin="$(command -v uv)"; do
@@ -473,16 +474,18 @@ jobs:
             PATH="$stripped"
           done
           bash scripts/install-plugin.sh
-          python3 -c "import glob, os, sys; found = glob.glob(os.path.join(os.environ['CLAUDE_PLUGIN_DATA'], 'deps.uv-*', 'bin', 'uv*')); print(found); sys.exit(not found)"
+          python3 -c "import glob, os, sys; data = os.environ['CLAUDE_PLUGIN_DATA']; found = [f for d in ('bin', 'Scripts') for f in glob.glob(os.path.join(data, 'uv-*', d, 'uv*'))]; print(found); sys.exit(not found)"
 
       # The step above ran the REAL install path, not the CI install two
-      # steps up. This checks its deps/ output against pyproject.toml's
-      # [sqlite] extra directly (issue #634). source: ADR-1091
+      # steps up. This checks its output, the set directory
+      # <data>/sets/<key>/ the script resolves itself from the plugin data
+      # directory, against pyproject.toml's [sqlite] extra directly
+      # (issue #634). source: ADR-1091, ADR-1108
       - name: Verify the real install path installed the [sqlite] extra
         shell: bash
         env:
           CLAUDE_PLUGIN_DATA: ${{ runner.temp }}/cortex-plugin-data
-        run: python3 scripts/verify_sqlite_extra_parity.py "$CLAUDE_PLUGIN_DATA/deps"
+        run: python3 scripts/verify_sqlite_extra_parity.py "$CLAUDE_PLUGIN_DATA"
 
       # Scope (explicit, not silent): the portability tests plus the modules
       # carrying Windows-specific branches and the SQLite backend suite. The
