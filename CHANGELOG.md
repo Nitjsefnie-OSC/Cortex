@@ -35,6 +35,35 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A recall pool no longer chooses which tied rows a signal credits**
+  (ADR-1109). Each `recall_memories()` pool (vector, FTS, trigram, heat,
+  recency) kept its best `max_results * 10` rows; when more rows shared the
+  score at the cut, ADR-1106's newest-first tie-break decided which of them
+  got the signal (LoCoMo conv-41: 122 rows at heat 0.05, the oldest 22
+  lost the heat contribution). Every pool now keeps its whole boundary tie
+  group (`FETCH FIRST ... ROWS WITH TIES`). On SQLite, whose fusion is
+  rank-based, the signals keep the same membership (sqlite-vec's KNN cut
+  included) and tied rows share the mean `w / (k + rank)` of the positions
+  their group occupies instead of ranks assigned by age. Existing databases
+  get the new function on the next store open (schema hash). Measured:
+  LoCoMo R@10 0.8860, MRR 0.7768 (ADR-1106: 0.8870 / 0.7780), identical
+  across two runs; LongMemEval-S 0.9820 / 0.9059. On SQLite a tie group past
+  the pool is kept as a predicate with one shared credit and filled newest
+  first, never read row by row: it is counted once over a covering index
+  built on the first open (a grouped count that also lists the group's
+  capture origin and agent pairs), and its rows are read with one ordered
+  seek per pair. On the production arguments (trust factor 0.7) and the
+  owner's agent vocabulary (421 pairs), a store whose memories share one
+  heat recalls in 21.9 to 25.1 ms at 250,000 memories and 5.5 to 8.3 ms at
+  40,000 (before: 2 to 4 ms): the grouped count, 0.9 to 2.7 times a plain
+  count and kept by owner decision, plus a fill that grows with the number
+  of pairs; where memories also share one `created_at`, 24.4 to 44.3 ms at
+  250,000. With a realistic heat spread recall is within 3 ms of the
+  previous level.
+  sqlite-vec's KNN serves k up to its cap of 4096 and a larger pool reads
+  the same distance through `vec_distance_l2`, so any
+  `max_results` works; id sets bind as one JSON array; a vector-signal
+  failure now raises instead of silently dropping the vector signal.
 - **Recall returns the same memories whatever the table's physical layout**
   (ADR-1106). Every `ORDER BY ... LIMIT` on the recall path cut exact score
   ties in heap order, which VACUUM, CLUSTER and free-space reuse change: the
