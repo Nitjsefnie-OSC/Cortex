@@ -130,9 +130,12 @@ def run(running_root: str, data: str) -> int:
     Postcondition: a second job returns at once (the lock); the marketplace
     clone's own ``launcher.py --setup`` ran to completion (its exit code is
     returned) or there was none to run; unreferenced sets were collected (by
-    that Setup run on success, here otherwise). 1 when a path could not be
-    removed: ``launcher_gc.collect`` printed each one with its cause and
-    recorded it. Runs no git and reaches no remote.
+    that Setup run on success, here otherwise). On the collection here, 1 when
+    a path could not be removed: ``launcher_gc.collect`` printed each one with
+    its cause and recorded it. On the clone's Setup the code is Setup's own: a
+    path it could not remove is printed into setup.log and recorded the same
+    way, and a collection that raised is recorded as ``gc_error``; neither
+    changes Setup's 0. Runs no git and reaches no remote.
     """
     with launcher_lock.held_if_free(job_lock(data)) as mine:
         if not mine:

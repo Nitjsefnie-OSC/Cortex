@@ -214,7 +214,10 @@ def _collect(deps_dir: str) -> None:
     try:
         removed = launcher_gc.collect(root, data)
     except OSError as exc:
-        cause = f"could not collect the sets of earlier versions: {exc!r}"
+        # str keeps the filename ("[Errno 13] Permission denied: '<path>'");
+        # repr of an OSError drops it.
+        kind = type(exc).__name__
+        cause = f"could not collect the sets of earlier versions: {kind}: {exc}"
         _say(cause)
         _record(deps_dir, "ready", gc_error=cause)
         return

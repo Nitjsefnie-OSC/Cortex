@@ -218,11 +218,14 @@ def test_a_collection_that_raises_after_ready_is_logged_and_recorded(
 
     monkeypatch.setattr(setup.launcher_gc, "collect", unlistable)
     assert setup.run(deps, "launcher.py") == 0
+    sets = f"{setup.launcher_layout.data_dir(deps)}/sets"
     result = setup.outcome(deps)
     assert result["status"] == "ready"
     assert "Permission denied" in result["gc_error"]
+    assert sets in result["gc_error"]  # which path failed, not only the errno
     log = setup.log_path(deps).read_text(encoding="utf-8")
     assert "could not collect the sets of earlier versions" in log
+    assert sets in log
 
 
 def test_any_other_exception_leaves_its_traceback_in_the_log(setup_env, monkeypatch):
