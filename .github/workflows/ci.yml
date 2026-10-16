@@ -505,11 +505,12 @@ jobs:
       # by the Codex copy) and a child starts with the creation flags decided
       # from it. source: ADR-1102
       # The resolver tests and the four migrated bash callers below join per
-      # issue #689: the callers are the migrated files that fail for no other
-      # reason on Windows (measured on windows-latest, run 38012683041, variant
-      # D, with the WSL launcher out of the way). The other migrated callers
-      # still fail there for the causes tracked in issue #692 and join as
-      # that issue clears them. source: ADR-1101
+      # issue #689: the callers are the migrated files with 0 failures in
+      # windows-latest run 38012683041, variant D (WSL launcher renamed, Git
+      # Bash first on PATH, PYTHONUTF8=1); this job sets no PYTHONUTF8, so
+      # its first run is the isolating measurement. The other migrated
+      # callers still failed in variant D for the causes tracked in issue
+      # #692 and join as that issue clears them. source: ADR-1101
       - name: Run portability + backend tests
         env:
           HF_HUB_OFFLINE: "1"
