@@ -4,8 +4,9 @@ The host records every installed plugin in ``<config>/plugins/installed_plugins.
 and keeps each marketplace's local clone where ``known_marketplaces.json`` says.
 Plugin data is ``<config>/plugins/data/<id>`` (measured: Claude Code 2.1.300), so
 the host's records are found from ``CLAUDE_PLUGIN_DATA`` alone. Nothing here
-guesses: a record that is missing or does not match yields ``None``, and the
-caller then does nothing (no set is removed, none is pre-installed).
+guesses: a record that is missing, unreadable or does not match yields ``None``,
+and the caller then does nothing (no set is removed, none is pre-installed); an
+unreadable one is named on stderr.
 
 The marketplace clone is the SOURCE OF THE NEXT uv.lock: one function,
 ``next_tree``, is the only place that decides where it comes from.
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,9 +36,18 @@ class Installed:
 
 
 def _read(path: Path) -> dict | None:
+    """The JSON object in ``path``; None when it is missing or not an object.
+
+    A file that exists but cannot be read or parsed is also None (the caller
+    then removes and pre-installs nothing), and is named on stderr with the
+    cause, which reaches the maintain or Setup log.
+    """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        print(f"[cortex-launcher] could not read {path}: {exc}", file=sys.stderr)
         return None
     return data if isinstance(data, dict) else None
 

@@ -29,8 +29,11 @@ elif sys.argv[1:] == ["--init-only"]:
             log.write("[cortex-setup] installing the base dependency set\\n")
         os.makedirs(os.path.dirname(os.environ["FAKE_OUTCOME"]), exist_ok=True)
         with open(os.environ["FAKE_OUTCOME"], "w") as out:
-            json.dump({{"status": os.environ["FAKE_STATUS"],
-                        "error": os.environ.get("FAKE_ERROR", "")}}, out)
+            record = {{"status": os.environ["FAKE_STATUS"],
+                       "error": os.environ.get("FAKE_ERROR", "")}}
+            if os.environ.get("FAKE_GC_ERROR"):
+                record["gc_error"] = os.environ["FAKE_GC_ERROR"]
+            json.dump(record, out)
 sys.exit(0)
 """
 
@@ -72,6 +75,16 @@ def test_a_ready_setup_exits_0_and_its_progress_is_shown(init, capsys):
     out = capsys.readouterr().out
     assert "installing the base dependency set" in out
     assert "Cortex is ready" in out
+
+
+def test_a_ready_setup_whose_collection_failed_says_so(init, capsys):
+    """The set is ready (exit 0), and the collection's failure is printed."""
+    init_plugin, fake, env, _ = init
+    env.update(FAKE_STATUS="ready", FAKE_GC_ERROR="PermissionError: sets/")
+    assert init_plugin.init([str(fake)], PLUGIN_ID, env) == 0
+    captured = capsys.readouterr()
+    assert "Cortex is ready" in captured.out
+    assert "PermissionError: sets/" in captured.err
 
 
 def test_a_failed_setup_exits_1_with_its_cause_although_the_host_exits_0(init, capsys):

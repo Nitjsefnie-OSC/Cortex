@@ -76,15 +76,19 @@ The only outbound network activity is:
 
 1. **Runtime install, once per locked dependency set (Claude Code plugin).**
    The plugin's Setup hook (`claude --init-only`), or, when it did not run,
-   the MCP server and one detached background job, download into the plugin's
-   data directory (`~/.claude/plugins/data/hypermnesia-mcp-cortex-plugins/`):
+   the MCP server and two detached background jobs that hooks start (one for
+   the base set, one for the machine-learning set and the model), download
+   into the plugin's data directory (`~/.claude/plugins/data/hypermnesia-mcp-cortex-plugins/`):
    the pinned uv and the locked Python packages from PyPI (hash-checked
    against `uv.lock`), the machine-learning packages and the embedding model
    below; and, only when the machine's `python3` is older than 3.10, CPython
    3.12.13 from the python-build-standalone releases on GitHub, through uv.
    This happens again only for a plugin version whose `uv.lock` locks a
-   different dependency set, including ahead of an update when the local
-   marketplace clone already holds that version. Nothing asks a git remote
+   different dependency set. One case comes before you install that version:
+   when the local marketplace clone already holds it (`claude plugin
+   marketplace update` refreshes the clone without installing), a third
+   detached job runs the clone's own Setup and downloads its sets (about 1 GB
+   with the machine-learning set). Nothing asks a git remote
    whether a release is out. These transfers fetch software only; no user
    content is sent. `CORTEX_EMBEDDING_ZERO_DOWNLOAD=1` skips the
    machine-learning packages and the model.

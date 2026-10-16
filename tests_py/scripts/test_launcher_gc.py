@@ -137,13 +137,15 @@ def test_the_flat_layout_stays_when_the_cache_cannot_be_listed(mods, tmp_path):
     assert (host.data / "deps").exists()
 
 
-def test_nothing_is_removed_when_the_host_records_are_unknown(mods, tmp_path):
+def test_nothing_is_removed_when_the_host_records_are_unknown(mods, tmp_path, capsys):
     gc, _ = mods
     host = Host(tmp_path)
     old = host.make_set("old0000000000000")
-    (host.plugins / "installed_plugins.json").write_text("not json")
+    record = host.plugins / "installed_plugins.json"
+    record.write_text("not json")
     assert gc.collect(str(host.running), str(host.data)) == []
     assert old.exists()
+    assert f"could not read {record}" in capsys.readouterr().err
 
 
 def test_nothing_is_removed_when_a_referenced_tree_has_no_lock(mods, tmp_path):
@@ -222,3 +224,22 @@ def test_a_user_registry_that_cannot_be_listed_removes_nothing(mods, tmp_path):
         assert old.exists()
     finally:
         users.chmod(0o755)
+
+
+def test_a_sets_directory_that_cannot_be_listed_removes_nothing(mods, tmp_path):
+    """An unlistable sets/ is not an empty one: the collection stops with the cause."""
+    gc, _ = mods
+    host = Host(tmp_path)
+    old = host.make_set("old0000000000000")
+    sets = host.data / "sets"
+    sets.chmod(0o000)
+    try:
+        if os.access(sets, os.R_OK):
+            pytest.skip("permissions are not enforced for this user")
+        with pytest.raises(PermissionError):
+            gc.collect(str(host.running), str(host.data))
+        with pytest.raises(PermissionError):
+            gc.has_new_work(str(host.data), {"anything"})
+    finally:
+        sets.chmod(0o755)
+    assert old.exists()

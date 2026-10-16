@@ -85,8 +85,8 @@ def init(claude: list[str], plugin_id: str, env: dict[str, str]) -> int:
     """Run ``claude --init-only`` and verify its Setup hook's outcome.
 
     Postcondition: 0 iff the Setup hook recorded ``ready`` for this plugin's
-    set; 2 when the plugin is not installed in Claude Code; otherwise 1 with
-    the cause printed.
+    set (a ``gc_error`` it recorded is printed on stderr); 2 when the plugin
+    is not installed in Claude Code; otherwise 1 with the cause printed.
     """
     root = install_root(claude, plugin_id, env)
     if root is None:
@@ -106,6 +106,11 @@ def init(claude: list[str], plugin_id: str, env: dict[str, str]) -> int:
     result = launcher_setup.outcome(deps)
     if result.get("status") == "ready":
         print(f"Cortex is ready ({deps})")
+        if result.get("gc_error"):  # the set is ready; earlier sets stayed
+            print(
+                f"Cortex kept earlier sets: {result['gc_error']} (log: {log})",
+                file=sys.stderr,
+            )
         return 0
     why = result.get("error") or "the Setup hook did not run or did not finish"
     print(f"Cortex is NOT ready: {why} (log: {log})", file=sys.stderr)

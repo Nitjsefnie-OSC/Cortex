@@ -6,7 +6,8 @@ installed, or an installed set is no longer referenced, it starts ONE detached
 ``--maintain-job`` and returns. The job runs the CLONE's own launcher with
 ``--setup`` (so the clone's uv.lock and project define the set), then collects
 the unreferenced sets. The hook itself reads three small JSON files and hashes
-at most three uv.lock files; it installs and removes nothing.
+at most three uv.lock files; it installs nothing and removes only the markers
+of dead users (``<key>.users/<pid>``, via ``launcher_gc.in_use``).
 
 The job reads only what is on this machine: it never asks the marketplace's
 git remote whether a release is out (owner decision 2026-10-16), so the next
@@ -54,7 +55,8 @@ def job_log(data: str) -> Path:
 
 
 def plan(running_root: str, data: str) -> Plan:
-    """The work to do now. Reads only; installs and removes nothing.
+    """The work to do now. Installs nothing; removes no set, only the markers
+    of dead users that ``launcher_gc.in_use`` drops while it reads.
 
     Old sets are work only when a doomed path is not already recorded as
     impossible to remove (``launcher_gc.failed_removals``): a path the last
@@ -83,8 +85,10 @@ def plan(running_root: str, data: str) -> Plan:
 def start_if_needed(running_root: str, deps_dir: str, launcher: str) -> bool:
     """Start the detached job when there is work and none runs; True iff started.
 
-    Never waits, installs or removes. A failure to read the host's records is
-    "no work".
+    Never waits, installs or removes a set. A host record that cannot be read
+    is "no work" and is named on stderr (``launcher_installed._read``); a
+    ``sets/`` or user registry that cannot be listed raises OSError, which
+    ``after_runtime`` prints.
     """
     data = str(launcher_layout.data_dir(deps_dir))
     if plan(running_root, data).empty():

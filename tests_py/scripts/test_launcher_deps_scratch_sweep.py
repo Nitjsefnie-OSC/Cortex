@@ -10,6 +10,7 @@ source: ADR-1108
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 
 import pytest
@@ -76,3 +77,50 @@ def test_other_directories_are_never_touched(fs_mod, tmp_path, monkeypatch):
 
 def test_a_missing_parent_is_a_no_op(fs_mod, tmp_path):
     fs_mod.sweep_stale_scratch(str(tmp_path / "gone" / "sets" / "k1"))
+
+
+def _unlistable(directory: Path) -> None:
+    directory.chmod(0o000)
+    if os.access(directory, os.R_OK):
+        directory.chmod(0o755)
+        pytest.skip("permissions are not enforced for this user")
+
+
+def test_a_parent_that_cannot_be_listed_is_named_with_its_cause(
+    fs_mod, tmp_path, capsys
+):
+    """The scratch stays, and the sweep says which directory and why."""
+    data, deps = _layout(tmp_path)
+    sets = data / "sets"
+    _unlistable(sets)
+    try:
+        fs_mod.sweep_stale_scratch(str(deps))
+    finally:
+        sets.chmod(0o755)
+    err = capsys.readouterr().err
+    assert f"could not list {sets}" in err
+    assert "Permission denied" in err
+
+
+def test_scratch_that_cannot_be_removed_is_named_with_its_cause(
+    fs_mod, tmp_path, monkeypatch, capsys
+):
+    """rmtree(ignore_errors=True) would leave it without a word."""
+    data, deps = _layout(tmp_path)
+    scratch = data / "sets" / "k1.tmp-9"
+    locked = scratch / "pkg"
+    locked.mkdir(parents=True)
+    (locked / "module.py").write_text("")
+    locked.chmod(0o555)
+    if os.access(locked, os.W_OK):
+        locked.chmod(0o755)
+        pytest.skip("permissions are not enforced for this user")
+    monkeypatch.setattr(fs_mod, "pid_alive", lambda _pid: False)
+    try:
+        fs_mod.sweep_stale_scratch(str(deps))
+    finally:
+        locked.chmod(0o755)
+    assert scratch.exists()
+    err = capsys.readouterr().err
+    assert f"could not remove dead install scratch {scratch}" in err
+    assert "Permission denied" in err

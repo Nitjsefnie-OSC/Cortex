@@ -23,6 +23,7 @@ import os
 import subprocess
 import sys
 import time
+import traceback
 from pathlib import Path
 
 import launcher_deps
@@ -78,10 +79,15 @@ def outcome(deps_dir: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _record(deps_dir: str, status: str, error: str = "") -> None:
+def _record(deps_dir: str, status: str, error: str = "", gc_error: str = "") -> None:
+    """Write the outcome; ``gc_error`` only when the set is ready but the sets
+    of earlier versions could not be collected."""
+    record = {"status": status, "error": error}
+    if gc_error:
+        record["gc_error"] = gc_error
     path = status_file(deps_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"status": status, "error": error}), encoding="utf-8")
+    path.write_text(json.dumps(record), encoding="utf-8")
 
 
 class _Tee:
@@ -163,7 +169,10 @@ def run(deps_dir: str, launcher: str) -> int:
     for as long as it runs (the kernel releases its lock when it exits, so no
     clock decides that it failed), not duplicated. On success the sets no
     installed version references are removed; a path that could not be removed
-    is printed and recorded, and does not change the exit code.
+    is printed and recorded, a collection that raised OSError is printed and
+    recorded as ``gc_error`` (``_collect``), and neither changes the exit code.
+    Any other exception's traceback is printed while the output still goes to
+    ``setup.log``, then raised.
     """
     log_file = launcher_logs.rotate(log_path(deps_dir))
     with log_file.open("a", encoding="utf-8") as log:
@@ -171,6 +180,9 @@ def run(deps_dir: str, launcher: str) -> int:
         sys.stdout, sys.stderr = _Tee(out, log), _Tee(err, log)
         try:
             return _run_locked(deps_dir, launcher, log)
+        except BaseException:
+            traceback.print_exc()  # into setup.log: the host discards stderr
+            raise
         finally:
             sys.stdout, sys.stderr = out, err
 
@@ -180,17 +192,37 @@ def _run_locked(deps_dir: str, launcher: str, log) -> int:
         _record(deps_dir, "installing")
         code = _install(deps_dir, launcher, log)
     if code == 0:
-        root = os.environ.get("CORTEX_RUNNING_ROOT") or os.environ.get(
-            "CLAUDE_PLUGIN_ROOT", ""
-        )
-        data = str(launcher_layout.data_dir(deps_dir))
-        removed = launcher_gc.collect(root, data) if root else []
-        if removed:
-            _say(f"removed {len(removed)} unreferenced paths of earlier sets")
-        left = launcher_gc.failed_removals(data) if root else {}
-        if left:
-            _say(
-                f"could not remove {len(left)} paths of earlier sets (listed "
-                f"above, recorded in {Path(data) / launcher_gc.FAILED})"
-            )
+        _collect(deps_dir)
     return code
+
+
+def _collect(deps_dir: str) -> None:
+    """Remove the sets no installed version references, once ``ready`` is recorded.
+
+    The set is ready whatever happens here. ``launcher_gc.collect`` raises
+    OSError when a user registry or ``sets/`` cannot be listed or its record
+    cannot be written; the cause is printed (so into setup.log) and recorded as
+    ``gc_error`` in the outcome file, which ``init_plugin.py`` prints. It is not
+    written to ``gc-failed.json``: writing that file can be what failed.
+    """
+    root = os.environ.get("CORTEX_RUNNING_ROOT") or os.environ.get(
+        "CLAUDE_PLUGIN_ROOT", ""
+    )
+    if not root:
+        return
+    data = str(launcher_layout.data_dir(deps_dir))
+    try:
+        removed = launcher_gc.collect(root, data)
+    except OSError as exc:
+        cause = f"could not collect the sets of earlier versions: {exc!r}"
+        _say(cause)
+        _record(deps_dir, "ready", gc_error=cause)
+        return
+    if removed:
+        _say(f"removed {len(removed)} unreferenced paths of earlier sets")
+    left = launcher_gc.failed_removals(data)
+    if left:
+        _say(
+            f"could not remove {len(left)} paths of earlier sets (listed "
+            f"above, recorded in {Path(data) / launcher_gc.FAILED})"
+        )

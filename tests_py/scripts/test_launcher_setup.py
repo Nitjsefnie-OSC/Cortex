@@ -200,3 +200,40 @@ def test_a_setup_waits_for_a_concurrent_setup_however_long_it_holds_the_lock(
     assert setup.run(deps, "launcher.py") == 0
     assert busy == []
     assert setup.outcome(deps)["status"] == "ready"
+
+
+def test_a_collection_that_raises_after_ready_is_logged_and_recorded(
+    setup_env, monkeypatch
+):
+    """The set is ready; the GC's OSError reaches setup.log and the outcome file.
+
+    Before: the exception escaped after the streams were restored, so setup.log
+    ended "ready" and nothing recorded the failure.
+    """
+    setup, _, deps, _, _ = setup_env
+    _warm(monkeypatch, setup)
+
+    def unlistable(root, data):
+        raise PermissionError(13, "Permission denied", f"{data}/sets")
+
+    monkeypatch.setattr(setup.launcher_gc, "collect", unlistable)
+    assert setup.run(deps, "launcher.py") == 0
+    result = setup.outcome(deps)
+    assert result["status"] == "ready"
+    assert "Permission denied" in result["gc_error"]
+    log = setup.log_path(deps).read_text(encoding="utf-8")
+    assert "could not collect the sets of earlier versions" in log
+
+
+def test_any_other_exception_leaves_its_traceback_in_the_log(setup_env, monkeypatch):
+    setup, _, deps, _, _ = setup_env
+    _warm(monkeypatch, setup)
+
+    def broken(root, data):
+        raise RuntimeError("collector bug")
+
+    monkeypatch.setattr(setup.launcher_gc, "collect", broken)
+    with pytest.raises(RuntimeError):
+        setup.run(deps, "launcher.py")
+    log = setup.log_path(deps).read_text(encoding="utf-8")
+    assert "Traceback" in log and "collector bug" in log
