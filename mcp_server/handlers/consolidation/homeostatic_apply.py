@@ -178,19 +178,7 @@ def _apply_fold(store: MemoryStore, domain: str, factor: float, cls: str) -> int
             cls,
         )
         return 0
-    with store.acquire_batch() as conn:
-        result = conn.execute(
-            "UPDATE memories "
-            "SET heat_base = LEAST(1.0, GREATEST(0.0, heat_base * %s)), "
-            "    heat_base_set_at = NOW() "
-            "WHERE domain = %s "
-            "  AND write_class = %s "
-            "  AND NOT is_protected "
-            "  AND NOT no_decay "
-            "  AND NOT is_stale",
-            (float(factor), domain or "", cls),
-        )
-        rows = int(getattr(result, "rowcount", 0) or 0)
+    rows = store.fold_heat_base(domain, cls, float(factor))
     store.set_homeostatic_factor(domain, 1.0, write_class=cls)
     try:
         store.log_homeostatic_fold(domain, cls, factor, rows)

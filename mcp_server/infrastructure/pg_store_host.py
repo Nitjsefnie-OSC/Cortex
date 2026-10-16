@@ -96,6 +96,10 @@ class PgStoreHost:
             self,
         ) -> AbstractContextManager[psycopg.Connection[DictRow]]: ...
 
+        def acquire_batch(
+            self,
+        ) -> AbstractContextManager[psycopg.Connection[DictRow]]: ...
+
         def _execute(
             self,
             query: str | sql.Composable,

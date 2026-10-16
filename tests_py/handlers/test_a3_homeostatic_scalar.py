@@ -133,9 +133,9 @@ class TestScalarPath:
 
         assert result["scaling_kind"] == "fold"
         assert result["scaling_applied"] is True
-        # Phase 5: fold UPDATE runs on the batch pool's checked-out connection.
-        store.acquire_batch.assert_called_once()
-        store._test_conn.execute.assert_called_once()
+        # The fold UPDATE is the store's own, in its backend's dialect (#736).
+        store.fold_heat_base.assert_called_once()
+        assert store.fold_heat_base.call_args.args[1] == "auto"
         # Post-fold, factor reset to 1.0.
         args, _ = store.set_homeostatic_factor.call_args
         assert args[1] == pytest.approx(1.0)
