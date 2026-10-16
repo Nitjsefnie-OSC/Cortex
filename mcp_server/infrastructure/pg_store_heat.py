@@ -52,6 +52,28 @@ class PgHeatMixin(PgStoreHost):
         )
         self._conn.commit()
 
+    def fold_heat_base(self, domain: str, write_class: str, factor: float) -> int:
+        """Homeostatic fold: multiply heat_base by ``factor`` for one
+        (domain, write_class), clamped to [0, 1]. Returns rows written.
+
+        Skips protected, no-decay and stale rows. SQLite twin:
+        ``SqliteMemoryStore.fold_heat_base`` (no LEAST/GREATEST/NOW()).
+
+        source: ADR-0363"""
+        with self.acquire_batch() as conn:
+            result = conn.execute(
+                "UPDATE memories "
+                "SET heat_base = LEAST(1.0, GREATEST(0.0, heat_base * %s)), "
+                "    heat_base_set_at = NOW() "
+                "WHERE domain = %s "
+                "  AND write_class = %s "
+                "  AND NOT is_protected "
+                "  AND NOT no_decay "
+                "  AND NOT is_stale",
+                (float(factor), domain or "", write_class),
+            )
+            return int(getattr(result, "rowcount", 0) or 0)
+
     def get_homeostatic_factor(self, domain: str, write_class: str = "auto") -> float:
         """A3: fetch per-(domain, write_class) homeostatic factor, default 1.0.
 

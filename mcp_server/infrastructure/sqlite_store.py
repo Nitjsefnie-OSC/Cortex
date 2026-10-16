@@ -532,6 +532,26 @@ class SqliteMemoryStore(
         )
         self._conn.commit()
 
+    def fold_heat_base(self, domain: str, write_class: str, factor: float) -> int:
+        """Homeostatic fold, SQLite dialect: scalar ``MIN``/``MAX`` stand in
+        for ``LEAST``/``GREATEST`` and ``CURRENT_TIMESTAMP`` for ``NOW()``.
+        See ``PgHeatMixin.fold_heat_base``; returns rows written.
+
+        source: ADR-0363"""
+        cur = self._conn.execute(
+            "UPDATE memories "
+            "SET heat_base = MIN(1.0, MAX(0.0, heat_base * ?)), "
+            "    heat_base_set_at = CURRENT_TIMESTAMP "
+            "WHERE domain = ? "
+            "  AND write_class = ? "
+            "  AND NOT COALESCE(is_protected, 0) "
+            "  AND NOT COALESCE(no_decay, 0) "
+            "  AND NOT COALESCE(is_stale, 0)",
+            (float(factor), domain or "", write_class),
+        )
+        self._conn.commit()
+        return int(cur.rowcount or 0)
+
     def get_homeostatic_factor(self, domain: str, write_class: str = "auto") -> float:
         """SQLite parity: default 1.0 when no row exists.
 

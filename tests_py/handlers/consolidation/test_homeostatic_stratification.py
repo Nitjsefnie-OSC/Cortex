@@ -64,17 +64,9 @@ def _stub_store(factor_return: float = 3.0) -> MagicMock:
     store.set_homeostatic_factor.return_value = None
     store.log_homeostatic_fold.return_value = 1
 
-    conn_result = MagicMock()
-    conn_result.rowcount = 40  # only the auto rows match the fold predicate
-    conn = MagicMock()
-    conn.execute.return_value = conn_result
-
-    batch_cm = MagicMock()
-    batch_cm.__enter__ = MagicMock(return_value=conn)
-    batch_cm.__exit__ = MagicMock(return_value=False)
-    store.acquire_batch.return_value = batch_cm
-
-    store._test_conn = conn
+    # only the auto rows match the fold predicate (#736: the fold UPDATE is
+    # the store's fold_heat_base, one per regulated class)
+    store.fold_heat_base.return_value = 40
     return store
 
 
@@ -149,14 +141,11 @@ class TestStratifiedFoldNeverTouchesDeliberate:
         assert by_class[DELIBERATE]["memories_scanned"] == 40
         assert by_class[DELIBERATE]["mean_heat"] == 0.45
 
-        # The fold UPDATE was issued exactly once (for the auto class),
-        # with a source predicate — not a bare domain predicate. We can't
-        # inspect the SQL string's bound params directly through the
-        # MagicMock's .execute call args without over-fitting to
-        # implementation, so we assert on the observable outcome instead:
-        # rowcount reported back matches only the auto population (stub
-        # configured to 40 — the auto count), not 80 (auto+deliberate).
-        store._test_conn.execute.assert_called_once()
+        # The fold was issued exactly once, for the auto class only — never
+        # for deliberate. The rowcount reported back matches only the auto
+        # population (stub configured to 40), not 80 (auto+deliberate).
+        store.fold_heat_base.assert_called_once()
+        assert store.fold_heat_base.call_args.args[1] == AUTO
         assert by_class[AUTO]["rows_folded"] == 40
 
     def test_deliberate_only_corpus_never_regulated(self):
