@@ -261,6 +261,7 @@ Run the measurement command in the header to get a current file listing.
 - `managed_pg_supervisor.py` — The detached process that owns one managed server: starts it, waits for its last client, stops it (ADR-1110)
 - `managed_pg_server.py` — Starts and stops the managed postmaster; a postmaster is ours only when its PID and kernel start time are the ones recorded at spawn (ADR-1110)
 - `managed_pg_process.py` — Kernel facts and waits: process start time, liveness, exit and directory events (kqueue, inotify + pidfd), no timer (ADR-1110)
+- `managed_pg_pidfile.py` — `postmaster.pid` of one managed cluster: the recorded postmaster's kernel proof, and whether the file's named process is its writer (kernel start time vs line 3) (ADR-1110)
 - `managed_pg_liveness.py` — A client never takes a `running` status whose recorded postmaster is dead: it waits for the supervisor's restart on directory events (ADR-1110)
 - `managed_pg_protocol.py` — Stdlib SCRAM-SHA-256 handshake proving the server holds the cluster's password and accepts connections (ADR-1110)
 - `memory_store.py` — Memory store abstraction

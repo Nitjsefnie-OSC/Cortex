@@ -13,14 +13,14 @@ listener on the recorded port: none of them is ours, so none is adopted, and
 server must authenticate with this cluster's password
 (``managed_pg_protocol``).
 
-The one other process ever dialled is the holder of ``postmaster.lock`` (an
-exclusive ``flock`` on a 0600 file in the 0700 root, the boundary that guards
-``postmaster.json`` too) when nothing recorded it: a postmaster whose
-supervisor died between spawning and recording it. Its ``postmaster.pid``,
-once ``ready`` and naming a PID alive as this user, gives the port; it is
-adopted and recorded only if it authenticates with the cluster's password;
-otherwise the start fails naming its PID and port, and it is neither
-signalled nor its ``postmaster.pid`` touched.
+The one other process ever dialled is the proven writer of a ``ready``
+``postmaster.pid`` (``managed_pg_pidfile.written_by``: its kernel start time
+is the file's line 3) while a group nothing recorded holds
+``postmaster.lock`` (a 0600 file in the 0700 root, the boundary that guards
+``postmaster.json`` too): a postmaster whose supervisor died between spawning
+and recording it. It is adopted and recorded only if it authenticates with
+the cluster's password; otherwise the start fails naming its PID and port,
+and it is neither signalled nor its ``postmaster.pid`` touched.
 
 Every wait is on a kernel event, never a clock (no ``pg_ctl -w``, whose 60 s
 default would decide a slow start failed). The postmaster inherits the write
@@ -32,7 +32,9 @@ file: the group exited, the failure, whose cause is what it wrote to
 ``postmaster.lock``, granted once the postmaster and all its children are
 gone. An adopted postmaster still starting is stopped and started anew.
 ``postmaster.pid`` is removed only while this process holds
-``postmaster.lock``, i.e. when no postmaster Cortex started is alive.
+``postmaster.lock`` (no postmaster Cortex started is alive) and the file is
+proven stale. A live writer Cortex did not start holds no lock: it is named
+and left alone, never adopted (no exit event to supervise or stop on).
 
 source: ADR-1110
 source: PostgreSQL src/include/utils/pidfile.h (postmaster.pid lines)
@@ -44,56 +46,24 @@ import os
 import signal
 import socket
 import subprocess
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 from mcp_server.infrastructure import managed_pg as _pg
 from mcp_server.infrastructure import managed_pg_process as _process
 from mcp_server.infrastructure import managed_pg_protocol as _protocol
-
-# source: pidfile.h LOCK_FILE_LINE_PID 1, _DATA_DIR 2, _PORT 4, _PM_STATUS 8
-_PID, _DATA_DIR, _PORT, _STATUS = 0, 1, 3, 7
-_READY = "ready"  # source: pidfile.h PM_STATUS_READY ("ready   ")
+from mcp_server.infrastructure.managed_pg_pidfile import (
+    READY,
+    LockFile,
+    live_postmaster,
+    read_lockfile,
+    ready,
+    written_by,
+)
 
 
 class ServerError(RuntimeError):
     """The postmaster did not start or stop; the message carries its log."""
-
-
-@dataclass(frozen=True)
-class LockFile:
-    """The lines of ``postmaster.pid`` this module reads."""
-
-    pid: int
-    data_dir: str
-    port: int
-    status: str
-
-
-def read_lockfile(cluster: Path) -> LockFile | None:
-    """``postmaster.pid`` as written, ``None`` when absent or not yet whole."""
-    try:
-        lines = (cluster / "postmaster.pid").read_text(encoding="utf-8").splitlines()
-        status = lines[_STATUS].strip() if len(lines) > _STATUS else ""
-        return LockFile(int(lines[_PID]), lines[_DATA_DIR], int(lines[_PORT]), status)
-    except (FileNotFoundError, ValueError, IndexError):
-        return None
-
-
-def live_postmaster(paths: _pg.PgPaths) -> LockFile | None:
-    """This cluster's live postmaster, proven by the kernel; else ``None``. Pure."""
-    lock = read_lockfile(paths.cluster)
-    if lock is None or Path(lock.data_dir).resolve() != paths.cluster.resolve():
-        return None
-    record = _pg.read_json(paths.postmaster)
-    if record.get("pid") != lock.pid or record.get("port") != lock.port:
-        return None
-    if not _process.alive_as_this_user(lock.pid):
-        return None
-    if _process.started(lock.pid) != record.get("started"):
-        return None
-    return lock
 
 
 def free_port(host: str, preferred: int | None = None) -> int:
@@ -125,7 +95,7 @@ def _until(cluster: Path, exit_fd: int, done: Callable[[], bool]) -> None:
 
 def _is_ready(cluster: Path, pid: int) -> bool:
     lock = read_lockfile(cluster)
-    return lock is not None and lock.pid == pid and lock.status == _READY
+    return lock is not None and lock.pid == pid and lock.status == READY
 
 
 def _prove(paths: _pg.PgPaths, port: int) -> None:
@@ -155,17 +125,6 @@ def _adopt(paths: _pg.PgPaths, lock: LockFile) -> int | None:
     return lock.port
 
 
-def _ready_and_alive(cluster: Path) -> LockFile | None:
-    """``postmaster.pid`` when it names this cluster, ``ready``, by a PID
-    alive as this user (a stale file of a dead postmaster does not count)."""
-    lock = read_lockfile(cluster)
-    if lock is None or lock.status != _READY:
-        return None
-    if Path(lock.data_dir).resolve() != cluster.resolve():
-        return None
-    return lock if _process.alive_as_this_user(lock.pid) else None
-
-
 def _recover_unrecorded(paths: _pg.PgPaths) -> int | None:
     """``postmaster.lock`` is held by a group nothing recorded: wait until it
     is gone (``None``) or ready, then adopt it only if it proves itself."""
@@ -174,14 +133,12 @@ def _recover_unrecorded(paths: _pg.PgPaths) -> int | None:
         _until(
             paths.cluster,
             gone_r,
-            lambda: (
-                _process.exited(gone_r) or _ready_and_alive(paths.cluster) is not None
-            ),
+            lambda: _process.exited(gone_r) or ready(paths.cluster) is not None,
         )
         gone = _process.exited(gone_r)
     finally:
         os.close(gone_r)
-    lock = None if gone else _ready_and_alive(paths.cluster)
+    lock = None if gone else ready(paths.cluster)
     if lock is None:
         return None
     try:
@@ -261,6 +218,23 @@ def _existing(paths: _pg.PgPaths) -> tuple[bool, int]:
     return True, port
 
 
+def _remove_stale_pid_file(paths: _pg.PgPaths, group: int) -> None:
+    """Remove ``postmaster.pid`` only when proven stale. A live writer is a
+    postmaster of this cluster that Cortex did not start (it holds no
+    ``postmaster.lock``): it is named and left alone, never adopted (no lock
+    means no exit event to supervise or to stop on)."""
+    lock = read_lockfile(paths.cluster)
+    if lock is not None and written_by(lock):
+        os.close(group)
+        raise ServerError(
+            f"pid {lock.pid} on port {lock.port} is a live postmaster of "
+            f"{paths.cluster} that Cortex did not start (its start time is the "
+            "one postmaster.pid records); nothing was removed or signalled: stop "
+            f"it (pg_ctl -D {paths.cluster} stop), then start Cortex again"
+        )
+    (paths.cluster / "postmaster.pid").unlink(missing_ok=True)  # proven stale
+
+
 def start(
     binaries: Path, paths: _pg.PgPaths, preferred: int | None = None
 ) -> tuple[int, subprocess.Popen | None]:
@@ -273,7 +247,7 @@ def start(
     if adopted:
         return value, None
     group = value
-    (paths.cluster / "postmaster.pid").unlink(missing_ok=True)  # lock held: no live one
+    _remove_stale_pid_file(paths, group)
     offset = paths.server_log.stat().st_size if paths.server_log.exists() else 0
     proc, port, exit_r = _spawn(binaries, paths, group, preferred)
     _await_ready(paths, proc, exit_r, offset)

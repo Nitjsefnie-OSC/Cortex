@@ -6,7 +6,9 @@ then the listen address and shared-memory key, then ``starting``, then
 ``ready``), listens on 127.0.0.1, completes a real SCRAM-SHA-256 exchange
 against ``<cluster>/../password`` (so ``managed_pg_protocol`` is exercised end
 to end), sends ``ReadyForQuery``, and on SIGINT removes ``postmaster.pid`` and
-exits 0. ``FAKE_PG_FAIL=<text>`` makes it print the text and exit 1 instead.
+exits 0, as it does once its test's lifeline is released
+(``FAKE_PG_LIFELINE``). ``FAKE_PG_FAIL=<text>`` makes it print the text and
+exit 1 instead. Line 3 of ``postmaster.pid`` is the start time, as in PG.
 Every connection is appended to ``<cluster>/../connections.log``.
 
 source: ADR-1110 (test double of the postmaster the supervisor spawns)
@@ -23,6 +25,7 @@ import socket
 import struct
 import sys
 import threading
+import time
 from pathlib import Path
 
 _ITERATIONS = 4096  # source: PostgreSQL scram_iterations default
@@ -98,6 +101,25 @@ def _serve(conn: socket.socket, password: str) -> None:
             pass
 
 
+def _follow_lifeline(lock: Path) -> None:
+    """Exit once the test that owns this fake released its lifeline lock
+    (``fake_pg_lifeline``): on any end of the test process, including a kill
+    or ``os._exit``, the kernel releases it. An event, never a timer."""
+    path = os.environ.get("FAKE_PG_LIFELINE")
+    if not path:
+        return
+    import fcntl  # noqa: PLC0415 — POSIX only, like the managed server
+
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+
+    def wait() -> None:
+        fcntl.flock(fd, fcntl.LOCK_SH)  # granted when the test's EX is gone
+        lock.unlink(missing_ok=True)
+        os._exit(0)
+
+    threading.Thread(target=wait, daemon=True).start()
+
+
 def main(argv: list[str]) -> None:
     cluster = Path(argv[argv.index("-D") + 1])
     port = int(argv[argv.index("-p") + 1])
@@ -114,7 +136,9 @@ def main(argv: list[str]) -> None:
     # Before postmaster.pid exists, as PostgreSQL's PostmasterMain does: a
     # SIGINT inherited as ignored (a background shell job) must not be lost.
     signal.signal(signal.SIGINT, stop)
-    base = f"{os.getpid()}\n{cluster}\n0\n{port}\n\n"
+    _follow_lifeline(lock)
+    # line 3 is MyStartTime, time(NULL) after exec, as PostgreSQL writes it
+    base = f"{os.getpid()}\n{cluster}\n{int(time.time())}\n{port}\n\n"
     lock.write_text(base)
     listener = socket.socket()
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

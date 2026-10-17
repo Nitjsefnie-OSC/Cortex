@@ -73,6 +73,27 @@ def started(pid: int) -> str | None:
     return None if fields[_STAT_STATE] == "Z" else fields[_STAT_STARTTIME]
 
 
+def start_epoch(pid: int) -> float | None:
+    """When ``pid`` started, in seconds since the epoch (``None`` as for
+    ``started``). macOS: the kernel's own epoch time. Linux: ``btime`` (boot
+    time, whole seconds, ``/proc/stat``) plus the start in clock ticks
+    (proc(5)), so it is exact only to about a second."""
+    start = started(pid)
+    if start is None:
+        return None
+    if sys.platform == "darwin":
+        return float(start)
+    try:
+        boot = next(
+            int(line.split()[1])
+            for line in Path("/proc/stat").read_text(encoding="ascii").splitlines()
+            if line.startswith("btime ")
+        )
+    except (OSError, StopIteration, ValueError):
+        return None
+    return boot + int(start) / os.sysconf("SC_CLK_TCK")
+
+
 def _in_thread(path: Path, keep: list[int] | None, shared: bool = False) -> int:
     """The read end of a pipe that reaches end of file once this process holds
     the exclusive ``flock`` on ``path``; a thread blocks in ``flock`` (the

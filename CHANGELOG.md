@@ -29,7 +29,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   refused). A postmaster that dies under live clients is started again on the
   same port, and a client never takes a `running` status whose postmaster is
   dead; one whose supervisor died before recording it is adopted once it
-  proves itself. The Codex hook entry and `hypermnesia-mcp` stop in one line
+  proves itself; a live postmaster of the cluster that Cortex did not start
+  is named and left alone, its `postmaster.pid` never removed. The Codex hook entry and `hypermnesia-mcp` stop in one line
   (`Cortex not ready: ...`) when the server cannot run. The
   Codex plugin, `hypermnesia-mcp` and `cortex-doctor` attach to the same
   server, so Claude and Codex on one account share one store. A configured

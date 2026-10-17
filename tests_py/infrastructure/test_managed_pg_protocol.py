@@ -14,6 +14,7 @@ source: https://www.rfc-editor.org/rfc/rfc5802 (SCRAM), rfc7677 (SHA-256)
 from __future__ import annotations
 
 import base64
+import secrets
 import socket
 import struct
 import threading
@@ -22,7 +23,9 @@ import pytest
 
 from mcp_server.infrastructure import managed_pg_protocol as protocol
 
-_PASSWORD = "topsecret-cluster-password"  # source: test value
+# A fresh random password per run, as initdb's password file holds: no secret
+# material in source (HOL plugin scan, HARDCODED_SECRET). source: ADR-1110
+_PASSWORD = secrets.token_hex(24)
 _SALT = base64.b64encode(b"salt").decode()  # source: test value
 
 

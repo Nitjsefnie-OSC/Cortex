@@ -20,9 +20,12 @@ from pathlib import Path
 
 import pytest
 
+from mcp_server.infrastructure import managed_pg_pidfile as pidfile
 from tests_py.infrastructure import fake_postgres
+from tests_py.infrastructure.fake_pg_lifeline import fake_pg_lifeline
 
 pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX only (ADR-1110)")
+__all__ = ["fake_pg_lifeline"]  # the autouse fixture, imported
 HOST = "127.0.0.1"  # source: managed_pg.HOST
 # source: test helper (a live process of this user listening on loopback that
 # reports every connection it is offered and every SIGINT it receives; the
@@ -97,7 +100,7 @@ def test_a_recorded_live_postmaster_is_ours(pg, foreign):
     proc, port = foreign()
     _pid_file(paths, proc.pid, port)
     _record(pg, proc.pid, port)
-    assert server.live_postmaster(paths).pid == proc.pid
+    assert pidfile.live_postmaster(paths).pid == proc.pid
 
 
 def test_a_reused_pid_with_a_listener_is_not_ours(pg, foreign):
@@ -105,14 +108,14 @@ def test_a_reused_pid_with_a_listener_is_not_ours(pg, foreign):
     proc, port = foreign()
     _pid_file(paths, proc.pid, port)
     _record(pg, proc.pid, port, started="1.000000")  # the pid's earlier owner
-    assert server.live_postmaster(paths) is None
+    assert pidfile.live_postmaster(paths) is None
 
 
 def test_an_unrecorded_pid_with_a_listener_is_not_ours(pg, foreign):
     _managed_pg, server, paths = pg
     proc, port = foreign()
     _pid_file(paths, proc.pid, port)
-    assert server.live_postmaster(paths) is None
+    assert pidfile.live_postmaster(paths) is None
 
 
 def test_a_pid_file_of_another_data_directory_is_not_ours(pg, foreign, tmp_path):
@@ -120,7 +123,7 @@ def test_a_pid_file_of_another_data_directory_is_not_ours(pg, foreign, tmp_path)
     proc, port = foreign()
     _pid_file(paths, proc.pid, port, data_dir=tmp_path / "elsewhere")
     _record(pg, proc.pid, port)
-    assert server.live_postmaster(paths) is None
+    assert pidfile.live_postmaster(paths) is None
 
 
 def test_permission_error_is_not_ours_even_with_a_listener(pg, foreign, monkeypatch):
@@ -129,14 +132,14 @@ def test_permission_error_is_not_ours_even_with_a_listener(pg, foreign, monkeypa
     proc, port = foreign()
     _pid_file(paths, proc.pid, port)
     _record(pg, proc.pid, port)
-    assert server.live_postmaster(paths) is not None  # the control
+    assert pidfile.live_postmaster(paths) is not None  # the control
     from mcp_server.infrastructure import managed_pg_process
 
     def eperm(pid, sig):
         raise PermissionError(1, "Operation not permitted")
 
     monkeypatch.setattr(managed_pg_process.os, "kill", eperm)
-    assert server.live_postmaster(paths) is None
+    assert pidfile.live_postmaster(paths) is None
 
 
 def test_a_dead_pid_is_not_ours(pg):
@@ -145,7 +148,7 @@ def test_a_dead_pid_is_not_ours(pg):
     proc.wait()
     _pid_file(paths, proc.pid, 5432)
     _record(pg, proc.pid, 5432, started="1.000000")
-    assert server.live_postmaster(paths) is None
+    assert pidfile.live_postmaster(paths) is None
 
 
 def test_a_zombie_has_no_start_time(pg):
@@ -177,7 +180,7 @@ def test_start_never_adopts_or_dials_a_foreign_listener(pg, foreign, tmp_path):
     got, postmaster = server.start(binaries, paths)
     try:
         assert got != port and postmaster is not None
-        assert server.read_lockfile(paths.cluster).pid == postmaster.pid
+        assert pidfile.read_lockfile(paths.cluster).pid == postmaster.pid
     finally:
         server.stop(paths, postmaster)
     assert proc.poll() is None  # the foreign process was not signalled
@@ -201,7 +204,7 @@ def test_start_waits_for_ready_then_proves_with_the_password(pg, tmp_path):
     binaries = fake_postgres.install(tmp_path / "bin").parent
     port, postmaster = server.start(binaries, paths)
     try:
-        lock = server.read_lockfile(paths.cluster)
+        lock = pidfile.read_lockfile(paths.cluster)
         assert (lock.pid, lock.port, lock.status) == (postmaster.pid, port, "ready")
         assert (paths.root / "connections.log").read_text() == "connection\n"
     finally:
@@ -223,7 +226,7 @@ def test_a_server_without_the_cluster_password_fails_and_is_stopped(
     binaries = fake_postgres.install(tmp_path / "bin").parent
     with pytest.raises(managed_pg_protocol.ProtocolError, match="28P01"):
         server.start(binaries, paths)
-    assert server.live_postmaster(paths) is None
+    assert pidfile.live_postmaster(paths) is None
     assert not (paths.cluster / "postmaster.pid").exists()
 
 

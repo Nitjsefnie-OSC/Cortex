@@ -20,9 +20,12 @@ import sys
 
 import pytest
 
+from mcp_server.infrastructure import managed_pg_pidfile as pidfile
 from tests_py.infrastructure import fake_postgres
+from tests_py.infrastructure.fake_pg_lifeline import fake_pg_lifeline
 
 pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX only (ADR-1110)")
+__all__ = ["fake_pg_lifeline"]  # the autouse fixture, imported
 HOST = "127.0.0.1"  # source: managed_pg.HOST
 # source: test helper — start argv[3:] in its own session, holding the lock
 # file argv[1] and the pipe end fd argv[2], as the supervisor does; print its pid
@@ -95,7 +98,7 @@ def test_an_adopted_postmaster_is_stopped_on_its_exit_event(pg, tmp_path):
     )
     assert server.start(tmp_path / "bin", paths) == (port, None)  # adopted
     server.stop(paths, None)
-    assert server.live_postmaster(paths) is None
+    assert pidfile.live_postmaster(paths) is None
 
 
 def test_an_unrecorded_postmaster_holding_the_lock_is_proven_and_adopted(pg, tmp_path):
@@ -105,9 +108,9 @@ def test_an_unrecorded_postmaster_holding_the_lock_is_proven_and_adopted(pg, tmp
     assert not paths.postmaster.exists()
     assert server.start(tmp_path / "bin", paths) == (port, None)
     assert managed_pg.read_json(paths.postmaster)["pid"] == pid  # recorded now
-    assert server.live_postmaster(paths).pid == pid
+    assert pidfile.live_postmaster(paths).pid == pid
     server.stop(paths, None)
-    assert server.live_postmaster(paths) is None
+    assert pidfile.live_postmaster(paths) is None
 
 
 def test_an_unrecorded_lock_holder_that_cannot_sign_is_named_and_left_alone(
@@ -120,8 +123,11 @@ def test_an_unrecorded_lock_holder_that_cannot_sign_is_named_and_left_alone(
     )  # fmt: skip
     port = int(holder.stdout.readline())
     pid_file = paths.cluster / "postmaster.pid"
+    from mcp_server.infrastructure import managed_pg_process
+
+    begun = int(managed_pg_process.start_epoch(holder.pid))  # it is the writer
     pid_file.write_text(
-        f"{holder.pid}\n{paths.cluster}\n0\n{port}\n\n{HOST}\n1 2\nready   \n"
+        f"{holder.pid}\n{paths.cluster}\n{begun}\n{port}\n\n{HOST}\n1 2\nready   \n"
     )
     original = server._recover_unrecorded
 
@@ -225,3 +231,53 @@ def test_a_client_never_takes_a_running_status_whose_postmaster_is_dead(
         os.close(supervisor)
         alive.stdin.close()
         alive.wait()
+
+
+def test_a_live_postmaster_cortex_did_not_start_is_named_and_left_alone(pg, tmp_path):
+    # Round-5 review B5: one started by hand holds no postmaster.lock; start()
+    # took the lock and erased its postmaster.pid, and PostgreSQL then shut
+    # it down. Now it is proven the file's writer (kernel start time) and left
+    # alone: nothing erased, signalled or dialled.
+    _managed_pg, server, paths = pg
+    script = fake_postgres.install(tmp_path / "bin")
+    port = server.free_port(HOST)
+    by_hand = subprocess.Popen(
+        [str(script), "-D", str(paths.cluster), "-p", str(port)],
+        stdin=subprocess.DEVNULL, start_new_session=True,
+    )  # fmt: skip
+    exit_r, exit_w = os.pipe()  # never written: only directory events wake us
+    try:
+        server._until(
+            paths.cluster, exit_r, lambda: server._is_ready(paths.cluster, by_hand.pid)
+        )
+        pid_file = (paths.cluster / "postmaster.pid").read_text()
+        with pytest.raises(
+            server.ServerError, match=f"pid {by_hand.pid} on port {port}"
+        ):
+            server.start(script.parent, paths)
+        assert (paths.cluster / "postmaster.pid").read_text() == pid_file
+        assert by_hand.poll() is None  # still running
+        assert not (paths.root / "connections.log").exists()  # never dialled
+    finally:
+        os.close(exit_r)
+        os.close(exit_w)
+        by_hand.send_signal(__import__("signal").SIGINT)
+        by_hand.wait()
+
+
+def test_a_ready_file_whose_pid_started_later_is_stale_and_never_dialled(pg):
+    # Round-5 review N8: a stale ready postmaster.pid naming a live process
+    # started after the file was written (a reused PID) was dialled.
+    _managed_pg, _server, paths = pg
+    reused = subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"],
+                              stdin=subprocess.PIPE)  # fmt: skip
+    try:
+        (paths.cluster / "postmaster.pid").write_text(
+            f"{reused.pid}\n{paths.cluster}\n0\n5432\n\n{HOST}\n1 2\nready   \n"
+        )
+        lock = pidfile.read_lockfile(paths.cluster)
+        assert not pidfile.written_by(lock)
+        assert pidfile.ready(paths.cluster) is None  # nothing to dial
+    finally:
+        reused.stdin.close()
+        reused.wait()

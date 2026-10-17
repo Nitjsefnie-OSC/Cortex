@@ -22,8 +22,10 @@ from pathlib import Path
 import pytest
 
 from tests_py.infrastructure import fake_postgres
+from tests_py.infrastructure.fake_pg_lifeline import fake_pg_lifeline
 
 pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX only (ADR-1110)")
+__all__ = ["fake_pg_lifeline"]  # the autouse fixture, imported
 REPO_ROOT = Path(__file__).resolve().parents[2]
 # source: ADR-1110 D1 — what runtime.py runs for a Codex hook, minus the event
 _CODEX = (
