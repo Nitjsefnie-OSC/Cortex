@@ -7,6 +7,9 @@ it provisioned in a small JSON marker::
     {"backend": "sqlite"}        # zero-config default install
     {"backend": "postgresql"}    # --postgres opt-in, or a protected
                                  # pre-existing PostgreSQL install
+    {"backend": "managed", "root": "<plugin data>/pg"}
+                                 # the plugin's own PostgreSQL server, written
+                                 # by Setup only after it started (ADR-1110)
 
 1. ``CORTEX_MEMORY_STORE_BACKEND`` already set  -> untouched
 2. ``CORTEX_BACKEND`` = postgres|postgresql|sqlite -> mapped to (1)
@@ -19,8 +22,13 @@ it provisioned in a small JSON marker::
    SQLite store, and nothing dials a PostgreSQL the user never configured),
    else untouched (engine default: ``auto``)
 
+A ``managed`` marker is resolved by the plugin launcher only
+(``scripts/launcher_pg_select.py``), which attaches to that server and sets
+``DATABASE_URL``; anywhere else it is an error that names the marker.
+
 source: ADR-0505
-source: ADR-1104"""
+source: ADR-1104
+source: ADR-1110"""
 
 from __future__ import annotations
 
@@ -40,6 +48,10 @@ BACKEND_MARKER_PATH = METHODOLOGY_DIR / "backend.json"
 # The two backends the installer can persist — mirrors the explicit
 # (non-"auto") values of MemorySettings.STORE_BACKEND.
 VALID_BACKENDS = frozenset({"sqlite", "postgresql"})
+# The plugin's own PostgreSQL server: a marker value, never an engine value
+# (source: ADR-1110).
+MANAGED = "managed"
+MARKER_BACKENDS = VALID_BACKENDS | {MANAGED}
 
 # CORTEX_BACKEND accepts the colloquial "postgres" too; the engine env
 # var only understands "postgresql".
@@ -72,26 +84,38 @@ def read_backend_marker(path: Path | None = None) -> dict | None:
         raise BackendMarkerError(
             f"backend marker {marker_path} is unreadable ({exc}); fix or delete it"
         ) from exc
-    if not isinstance(data, dict) or data.get("backend") not in VALID_BACKENDS:
+    if not isinstance(data, dict) or data.get("backend") not in MARKER_BACKENDS:
         raise BackendMarkerError(
-            f"backend marker {marker_path} names no backend of {sorted(VALID_BACKENDS)}"
-            f" ({data!r}); fix or delete it"
+            f"backend marker {marker_path} names no backend of"
+            f" {sorted(MARKER_BACKENDS)} ({data!r}); fix or delete it"
+        )
+    if data["backend"] == MANAGED and not str(data.get("root") or "").strip():
+        raise BackendMarkerError(
+            f"backend marker {marker_path} selects the managed server but names no"
+            " root; fix or delete it"
         )
     return data
 
 
 def write_backend_marker(
-    backend: str, written_by: str, path: Path | None = None
+    backend: str, written_by: str, path: Path | None = None, root: str = ""
 ) -> Path:
     """Persist ``backend`` as the marker, atomically (no reader sees half a file).
 
-    Pre:  ``backend`` is one of ``VALID_BACKENDS``.
-    source: ADR-1104"""
-    if backend not in VALID_BACKENDS:
-        raise BackendMarkerError(f"refusing to persist unknown backend {backend!r}")
+    Pre:  ``backend`` is one of ``MARKER_BACKENDS``; ``root`` is non-empty
+          exactly when ``backend`` is ``MANAGED``.
+    source: ADR-1104
+    source: ADR-1110"""
+    if backend not in MARKER_BACKENDS or (backend == MANAGED) != bool(root):
+        raise BackendMarkerError(
+            f"refusing to persist backend {backend!r} with root {root!r}"
+        )
     marker_path = path or BACKEND_MARKER_PATH
     marker_path.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps({"backend": backend, "written_by": written_by}, indent=2)
+    record = {"backend": backend, "written_by": written_by}
+    if root:
+        record["root"] = root
+    text = json.dumps(record, indent=2)
     fd, tmp = tempfile.mkstemp(dir=marker_path.parent, prefix=marker_path.name + ".")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -119,6 +143,12 @@ def resolve_backend_env(
         return {}
     if environ.get("CORTEX_MEMORY_DATABASE_URL", "").strip():
         return {}
+    if marker is not None and marker["backend"] == MANAGED:
+        raise BackendMarkerError(
+            f"the backend marker selects the plugin's managed PostgreSQL server at"
+            f" {marker.get('root')}; it is reached through the plugin launcher"
+            " (scripts/launcher.py), or set DATABASE_URL"
+        )
     if marker is not None:
         return {"CORTEX_MEMORY_STORE_BACKEND": marker["backend"]}
     if default:

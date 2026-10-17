@@ -2,7 +2,8 @@
 
 This is the plugin's ``Setup`` hook (Claude Code runs it for ``claude --init-only``,
 before the first SessionStart) and the program the background pre-install runs
-for the next version's set. It installs the base set and the semantic-search
+for the next version's set. It installs the base set, the plugin's managed
+PostgreSQL server when the store is eligible (ADR-1110), the semantic-search
 set from uv.lock, then downloads the pinned embedding model, and it is the
 only place besides the MCP server and the two detached jobs that installs.
 
@@ -14,10 +15,12 @@ also appended to ``<data>/setup.log`` and the outcome file is what a caller
 reads (``scripts/init_plugin.py``).
 
 source: ADR-1108
+source: ADR-1110
 """
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import subprocess
@@ -32,6 +35,7 @@ import launcher_layout
 import launcher_lock
 import launcher_logs
 import launcher_ml
+import launcher_site
 
 SETUP = (
     "--setup"  # source: ADR-1108 (the argument the Setup hook starts the launcher with)
@@ -118,6 +122,21 @@ def _fail(deps_dir: str, error: str) -> int:
     return 1
 
 
+def managed_pg_step(deps_dir: str, say) -> str:
+    """The managed PostgreSQL step (ADR-1110); ``""`` or the cause to fail with.
+
+    Imported here, after the base set, because it needs psycopg. The import
+    system cached the set's directory as it was before the install, so it is
+    rescanned first, as ``launcher._ensure_runtime`` does (ADR-1104)."""
+    importlib.invalidate_caches()
+    launcher_site.isolate_deps(deps_dir)
+    import launcher_pg_provision  # noqa: PLC0415 — needs the base set installed
+
+    return launcher_pg_provision.setup_step(
+        str(launcher_layout.data_dir(deps_dir)), say
+    )
+
+
 def _warm_model(deps_dir: str, launcher: str, log) -> str:
     """Download the pinned embedding model; the failure's cause, "" on success."""
     env = dict(os.environ)
@@ -141,6 +160,9 @@ def _install(deps_dir: str, launcher: str, log) -> int:
     launcher_deps.ensure_deps(deps_dir)
     if not launcher_deps.set_ready(deps_dir, "base"):
         return _fail(deps_dir, "the locked base dependency set did not install")
+    cause = managed_pg_step(deps_dir, _say)
+    if cause:
+        return _fail(deps_dir, cause)
     if os.environ.get(launcher_ml.ZERO_DOWNLOAD_ENV, "").lower() in ("1", "true"):
         _say(f"semantic search skipped: {launcher_ml.ZERO_DOWNLOAD_ENV} is set")
     else:
