@@ -27,6 +27,14 @@ PG_VERSION = "18.6.0"  # source: ADR-1110 (theseus-rs/postgresql-binaries releas
 PGVECTOR_TAG = (
     "v0.18.320"  # source: ADR-1110 (nicoloboschi/pgvector_compiled, pgvector 0.8.5)
 )
+# pgvector compiled by Cortex CI (.github/workflows/pgvector.yml) from this
+# upstream tag, refused unless it resolves to this commit.
+# source: ADR-1110 (pgvector/pgvector tag v0.8.7, 2026-10-01)
+PGVECTOR_VERSION = "0.8.7"
+# source: ADR-1110 (gh api repos/pgvector/pgvector/git/refs/tags/v0.8.7)
+PGVECTOR_COMMIT = "f37c13f68b57d2c3472b2214fbcff699d6d34876"
+# The release of this repository that holds the archives the workflow built.
+PGVECTOR_RELEASE = f"pgvector-v{PGVECTOR_VERSION}-pg{PG_VERSION}"  # source: ADR-1110
 # source: ADR-1110 (release download URLs of both projects)
 PG_URL = "https://github.com/theseus-rs/postgresql-binaries/releases/download/{version}/{name}"
 VECTOR_URL = (
