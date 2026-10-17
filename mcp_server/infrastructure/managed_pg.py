@@ -1,7 +1,16 @@
-"""Attach a launcher process to the plugin's managed PostgreSQL server.
+"""Attach a process to the plugin's managed PostgreSQL server (ADR-1110).
 
-Stdlib only, POSIX only (``fcntl``). Three ``flock`` files under the managed
-root order everything, with no timer anywhere:
+Stdlib only, POSIX only (``fcntl``). In the wheel, so every surface that reads
+the ``managed`` backend marker attaches the same way: the Claude Code launcher,
+``python -m mcp_server`` / ``hypermnesia-mcp``, the Codex hook entry
+(``mcp_server.hooks.entry``) and the doctor. Claude and Codex on one HOME
+therefore share one server and one store.
+
+The cluster root is ``~/.claude/methodology/managed-pg`` (next to the marker,
+outside any plugin's data, so uninstalling a plugin never deletes memories);
+the binaries stay in the Claude plugin's data, named by ``installed.json``.
+
+Three ``flock`` files under the root order everything, with no timer anywhere:
 
 - ``clients.lock``: every attached process holds it shared until it exits;
   the supervisor's exclusive request is granted when the last one is gone.
@@ -10,8 +19,7 @@ root order everything, with no timer anywhere:
 - ``supervisor.lock``: held for the supervisor's whole life, so "is one
   running" is a non-blocking lock attempt.
 
-The server is only ever started here, never installed: binaries and cluster
-come from ``launcher_pg_provision`` (the Setup hook). source: ADR-1110
+source: ADR-1110
 """
 
 from __future__ import annotations
@@ -22,13 +30,17 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import MutableMapping
 from urllib.parse import quote
 
 DATABASE = "cortex"  # source: ADR-1110 (the database name every Cortex URL names)
 USER = "postgres"  # source: ADR-1110 (the superuser initdb -U creates)
 HOST = "127.0.0.1"  # source: ADR-1110 (TCP on loopback only; unix sockets off)
 ROOT_ENV = "CORTEX_MANAGED_PG_ROOT"  # source: ADR-1110 (inherited by children)
+ROOT_NAME = "managed-pg"  # source: ADR-1110 (the root's name under methodology/)
+_SUPERVISOR = "mcp_server.infrastructure.managed_pg_supervisor"  # source: ADR-1110
 _HELD: list[int] = []  # client locks, kept open until the process exits
+_ATTACHED: dict[str, str] = {}  # root -> URL, valid while the client lock is held
 
 
 class ManagedPgError(RuntimeError):
@@ -37,13 +49,9 @@ class ManagedPgError(RuntimeError):
 
 @dataclass(frozen=True)
 class PgPaths:
-    """Every file of one managed server, all under ``root``."""
+    """Every file of one managed server's cluster root."""
 
     root: Path
-
-    @property
-    def dist(self) -> Path:
-        return self.root / "dist"
 
     @property
     def cluster(self) -> Path:
@@ -56,6 +64,11 @@ class PgPaths:
     @property
     def status(self) -> Path:
         return self.root / "status.json"
+
+    @property
+    def postmaster(self) -> Path:
+        """``{pid, started, port}`` of the postmaster the supervisor spawned."""
+        return self.root / "postmaster.json"
 
     @property
     def installed(self) -> Path:
@@ -79,9 +92,9 @@ class PgPaths:
         return self.root / f"{name}.lock"
 
 
-def paths_for(data_root: str) -> PgPaths:
-    """``$CLAUDE_PLUGIN_DATA/pg`` (the plugin root in a dev checkout)."""
-    return PgPaths(Path(data_root) / "pg")
+def root_under(methodology_dir: Path) -> PgPaths:
+    """The cluster root next to the backend marker (D5, ADR-1110)."""
+    return PgPaths(methodology_dir / ROOT_NAME)
 
 
 def open_lock(path: Path) -> int:
@@ -122,12 +135,12 @@ def database_url(paths: PgPaths, port: int) -> str:
     return f"postgresql://{USER}:{secret}@{HOST}:{port}/{DATABASE}"
 
 
-def serves(environ: dict) -> PgPaths | None:
+def serves(environ: MutableMapping[str, str]) -> PgPaths | None:
     """The managed root ``environ`` already names, when its URL is that server's.
 
-    A launcher started by a process attached to the server (a background
-    worker a hook spawns) inherits ``DATABASE_URL`` and ``ROOT_ENV``; it must
-    attach in turn, or the server could be stopped under it.
+    A process started by one attached to the server (a background worker a
+    hook spawns) inherits ``DATABASE_URL`` and ``ROOT_ENV``; it must attach in
+    turn, or the server could be stopped under it.
     """
     root = environ.get(ROOT_ENV, "")
     if not root:
@@ -142,8 +155,12 @@ def serves(environ: dict) -> PgPaths | None:
 
 def _spawn_supervisor(paths: PgPaths, fds: tuple[int, int]) -> None:
     """Start the detached supervisor; it inherits the two locks in ``fds``."""
-    script = Path(__file__).resolve().parent / "launcher_pg_supervisor.py"
-    argv = [sys.executable, str(script), str(paths.root), *map(str, fds)]
+    package_parent = str(Path(__file__).resolve().parents[2])
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(
+        p for p in (package_parent, env.get("PYTHONPATH", "")) if p
+    )
+    argv = [sys.executable, "-m", _SUPERVISOR, str(paths.root), *map(str, fds)]
     log = os.open(paths.log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     try:
         subprocess.Popen(
@@ -153,6 +170,7 @@ def _spawn_supervisor(paths: PgPaths, fds: tuple[int, int]) -> None:
             stderr=log,
             pass_fds=fds,
             start_new_session=True,
+            env=env,
         )
     finally:
         os.close(log)
@@ -176,16 +194,27 @@ def _ensure_supervisor(paths: PgPaths) -> None:
         os.close(start)
 
 
-def attach(paths: PgPaths) -> str:
+def attach(paths: PgPaths, environ: MutableMapping[str, str]) -> str:
     """Hold this process as a client of the server and return its URL.
 
     Postcondition: the server is running, or ``ManagedPgError`` carries the
-    supervisor's own error. Exports ``ROOT_ENV`` for this process's children.
+    supervisor's own error. Sets ``ROOT_ENV`` in ``environ`` for children.
     """
     if os.name == "nt":
         raise ManagedPgError("the managed PostgreSQL server does not run on Windows")
     if not paths.root.is_dir():
-        raise ManagedPgError(f"the managed PostgreSQL root {paths.root} is missing")
+        raise ManagedPgError(
+            f"the managed PostgreSQL root {paths.root} is missing; run "
+            "`claude --init-only` to set it up again"
+        )
+    key = str(paths.root)
+    if key not in _ATTACHED:
+        _ATTACHED[key] = _attach_once(paths)
+    environ[ROOT_ENV] = key
+    return _ATTACHED[key]
+
+
+def _attach_once(paths: PgPaths) -> str:
     clients = open_lock(paths.lock("clients"))
     flock(clients, exclusive=False)
     _HELD.append(clients)
@@ -197,16 +226,28 @@ def attach(paths: PgPaths) -> str:
         os.close(start)
     status = read_json(paths.status)
     if status.get("state") != "running":
+        _HELD.remove(clients)
+        os.close(clients)
         raise ManagedPgError(
             "the Cortex PostgreSQL server is not running: "
             f"{status.get('error') or status.get('state') or 'no status written'}"
             f"\nSee {paths.log}"
         )
-    os.environ[ROOT_ENV] = str(paths.root)
     return database_url(paths, int(status["port"]))
+
+
+def use(paths: PgPaths, environ: MutableMapping[str, str]) -> dict[str, str]:
+    """Attach and point the engine at the server; the variables set."""
+    additions = {
+        "DATABASE_URL": attach(paths, environ),
+        "CORTEX_MEMORY_STORE_BACKEND": "postgresql",
+    }
+    environ.update(additions)
+    return additions
 
 
 def detach() -> None:
     """Release this process's client locks (the supervisor may then stop)."""
+    _ATTACHED.clear()
     while _HELD:
         os.close(_HELD.pop())

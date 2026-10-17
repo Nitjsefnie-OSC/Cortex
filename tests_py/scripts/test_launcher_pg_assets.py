@@ -94,7 +94,7 @@ _PG = {
 _VECTOR = {
     "lib/vector.dylib": b"v",
     "share/extension/vector.control": b"c",
-}  # source: pgvector_compiled archive layout
+}  # source: scripts/pgvector_build.py layout (lib/, share/extension/)
 
 
 def test_install_overlays_pgvector_and_stamps_the_tree_last(

@@ -49,5 +49,8 @@ def test_setup_then_a_launch_get_a_server_with_vector_and_pg_trgm(tmp_path):
     print(done.stdout, done.stderr, sep="\n")
     report = json.loads(done.stdout)
     assert report["passed"], report
-    assert report["extensions"]["vector"] == "0.8.5"
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import launcher_pg_assets
+
+    assert report["extensions"]["vector"] == launcher_pg_assets.PGVECTOR_VERSION
     assert done.returncode == 0

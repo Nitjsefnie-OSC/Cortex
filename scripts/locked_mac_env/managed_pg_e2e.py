@@ -3,10 +3,14 @@
 Runs what Setup and a launch run, in one process, against the real pinned
 archives: Setup's managed step (download, sha256, initdb, start, database,
 extensions, schema, marker), a launch's attach (``launcher_backend.apply``),
-then ``CREATE EXTENSION vector`` and ``pg_trgm`` in a fresh database and a
-query through each; finally it detaches and waits on the supervisor's lock
-for the server to stop. Prints one JSON report; exit 0 only when every check
-passes. Stdlib plus psycopg (the launcher's base set).
+a direct launch's attach in another process (the Codex hook entry, owner
+decision D1: same server, same URL), then ``CREATE EXTENSION vector`` and
+``pg_trgm`` in a fresh database and a query through each; finally it detaches
+and waits on the supervisor's lock for the server to stop. The report names
+the cluster root, which must be ``$HOME/.claude/methodology/managed-pg``
+(owner decision D5), and the binaries' tree, in the plugin's data. Prints
+one JSON report; exit 0 only when every check passes. Stdlib plus psycopg
+(the launcher's base set).
 
 Issue #740's locked-down Mac is reproduced by the caller: run it under
 ``sandbox-exec`` with ``locked_mac_env/no_homebrew.sb`` (no read of
@@ -22,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -72,46 +77,79 @@ def _cortex_schema(url: str) -> int:
 
 def _wait_stopped(root: Path) -> dict:
     """Block on the supervisor's lock (held for its whole life), then read status."""
-    import launcher_pg  # noqa: PLC0415 — on sys.path after _paths
+    from mcp_server.infrastructure import managed_pg  # noqa: PLC0415 — on sys.path after _paths
 
-    fd = launcher_pg.open_lock(root / "supervisor.lock")
+    fd = managed_pg.open_lock(root / "supervisor.lock")
     try:
-        launcher_pg.flock(fd, exclusive=True)
+        managed_pg.flock(fd, exclusive=True)
     finally:
         os.close(fd)
-    return launcher_pg.read_json(root / "status.json")
+    return managed_pg.read_json(root / "status.json")
+
+
+# source: ADR-1110 D1 (what Codex runs: mcp_server.hooks.entry's resolution)
+_DIRECT = (
+    "import os, sys; sys.path.insert(0, sys.argv[1]);"
+    " from mcp_server.hooks.entry import prepare_environment;"
+    " prepare_environment(os.environ); print(os.environ['DATABASE_URL'])"
+)
+
+
+def _direct_launch_url(plugin_root: str) -> str:
+    """The URL a Codex hook process attaches to, from the marker alone."""
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("DATABASE_URL", "CORTEX_MEMORY_STORE_BACKEND",
+                        "CORTEX_MANAGED_PG_ROOT")}  # fmt: skip
+    env["CORTEX_RUNTIME"] = "cowork"
+    done = subprocess.run(
+        [sys.executable, "-I", "-c", _DIRECT, plugin_root],
+        capture_output=True, text=True, env=env, check=False,
+    )  # fmt: skip
+    return done.stdout.strip() or f"exit {done.returncode}: {done.stderr.strip()}"
 
 
 def run(plugin_root: str, work: Path) -> dict:
     _paths(plugin_root)
     import launcher_backend  # noqa: PLC0415 — on sys.path after _paths
-    import launcher_pg  # noqa: PLC0415 — same
     import launcher_pg_provision  # noqa: PLC0415 — same
+    from mcp_server.infrastructure import backend_marker, managed_pg  # noqa: PLC0415 — same
 
     said: list[str] = []
     data = work / "data"
-    cause = launcher_pg_provision.setup_step(str(data), said.append)
-    report: dict = {"setup_said": said, "setup_cause": cause}
-    report["provisioned"] = launcher_pg.read_json(data / "pg" / "provisioned.json")
+    step = launcher_pg_provision.setup_step(str(data), said.append)
+    root = managed_pg.root_under(backend_marker.BACKEND_MARKER_PATH.parent)
+    report: dict = {
+        "setup_said": said,
+        "setup_failed": step.failed,
+        "setup_fallback": step.fallback,
+        "cluster_root": str(root.root),
+        "binaries": managed_pg.read_json(root.installed).get("tree"),
+    }
+    report["provisioned"] = managed_pg.read_json(root.provisioned)
     if report["provisioned"].get("state") != "ready":
         return report  # the store stays SQLite; the report says why
     launcher_backend.apply()
     url = os.environ["DATABASE_URL"]
     report["backend"] = os.environ.get("CORTEX_MEMORY_STORE_BACKEND")
+    report["direct_launch_same_url"] = _direct_launch_url(plugin_root) == url
     report["cortex_tables"] = _cortex_schema(url)
     report.update(_extensions_in_fresh_database(url))
-    launcher_pg.detach()
-    report["status_after_last_client"] = _wait_stopped(data / "pg")
-    report["postmaster_pid_left"] = (
-        data / "pg" / "cluster" / "postmaster.pid"
-    ).exists()
+    managed_pg.detach()
+    report["status_after_last_client"] = _wait_stopped(root.root)
+    report["postmaster_pid_left"] = (root.cluster / "postmaster.pid").exists()
     return report
 
 
 def passed(report: dict) -> bool:
     ext = report.get("extensions", {})
+    home = Path(os.environ["HOME"]).resolve()
+    root = Path(report.get("cluster_root", "/")).resolve()
     return (
-        report.get("setup_cause") == ""
+        report.get("setup_failed") == ""
+        and report.get("setup_fallback") == ""
+        and root == home / ".claude" / "methodology" / "managed-pg"
+        and not Path(report.get("binaries") or "/").resolve().is_relative_to(root)
+        and report.get("direct_launch_same_url") is True
         and report.get("backend") == "postgresql"
         and report.get("cortex_tables", 0) > 0
         and ext.get("vector") is not None

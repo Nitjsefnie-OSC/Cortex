@@ -42,12 +42,15 @@ _REFUSED = "refused"  # sentinel: this address actively refused
 
 
 def has_earlier_state(methodology_dir: Path, marker_name: str) -> bool:
-    """Whether Cortex wrote anything there: not the marker, its temp file, or
-    a hidden file such as Finder's ``.DS_Store``."""
+    """Whether Cortex wrote anything there: not the marker, its temp file, a
+    hidden file such as Finder's ``.DS_Store``, or the managed server's root
+    (Setup creates it before it may select the store, ADR-1110)."""
+    from mcp_server.infrastructure.managed_pg import ROOT_NAME  # noqa: PLC0415 — resolvable once plugin_root is on sys.path
+
     if not methodology_dir.is_dir():
         return False
     return any(
-        not entry.name.startswith((marker_name, "."))
+        not entry.name.startswith((marker_name, ".")) and entry.name != ROOT_NAME
         for entry in methodology_dir.iterdir()
     )
 
@@ -125,8 +128,7 @@ def map_database_option(environ) -> None:
 
 
 def _resolve() -> None:
-    """The managed server when the marker selects it, else ADR-1104's chain."""
-    import launcher_pg_select  # noqa: PLC0415 — imports launcher_pg, needed only here
+    """ADR-1104's chain; a ``managed`` marker attaches to that server."""
     from mcp_server.infrastructure.backend_marker import (  # noqa: PLC0415 — resolvable once plugin_root is on sys.path
         apply_backend_resolution,
         environment_decides,
@@ -135,10 +137,6 @@ def _resolve() -> None:
 
     if not environment_decides(os.environ) and read_backend_marker() is None:
         persist_first_decision()
-    managed = launcher_pg_select.managed_root(os.environ)
-    if managed is not None:
-        launcher_pg_select.use(managed)
-        return
     apply_backend_resolution(os.environ, default="sqlite")
 
 
@@ -160,14 +158,14 @@ def apply() -> None:
     source: ADR-1110
     """
     map_database_option(os.environ)
-    import launcher_pg  # noqa: PLC0415 — stdlib only, needed only here
     from mcp_server.infrastructure.backend_marker import (  # noqa: PLC0415 — resolvable once plugin_root is on sys.path
         BackendMarkerError,
     )
+    from mcp_server.infrastructure.managed_pg import ManagedPgError  # noqa: PLC0415 — same path as above
 
     try:
         _resolve()
-    except (BackendMarkerError, launcher_pg.ManagedPgError, OSError) as exc:
+    except (BackendMarkerError, ManagedPgError, OSError) as exc:
         print(f"[cortex-launcher] Cortex not ready: {exc}", file=sys.stderr)
         sys.exit(1)
     if (

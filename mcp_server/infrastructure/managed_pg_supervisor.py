@@ -1,13 +1,15 @@
 """The detached process that owns one managed server for its lifetime.
 
-``launcher_pg.attach`` spawns it holding ``supervisor.lock`` and ``start.lock``.
-It starts the provisioned cluster (it never downloads or creates one: that is
-Setup's job, ADR-1108), writes ``status.json`` only after ``pg_ctl`` reported
-the server ready, releases the start lock, blocks until no client holds
-``clients.lock`` and stops the server. Its stdout/stderr are
-``supervisor.log``; the password never reaches it.
+``managed_pg.attach`` spawns it holding ``supervisor.lock`` and ``start.lock``.
+It starts the provisioned cluster's postmaster as its own child (it never
+downloads or creates one: that is Setup's job, ADR-1108), writes
+``status.json`` only after the postmaster reported ``ready`` and authenticated
+with the cluster's password, releases the start lock, blocks until no client
+holds ``clients.lock`` and stops the postmaster. Its stdout/stderr are
+``supervisor.log``; the postmaster's are ``postgres.log``.
 
-    python3 launcher_pg_supervisor.py <pg_root> <supervisor_fd> <start_fd>
+    python3 -m mcp_server.infrastructure.managed_pg_supervisor \
+        <root> <supervisor_fd> <start_fd>
 
 source: ADR-1110
 """
@@ -15,16 +17,14 @@ source: ADR-1110
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
-_SCRIPTS_DIR = str(Path(__file__).resolve().parent)
-if _SCRIPTS_DIR not in sys.path:
-    sys.path.insert(0, _SCRIPTS_DIR)
-import launcher_pg as _pg  # noqa: E402
-import launcher_pg_server as _server  # noqa: E402
+from mcp_server.infrastructure import managed_pg as _pg
+from mcp_server.infrastructure import managed_pg_server as _server
 
-_ARGC = 4  # source: ADR-1110 (script + the three arguments above)
+_ARGC = 4  # source: ADR-1110 (module + the three arguments above)
 
 
 def _log(message: str) -> None:
@@ -42,27 +42,27 @@ def bin_dir(paths: _pg.PgPaths) -> Path:
     binaries = Path(tree) / "bin"
     if not (binaries / "postgres").is_file():
         raise _pg.ManagedPgError(
-            f"{binaries / 'postgres'} is missing; run `claude --init-only`"
+            f"{binaries / 'postgres'} is missing (the Claude Code plugin's data was"
+            " removed?); run `claude --init-only`"
         )
     return binaries
 
 
-def _start(paths: _pg.PgPaths) -> Path:
-    binaries = bin_dir(paths)
-    port = _server.start(binaries, paths.cluster, paths.server_log, _pg.HOST)
+def _start(paths: _pg.PgPaths) -> subprocess.Popen | None:
+    port, postmaster = _server.start(bin_dir(paths), paths)
     _pg.write_json(paths.status, {"state": "running", "port": port, "pid": os.getpid()})
     _log(f"server ready on {_pg.HOST}:{port}")
-    return binaries
+    return postmaster
 
 
 def _serve_until_last_client(
-    paths: _pg.PgPaths, binaries: Path, supervisor: int
+    paths: _pg.PgPaths, postmaster: subprocess.Popen | None, supervisor: int
 ) -> None:
     clients = _pg.open_lock(paths.lock("clients"))
     _pg.flock(clients, exclusive=True)  # granted when the last client has exited
     final = {"state": "failed", "error": "interrupted while stopping"}
     try:
-        _server.stop(binaries, paths.cluster, _pg.HOST)
+        _server.stop(paths, postmaster)
         final = {"state": "stopped"}
         _log("server stopped: no client left")
     except Exception as exc:  # noqa: BLE001 — recorded for the next client, then re-raised
@@ -76,20 +76,20 @@ def _serve_until_last_client(
 
 def supervise(paths: _pg.PgPaths, supervisor: int, start: int) -> int:
     try:
-        binaries = _start(paths)
+        postmaster = _start(paths)
     except Exception as exc:  # noqa: BLE001 — written for the waiting clients, then re-raised
         _pg.write_json(paths.status, {"state": "failed", "error": str(exc)})
         _log(f"failed: {exc}")
         raise
     finally:
         os.close(start)
-    _serve_until_last_client(paths, binaries, supervisor)
+    _serve_until_last_client(paths, postmaster, supervisor)
     return 0
 
 
 def main(argv: list[str]) -> int:
     if len(argv) != _ARGC:
-        _log(f"usage: {Path(argv[0]).name} <pg_root> <supervisor_fd> <start_fd>")
+        _log(f"usage: {Path(argv[0]).name} <root> <supervisor_fd> <start_fd>")
         return 2
     root, supervisor, start = argv[1:]
     return supervise(_pg.PgPaths(Path(root)), int(supervisor), int(start))

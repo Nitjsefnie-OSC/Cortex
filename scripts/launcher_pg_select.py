@@ -1,4 +1,4 @@
-"""Whether a launch uses the plugin's managed PostgreSQL, and attaching to it.
+"""Whether Setup may select the plugin's managed PostgreSQL for this store.
 
 Selection order (ADR-1110, amending ADR-1104 decision 1):
 
@@ -11,6 +11,9 @@ Selection order (ADR-1110, amending ADR-1104 decision 1):
 3. Otherwise ADR-1104 as before: the marker, or the first-launch decision
    (SQLite for a fresh install), with SQLite as the default.
 
+Attaching a launch to the selected server is ``backend_marker``'s job (in the
+wheel, so Codex and direct launches attach the same way, ADR-1110 D1).
+
 A store is *eligible* for the managed server when nothing configures one and
 no store exists yet: no marker and no earlier Cortex state, or the launcher's
 own first-launch SQLite marker with no SQLite file at the engine's path
@@ -22,11 +25,8 @@ source: ADR-1110
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Mapping
-
-import launcher_pg
 
 WRITTEN_BY = "Setup (managed PostgreSQL started, ADR-1110)"  # source: ADR-1110
 # source: memory_config.MemorySettings DB_PATH and SQLITE_FALLBACK_PATH
@@ -70,32 +70,3 @@ def why_not_eligible(
                 f"a SQLite store exists at {store}; it is not migrated by this release"
             )
     return ""
-
-
-def managed_root(environ: Mapping[str, str]) -> launcher_pg.PgPaths | None:
-    """The managed server this launch attaches to, ``None`` when none is selected.
-
-    Raises ``BackendMarkerError`` for a marker that cannot say which backend.
-    """
-    inherited = launcher_pg.serves(dict(environ))
-    if inherited is not None:
-        return inherited
-    from mcp_server.infrastructure.backend_marker import (  # noqa: PLC0415 — resolvable once plugin_root is on sys.path
-        MANAGED,
-        environment_decides,
-        read_backend_marker,
-    )
-
-    if environment_decides(environ):
-        return None
-    marker = read_backend_marker()
-    if marker is None or marker["backend"] != MANAGED:
-        return None
-    return launcher_pg.PgPaths(Path(marker["root"]))
-
-
-def use(paths: launcher_pg.PgPaths) -> None:
-    """Attach this launch to the managed server and point the engine at it."""
-    url = launcher_pg.attach(paths)
-    os.environ["DATABASE_URL"] = url
-    os.environ["CORTEX_MEMORY_STORE_BACKEND"] = "postgresql"

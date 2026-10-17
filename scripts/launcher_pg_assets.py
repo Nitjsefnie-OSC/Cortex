@@ -1,9 +1,13 @@
 """The pinned PostgreSQL + pgvector archives: which this host runs, how installed.
 
-Stdlib only. Both archives come from GitHub releases at pinned tags and are
-kept only when their sha256 equals the digest recorded here; anything else
-raises ``AssetError``. The PostgreSQL tree is extracted, pgvector's ``lib/``
-and ``share/extension/`` are laid over it, and a stamp naming both digests is
+Stdlib only. PostgreSQL comes from theseus-rs/postgresql-binaries at a pinned
+tag; pgvector is compiled by this repository's CI (``.github/workflows/
+pgvector.yml``: pinned upstream tag and commit, built against that very tree on
+a runner of each triple, build provenance attested) and published once as a
+prerelease of this repository. Each archive is kept only when its sha256
+equals the digest recorded here; anything else raises ``AssetError``. The
+PostgreSQL tree is extracted, pgvector's ``lib/`` and ``share/extension/``
+are laid over it, and a stamp naming both digests is
 written last, so a tree without the stamp is never used.
 
 A host this table has no row for is ``UnsupportedError``: the plugin keeps the
@@ -24,9 +28,6 @@ import urllib.request
 from pathlib import Path
 
 PG_VERSION = "18.6.0"  # source: ADR-1110 (theseus-rs/postgresql-binaries release)
-PGVECTOR_TAG = (
-    "v0.18.320"  # source: ADR-1110 (nicoloboschi/pgvector_compiled, pgvector 0.8.5)
-)
 # pgvector compiled by Cortex CI (.github/workflows/pgvector.yml) from this
 # upstream tag, refused unless it resolves to this commit.
 # source: ADR-1110 (pgvector/pgvector tag v0.8.7, 2026-10-01)
@@ -35,29 +36,28 @@ PGVECTOR_VERSION = "0.8.7"
 PGVECTOR_COMMIT = "f37c13f68b57d2c3472b2214fbcff699d6d34876"
 # The release of this repository that holds the archives the workflow built.
 PGVECTOR_RELEASE = f"pgvector-v{PGVECTOR_VERSION}-pg{PG_VERSION}"  # source: ADR-1110
-# source: ADR-1110 (release download URLs of both projects)
+# source: ADR-1110 (release download URLs: theseus, and this repository)
 PG_URL = "https://github.com/theseus-rs/postgresql-binaries/releases/download/{version}/{name}"
-VECTOR_URL = (
-    "https://github.com/nicoloboschi/pgvector_compiled/releases/download/{tag}/{name}"
-)
+VECTOR_URL = "https://github.com/cdeust/Cortex/releases/download/{tag}/{name}"
 # Per Rust target triple, the PostgreSQL then the pgvector archive digest,
-# measured 2026-10-17 and equal to the digests both releases publish.
+# measured 2026-10-17 and equal to the digests both releases publish (pgvector:
+# workflow run 39017072528, `gh attestation verify` passes for each archive).
 SHA256 = {  # source: ADR-1110
     "aarch64-apple-darwin": (
         "a257bcdb8aa3301a13d6a5bcec48f8c9517045b7cbae71e50788b2615539e95b",
-        "4c580ce63f2c7d462da9241b0d11f8f5038783de7a69a8aa3fe92d6996c75de6",
+        "33959f25f3ab21f68e029ede739911d4a5c875024bf600ed92925cf3671ab68e",
     ),
     "x86_64-apple-darwin": (
         "f8918fbe747e0d79bda58ad8f8afcf23ac384b847ff3af18856f0825ba54b031",
-        "e95a3a1f45e334b2bcbb070961f7ed9a33d118f8f99b36f91946f5c80e4f635c",
+        "f47275763f0d130c5c7a09795fdd656ba2ceac5dbfc3ee367117c5d7b50a89f7",
     ),
     "x86_64-unknown-linux-gnu": (
         "bb3d09f876b2383e25a8c9ce09e32d185a03656a23d074f5195542b1b1b3ca61",
-        "2461d601bbf2c8ab3c70965be87dff92e5778d1610f9b294fcf23e32bd8a603e",
+        "8ed6b93ad7d795099e40fed9013e6bb0bd89b3efd2d178445985076f6c021971",
     ),
     "aarch64-unknown-linux-gnu": (
         "5d2b5e8be9e96bfc3d7f22090057a836ec36d5d092542d8d3b93cc145cf4ee13",
-        "c7aa638f11c1ccd219b4efc62de1fe5884b928f0088579f5d176f654c56832d6",
+        "ceba223254ee2e54ceb148d720a6627f03d0f7c8aeabcb0799c1835cefbbeda0",
     ),
 }
 _MACHINES = {
@@ -200,7 +200,7 @@ def install(dist: Path, target: str) -> Path:
             PG_URL.format(version=PG_VERSION, name=pg_name), scratch / pg_name, pg_sha
         )
         _download(
-            VECTOR_URL.format(tag=PGVECTOR_TAG, name=vector_name),
+            VECTOR_URL.format(tag=PGVECTOR_RELEASE, name=vector_name),
             scratch / vector_name,
             vector_sha,
         )

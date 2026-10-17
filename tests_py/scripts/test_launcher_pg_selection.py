@@ -165,14 +165,21 @@ def test_earlier_cortex_state_without_a_marker_is_not_eligible(select, tmp_path)
     )
 
 
-def test_the_engine_refuses_a_managed_marker_outside_the_launcher():
-    from mcp_server.infrastructure.backend_marker import (
-        BackendMarkerError,
-        resolve_backend_env,
-    )
+def test_the_pure_resolution_names_postgresql_for_a_managed_marker():
+    # D1: no longer an error outside the launcher; attaching is
+    # apply_backend_resolution's job (tests_py/infrastructure/test_managed_pg_attach).
+    from mcp_server.infrastructure.backend_marker import resolve_backend_env
 
-    with pytest.raises(BackendMarkerError, match="plugin launcher"):
-        resolve_backend_env({}, {"backend": "managed", "root": "/r"}, default="sqlite")
+    marker = {"backend": "managed", "root": "/r"}
+    assert resolve_backend_env({}, marker, default="sqlite") == {
+        "CORTEX_MEMORY_STORE_BACKEND": "postgresql"
+    }
+
+
+def test_the_managed_root_is_not_earlier_cortex_state(select, tmp_path):
+    # D5: Setup creates methodology/managed-pg before it may select the store.
+    (tmp_path / "methodology" / "managed-pg").mkdir(parents=True)
+    assert _eligible(select, tmp_path) == ""
 
 
 def test_a_managed_marker_is_written_only_with_its_root(tmp_path):

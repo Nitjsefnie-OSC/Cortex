@@ -265,8 +265,8 @@ jobs:
     if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || needs.changes.outputs.code == 'true' || needs.changes.outputs.deps == 'true' || needs.changes.outputs.workflows == 'true')
     name: Managed PostgreSQL (${{ matrix.leg }})
     runs-on: ${{ matrix.os }}
-    # source: ADR-1110 (13 MB download, initdb and schema: about 30 s measured)
-    timeout-minutes: 10
+    # No timeout-minutes: the server's start and stop wait on kernel events,
+    # never a clock (ADR-1110 D2); a hang is a defect to fix, not a verdict.
     strategy:
       fail-fast: false
       matrix:

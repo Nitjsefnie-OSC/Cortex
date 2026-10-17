@@ -108,11 +108,14 @@ everything before the first session; only with it does that session start ready.
 without Cortex, offline or not, run `claude plugin disable hypermnesia-mcp@cortex-plugins`.
 
 On macOS and Linux (glibc), `claude --init-only` on a fresh install also gives the plugin its own
-PostgreSQL server with pgvector and pg_trgm: pinned, sha256-checked binaries (about 13 MB) run from
-the plugin's data directory on 127.0.0.1, with no Homebrew or system PostgreSQL needed. It becomes
-the store only after it has started and its schema exists; if it cannot start (a Linux distribution
-without `libxml2.so.2` or OpenSSL 3, for example) the cause is in `setup.log` and the SQLite store
-is used, as it is on Windows. An existing SQLite store is not moved (ADR-1110).
+PostgreSQL server with pgvector and pg_trgm: pinned, sha256-checked binaries (about 13 MB; pgvector is
+compiled by Cortex's CI, with build provenance attested) on 127.0.0.1, with no Homebrew or system
+PostgreSQL needed. Its data lives in `~/.claude/methodology/managed-pg/`, so uninstalling the plugin
+never deletes your memories. It becomes the store only after it has started and its schema exists;
+if it cannot start (a Linux distribution without `libxml2.so.2` or OpenSSL 3, for example) the SQLite
+store is used, as it is on Windows, and the session start says why (`SQLite fallback: ...`). The Codex
+plugin on the same account attaches to the same server. An existing SQLite store is not moved
+(ADR-1110).
 
 Otherwise the first use creates a local SQLite store under `~/.claude/methodology/`. Models are downloaded
 once when needed and then run offline. The embedding and reranking model files are both fetched

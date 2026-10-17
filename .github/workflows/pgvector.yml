@@ -13,6 +13,7 @@ on:
     paths:
       - .github/workflows/pgvector.yml
       - scripts/pgvector_build.py
+      - scripts/launcher_pg_assets.py  # the pins: a version bump rebuilds
   workflow_dispatch:
 
 permissions:

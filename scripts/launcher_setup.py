@@ -8,7 +8,10 @@ set from uv.lock, then downloads the pinned embedding model, and it is the
 only place besides the MCP server and the two detached jobs that installs.
 
 Outcome: exit 0 and ``{"status": "ready"}`` in ``<set>.setup.json``, or exit 1
-with the cause printed and ``{"status": "failed", "error": ...}``. The host
+with the cause printed and ``{"status": "failed", "error": ...}``. When the
+store was eligible for the managed PostgreSQL server but it could not run
+here, the outcome also carries ``"sqlite_fallback": <cause>`` and the next
+SessionStart shows it (ADR-1110, owner decision D3). The host
 discards a Setup hook's output and exit code (measured: Claude Code 2.1.300,
 ``claude --init-only`` exits 0 whatever the hook did), so everything printed is
 also appended to ``<data>/setup.log`` and the outcome file is what a caller
@@ -83,12 +86,25 @@ def outcome(deps_dir: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _record(deps_dir: str, status: str, error: str = "", gc_error: str = "") -> None:
+FALLBACK = "sqlite_fallback"  # source: ADR-1110 D3 (the outcome field)
+
+
+def sqlite_fallback(deps_dir: str) -> str:
+    """Why the last Setup left an eligible store on SQLite, ``""`` when it did not."""
+    return str(outcome(deps_dir).get(FALLBACK) or "")
+
+
+def _record(
+    deps_dir: str, status: str, error: str = "", gc_error: str = "", fallback: str = ""
+) -> None:
     """Write the outcome; ``gc_error`` only when the set is ready but the sets
-    of earlier versions could not be collected."""
+    of earlier versions could not be collected; ``fallback`` only when an
+    eligible store stays on SQLite because the managed server cannot run."""
     record = {"status": status, "error": error}
     if gc_error:
         record["gc_error"] = gc_error
+    if fallback:
+        record[FALLBACK] = fallback
     path = status_file(deps_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(record), encoding="utf-8")
@@ -116,14 +132,14 @@ def _say(message: str) -> None:
     print(f"[cortex-setup] {message}", flush=True)
 
 
-def _fail(deps_dir: str, error: str) -> int:
+def _fail(deps_dir: str, error: str, fallback: str = "") -> int:
     _say(f"FAILED: {error} (log: {log_path(deps_dir)})")
-    _record(deps_dir, "failed", error)
+    _record(deps_dir, "failed", error, fallback=fallback)
     return 1
 
 
-def managed_pg_step(deps_dir: str, say) -> str:
-    """The managed PostgreSQL step (ADR-1110); ``""`` or the cause to fail with.
+def managed_pg_step(deps_dir: str, say):
+    """The managed PostgreSQL step (ADR-1110): a ``StepOutcome``.
 
     Imported here, after the base set, because it needs psycopg. The import
     system cached the set's directory as it was before the install, so it is
@@ -160,21 +176,28 @@ def _install(deps_dir: str, launcher: str, log) -> int:
     launcher_deps.ensure_deps(deps_dir)
     if not launcher_deps.set_ready(deps_dir, "base"):
         return _fail(deps_dir, "the locked base dependency set did not install")
-    cause = managed_pg_step(deps_dir, _say)
-    if cause:
-        return _fail(deps_dir, cause)
+    step = managed_pg_step(deps_dir, _say)
+    if step.failed:
+        return _fail(deps_dir, step.failed)
     if os.environ.get(launcher_ml.ZERO_DOWNLOAD_ENV, "").lower() in ("1", "true"):
         _say(f"semantic search skipped: {launcher_ml.ZERO_DOWNLOAD_ENV} is set")
     else:
         _say("installing the semantic-search dependency set (about 1 GB)")
         launcher_deps.ensure_all_deps(deps_dir)
         if not launcher_deps.set_ready(deps_dir, "ml"):
-            return _fail(deps_dir, "the locked semantic-search set did not install")
+            return _fail(
+                deps_dir,
+                "the locked semantic-search set did not install",
+                step.fallback,
+            )
         _say("downloading the embedding model")
         cause = _warm_model(deps_dir, launcher, log)
         if cause:
-            return _fail(deps_dir, f"the embedding model did not download: {cause}")
-    _record(deps_dir, "ready")
+            why = f"the embedding model did not download: {cause}"
+            return _fail(deps_dir, why, step.fallback)
+    _record(deps_dir, "ready", fallback=step.fallback)
+    if step.fallback:
+        _say(f"SQLite fallback: {step.fallback}")
     Path(f"{deps_dir}.base-job.failed").unlink(missing_ok=True)
     _say(f"ready in {time.monotonic() - started:.0f} s")
     return 0
@@ -241,7 +264,7 @@ def _collect(deps_dir: str) -> None:
         kind = type(exc).__name__
         cause = f"could not collect the sets of earlier versions: {kind}: {exc}"
         _say(cause)
-        _record(deps_dir, "ready", gc_error=cause)
+        _record(deps_dir, "ready", gc_error=cause, fallback=sqlite_fallback(deps_dir))
         return
     if removed:
         _say(f"removed {len(removed)} unreferenced paths of earlier sets")

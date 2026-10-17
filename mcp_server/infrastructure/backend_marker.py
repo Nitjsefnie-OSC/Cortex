@@ -7,7 +7,7 @@ it provisioned in a small JSON marker::
     {"backend": "sqlite"}        # zero-config default install
     {"backend": "postgresql"}    # --postgres opt-in, or a protected
                                  # pre-existing PostgreSQL install
-    {"backend": "managed", "root": "<plugin data>/pg"}
+    {"backend": "managed", "root": "~/.claude/methodology/managed-pg"}
                                  # the plugin's own PostgreSQL server, written
                                  # by Setup only after it started (ADR-1110)
 
@@ -22,9 +22,11 @@ it provisioned in a small JSON marker::
    SQLite store, and nothing dials a PostgreSQL the user never configured),
    else untouched (engine default: ``auto``)
 
-A ``managed`` marker is resolved by the plugin launcher only
-(``scripts/launcher_pg_select.py``), which attaches to that server and sets
-``DATABASE_URL``; anywhere else it is an error that names the marker.
+A ``managed`` marker is resolved the same way by every surface (the plugin
+launcher, ``python -m mcp_server``, the Codex hook entry, the doctor):
+``apply_backend_resolution`` attaches the process to that server
+(``managed_pg``, starting it when no one runs it) and sets ``DATABASE_URL``.
+``effective_backend`` stays pure: it names ``postgresql`` and starts nothing.
 
 source: ADR-0505
 source: ADR-1104
@@ -39,6 +41,7 @@ import tempfile
 from pathlib import Path
 from typing import Mapping, MutableMapping
 
+from mcp_server.infrastructure import managed_pg
 from mcp_server.infrastructure.config import METHODOLOGY_DIR
 
 logger = logging.getLogger(__name__)
@@ -144,11 +147,7 @@ def resolve_backend_env(
     if environ.get("CORTEX_MEMORY_DATABASE_URL", "").strip():
         return {}
     if marker is not None and marker["backend"] == MANAGED:
-        raise BackendMarkerError(
-            f"the backend marker selects the plugin's managed PostgreSQL server at"
-            f" {marker.get('root')}; it is reached through the plugin launcher"
-            " (scripts/launcher.py), or set DATABASE_URL"
-        )
+        return {"CORTEX_MEMORY_STORE_BACKEND": "postgresql"}
     if marker is not None:
         return {"CORTEX_MEMORY_STORE_BACKEND": marker["backend"]}
     if default:
@@ -188,16 +187,25 @@ def apply_backend_resolution(
     libpq defaults from a blank DSN, and
     ``memory_store._database_url_is_explicit`` tests key presence).
 
+    A ``managed`` marker (or an inherited URL of that server, for a child of
+    an attached process) attaches this process to the plugin's managed
+    PostgreSQL server and sets ``DATABASE_URL`` (ADR-1110, owner decision D1).
+
     Pre:  ``environ`` is mutable (normally ``os.environ``); ``default`` is
           ``""`` or one of ``VALID_BACKENDS``.
-    Post: returns the additions applied (possibly ``{}``).
+    Post: returns the additions applied (possibly ``{}``). Raises
+          ``managed_pg.ManagedPgError`` when the managed server cannot run.
     """
     url = environ.get("DATABASE_URL")
     if url is not None and not url.strip():
         del environ["DATABASE_URL"]
-    additions = resolve_backend_env(
-        environ, _marker_unless_decided(environ, marker_path), default
-    )
+    inherited = managed_pg.serves(environ)
+    if inherited is not None:
+        return managed_pg.use(inherited, environ)
+    marker = _marker_unless_decided(environ, marker_path)
+    if marker is not None and marker["backend"] == MANAGED:
+        return managed_pg.use(managed_pg.PgPaths(Path(marker["root"])), environ)
+    additions = resolve_backend_env(environ, marker, default)
     environ.update(additions)
     return additions
 
@@ -207,7 +215,8 @@ def effective_backend(
 ) -> str:
     """The backend the precedence chain selects, without mutating env.
 
-    Post: ``"sqlite"`` / ``"postgresql"`` when the chain resolves one;
+    Post: ``"sqlite"`` / ``"postgresql"`` when the chain resolves one (a
+          ``managed`` marker is ``"postgresql"``; nothing is started);
           ``""`` when nothing is configured (engine default ``auto``
           applies) or when the operator configured a database URL
           (case 3 — the engine, not this module, owns that path).
