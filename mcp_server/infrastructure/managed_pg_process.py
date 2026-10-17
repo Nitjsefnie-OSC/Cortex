@@ -24,6 +24,7 @@ import ctypes
 import os
 import select
 import sys
+import threading
 from pathlib import Path
 
 _PROC_PIDTBSDINFO = 3  # source: <sys/proc_info.h> (PROC_PIDTBSDINFO)
@@ -70,6 +71,44 @@ def started(pid: int) -> str | None:
         return None
     fields = stat.rpartition(")")[2].split()
     return None if fields[_STAT_STATE] == "Z" else fields[_STAT_STARTTIME]
+
+
+def _in_thread(path: Path, keep: list[int] | None, shared: bool = False) -> int:
+    """The read end of a pipe that reaches end of file once this process holds
+    the exclusive ``flock`` on ``path``; a thread blocks in ``flock`` (the
+    kernel's grant is the event). With ``keep`` the locked descriptor is
+    appended to it and held; without, it is closed at once (the lock only
+    told us its holders are gone). ``shared`` waits for a shared lock: the
+    exclusive holder is gone. A thread whose lock never comes stays blocked
+    until it does (one descriptor; the process may exit meanwhile)."""
+    import fcntl  # noqa: PLC0415 — POSIX only; never imported on Windows
+
+    event_r, event_w = os.pipe()
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+
+    def wait() -> None:
+        fcntl.flock(fd, fcntl.LOCK_SH if shared else fcntl.LOCK_EX)
+        if keep is None:
+            os.close(fd)
+        else:
+            keep.append(fd)
+        os.close(event_w)  # end of file for the reader: the event
+
+    threading.Thread(target=wait, daemon=True).start()
+    return event_r
+
+
+def released(path: Path, shared: bool = False) -> int:
+    """End of file once every holder of ``path``'s lock is gone (a process
+    group that inherited it exited), or with ``shared`` once its exclusive
+    holder is; see ``exited``."""
+    return _in_thread(path, None, shared)
+
+
+def acquired(path: Path, keep: list[int]) -> int:
+    """End of file once this process holds ``path``'s exclusive lock, whose
+    descriptor is then in ``keep``; see ``exited``."""
+    return _in_thread(path, keep)
 
 
 def exited(exit_fd: int) -> bool:

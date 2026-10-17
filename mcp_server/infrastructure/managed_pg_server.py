@@ -13,19 +13,26 @@ listener on the recorded port: none of them is ours, so none is adopted, and
 server must authenticate with this cluster's password
 (``managed_pg_protocol``).
 
+The one other process ever dialled is the holder of ``postmaster.lock`` (an
+exclusive ``flock`` on a 0600 file in the 0700 root, the boundary that guards
+``postmaster.json`` too) when nothing recorded it: a postmaster whose
+supervisor died between spawning and recording it. Its ``postmaster.pid``,
+once ``ready`` and naming a PID alive as this user, gives the port; it is
+adopted and recorded only if it authenticates with the cluster's password;
+otherwise the start fails naming its PID and port, and it is neither
+signalled nor its ``postmaster.pid`` touched.
+
 Every wait is on a kernel event, never a clock (no ``pg_ctl -w``, whose 60 s
 default would decide a slow start failed). The postmaster inherits the write
-end of a pipe and ``postmaster.lock`` (an exclusive ``flock``); both pass to
-every process it forks. Starting waits until ``postmaster.pid`` reports
-``ready`` (PostgreSQL writes that status line once it accepts connections) or
-the pipe reaches end of file: the group exited, the failure, whose cause is
-what it wrote to ``postgres.log``. Stopping sends SIGINT (fast shutdown) and
-blocks on ``postmaster.lock``, granted once the postmaster and all its
-children are gone; a supervisor that adopted the postmaster waits the same
-way. An adopted postmaster still starting is stopped and started anew. A
-``postmaster.pid`` that is not ours is removed before a start (PostgreSQL
-would refuse to start over a live PID of this user); one that is ours is
-never removed.
+end of a pipe and ``postmaster.lock``; both pass to every process it forks.
+Starting waits until ``postmaster.pid`` reports ``ready`` (PostgreSQL writes
+that status line once it accepts connections) or the pipe reaches end of
+file: the group exited, the failure, whose cause is what it wrote to
+``postgres.log``. Stopping sends SIGINT (fast shutdown) and blocks on
+``postmaster.lock``, granted once the postmaster and all its children are
+gone. An adopted postmaster still starting is stopped and started anew.
+``postmaster.pid`` is removed only while this process holds
+``postmaster.lock``, i.e. when no postmaster Cortex started is alive.
 
 source: ADR-1110
 source: PostgreSQL src/include/utils/pidfile.h (postmaster.pid lines)
@@ -89,9 +96,15 @@ def live_postmaster(paths: _pg.PgPaths) -> LockFile | None:
     return lock
 
 
-def free_port(host: str) -> int:
+def free_port(host: str, preferred: int | None = None) -> int:
+    """``preferred`` when it can be bound now (with ``SO_REUSEADDR``, as
+    PostgreSQL binds), else any free port."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.bind((host, 0))
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind((host, preferred or 0))
+        except OSError:
+            probe.bind((host, 0))
         return probe.getsockname()[1]
 
 
@@ -142,18 +155,57 @@ def _adopt(paths: _pg.PgPaths, lock: LockFile) -> int | None:
     return lock.port
 
 
-def _spawn(binaries: Path, paths: _pg.PgPaths) -> tuple[subprocess.Popen, int, int]:
-    """``bin/postgres`` as our child, holding ``postmaster.lock`` and the write
-    end of the exit pipe; its ``{pid, started, port}`` recorded at once."""
-    group = _pg.open_lock(paths.lock("postmaster"))
-    if not _pg.flock(group, exclusive=True, blocking=False):
-        os.close(group)
-        raise ServerError(
-            f"a process of an earlier postmaster of {paths.cluster} still runs "
-            "(it holds postmaster.lock); stop it, then start Cortex again"
+def _ready_and_alive(cluster: Path) -> LockFile | None:
+    """``postmaster.pid`` when it names this cluster, ``ready``, by a PID
+    alive as this user (a stale file of a dead postmaster does not count)."""
+    lock = read_lockfile(cluster)
+    if lock is None or lock.status != _READY:
+        return None
+    if Path(lock.data_dir).resolve() != cluster.resolve():
+        return None
+    return lock if _process.alive_as_this_user(lock.pid) else None
+
+
+def _recover_unrecorded(paths: _pg.PgPaths) -> int | None:
+    """``postmaster.lock`` is held by a group nothing recorded: wait until it
+    is gone (``None``) or ready, then adopt it only if it proves itself."""
+    gone_r = _process.released(paths.lock("postmaster"))
+    try:
+        _until(
+            paths.cluster,
+            gone_r,
+            lambda: (
+                _process.exited(gone_r) or _ready_and_alive(paths.cluster) is not None
+            ),
         )
+        gone = _process.exited(gone_r)
+    finally:
+        os.close(gone_r)
+    lock = None if gone else _ready_and_alive(paths.cluster)
+    if lock is None:
+        return None
+    try:
+        _prove(paths, lock.port)
+    except (_protocol.ProtocolError, OSError) as exc:
+        raise ServerError(
+            f"pid {lock.pid} on port {lock.port} holds postmaster.lock of "
+            f"{paths.cluster} but did not authenticate with the cluster's "
+            f"password ({exc}); it was not adopted, signalled or removed: stop "
+            "it, then start Cortex again"
+        ) from exc
+    record = {"pid": lock.pid, "started": _process.started(lock.pid), "port": lock.port}
+    _pg.write_json(paths.postmaster, record)
+    return lock.port
+
+
+def _spawn(
+    binaries: Path, paths: _pg.PgPaths, group: int, preferred: int | None
+) -> tuple[subprocess.Popen, int, int]:
+    """``bin/postgres`` as our child, holding ``postmaster.lock`` (``group``,
+    locked) and the write end of the exit pipe; ``{pid, started, port}``
+    recorded at once."""
     exit_r, exit_w = os.pipe()
-    port = free_port(_pg.HOST)
+    port = free_port(_pg.HOST, preferred)
     log = os.open(paths.server_log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     argv = [str(binaries / "postgres"), "-D", str(paths.cluster), "-p", str(port)]
     try:
@@ -195,18 +247,35 @@ def _await_ready(
     raise ServerError(f"postgres exited {code} before it was ready: {output}")
 
 
-def start(binaries: Path, paths: _pg.PgPaths) -> tuple[int, subprocess.Popen | None]:
-    """The port of our ready, proven postmaster, and the process when we spawned it.
+def _existing(paths: _pg.PgPaths) -> tuple[bool, int]:
+    """``(True, port)`` for a postmaster of this cluster already running,
+    adopted; else ``(False, fd)`` with ``postmaster.lock`` held by ``fd``."""
+    lock = live_postmaster(paths)
+    port = _adopt(paths, lock) if lock is not None else None
+    while port is None:
+        group = _pg.open_lock(paths.lock("postmaster"))
+        if _pg.flock(group, exclusive=True, blocking=False):
+            return False, group
+        os.close(group)
+        port = _recover_unrecorded(paths)  # None once that group is gone
+    return True, port
+
+
+def start(
+    binaries: Path, paths: _pg.PgPaths, preferred: int | None = None
+) -> tuple[int, subprocess.Popen | None]:
+    """The port of our ready, proven postmaster, and the process when we
+    spawned it (on ``preferred`` when that port is free).
 
     Raises ``ServerError`` with the server's log when it exits before it is
     ready, ``ProtocolError``/``OSError`` when it does not authenticate."""
-    lock = live_postmaster(paths)
-    port = _adopt(paths, lock) if lock is not None else None
-    if port is not None:
-        return port, None
-    (paths.cluster / "postmaster.pid").unlink(missing_ok=True)  # not ours
+    adopted, value = _existing(paths)
+    if adopted:
+        return value, None
+    group = value
+    (paths.cluster / "postmaster.pid").unlink(missing_ok=True)  # lock held: no live one
     offset = paths.server_log.stat().st_size if paths.server_log.exists() else 0
-    proc, port, exit_r = _spawn(binaries, paths)
+    proc, port, exit_r = _spawn(binaries, paths, group, preferred)
     _await_ready(paths, proc, exit_r, offset)
     try:
         _prove(paths, port)

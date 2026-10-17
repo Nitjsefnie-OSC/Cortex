@@ -235,57 +235,19 @@ def test_a_postmaster_that_exits_fails_with_its_log(pg, tmp_path, monkeypatch):
         server.start(binaries, paths)
 
 
-# source: test helper — start argv[3:] in its own session, holding the lock
-# file argv[1] and the pipe end fd argv[2], as the supervisor does; print its pid
-_ORPHAN = (
-    "import fcntl, os, subprocess, sys\n"
-    "lock = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600)\n"
-    "fcntl.flock(lock, fcntl.LOCK_EX)\n"
-    "d = subprocess.DEVNULL\n"
-    "p = subprocess.Popen(sys.argv[3:], start_new_session=True, stdin=d,"
-    " stdout=d, stderr=d, pass_fds=(lock, int(sys.argv[2])))\n"
-    "print(p.pid)\n"
-)
-
-
 def test_the_exit_is_read_from_the_pipe_not_from_waitpid(pg, tmp_path, monkeypatch):
     # Descriptors close before a process becomes reapable: after the last
     # event poll() may still say "running". Only the end of file decides.
     _managed_pg, server, paths = pg
     monkeypatch.setenv("FAKE_PG_FAIL", "FATAL:  lock file exists")
-    monkeypatch.setattr(subprocess.Popen, "poll", lambda self: None)
+
+    # poll() raises: code that decides the exit by waitpid fails at its first
+    # call, an assertion, not a hang (round-4 review B4). Popen.wait() never
+    # calls poll(), so the product's reaping is unaffected.
+    def poll_decides(self):
+        raise AssertionError("poll() decided the exit")
+
+    monkeypatch.setattr(subprocess.Popen, "poll", poll_decides)
     binaries = fake_postgres.install(tmp_path / "bin").parent
     with pytest.raises(server.ServerError, match="lock file exists"):
         server.start(binaries, paths)
-
-
-def test_an_adopted_postmaster_is_stopped_on_its_exit_event(pg, tmp_path):
-    # Its supervisor died: the postmaster is no child of this process.
-    _managed_pg, server, paths = pg
-    script = fake_postgres.install(tmp_path / "bin")
-    port = server.free_port(HOST)
-    exit_r, exit_w = os.pipe()
-    argv = [str(script), "-D", str(paths.cluster), "-p", str(port)]
-    command = [
-        sys.executable,
-        "-c",
-        _ORPHAN,
-        str(paths.lock("postmaster")),
-        str(exit_w),
-        *argv,
-    ]
-    done = subprocess.run(
-        command, capture_output=True, text=True, check=True, pass_fds=(exit_w,)
-    )
-    os.close(exit_w)
-    pid = int(done.stdout)
-    try:
-        server._until(
-            paths.cluster, exit_r, lambda: server._is_ready(paths.cluster, pid)
-        )
-    finally:
-        os.close(exit_r)
-    _record(pg, pid, port)
-    assert server.start(tmp_path / "bin", paths) == (port, None)  # adopted
-    server.stop(paths, None)
-    assert server.live_postmaster(paths) is None

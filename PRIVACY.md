@@ -111,7 +111,8 @@ The only outbound network activity is:
    13 MB, each checked against a pinned sha256). The pgvector archives are
    compiled by Cortex's CI from the pinned upstream source commit against that
    same PostgreSQL, with a build-provenance attestation you can check with
-   `gh attestation verify <archive> --repo cdeust/Cortex`.
+   `gh attestation verify <archive> --repo cdeust/Cortex --source-ref refs/heads/main`
+   (the workflow publishes only from main).
 2. **One-time model download.** On first use, the open-source embedding model
    (`sentence-transformers`, all-MiniLM-L6-v2) and the reranking model
    (`flashrank`, ms-marco-MiniLM) are downloaded from the public Hugging Face

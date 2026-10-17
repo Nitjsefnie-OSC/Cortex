@@ -4,8 +4,13 @@
 It starts the provisioned cluster's postmaster as its own child (it never
 downloads or creates one: that is Setup's job, ADR-1108), writes
 ``status.json`` only after the postmaster reported ``ready`` and authenticated
-with the cluster's password, releases the start lock, blocks until no client
-holds ``clients.lock`` and stops the postmaster. Its stdout/stderr are
+with the cluster's password, and releases the start lock. Then it waits for
+two kernel events: the last client releasing ``clients.lock`` (it stops the
+postmaster and exits), or the postmaster's group releasing
+``postmaster.lock`` while clients live (it died: under the start lock, so
+attaching clients wait, it starts a new one on the same port when that port
+is free and rewrites ``status.json``; if that fails it records the cause and
+exits, and the next client starts a new supervisor). Its stdout/stderr are
 ``supervisor.log``; the postmaster's are ``postgres.log``.
 
     python3 -m mcp_server.infrastructure.managed_pg_supervisor \
@@ -17,11 +22,13 @@ source: ADR-1110
 from __future__ import annotations
 
 import os
+import select
 import subprocess
 import sys
 from pathlib import Path
 
 from mcp_server.infrastructure import managed_pg as _pg
+from mcp_server.infrastructure import managed_pg_process as _process
 from mcp_server.infrastructure import managed_pg_server as _server
 
 _ARGC = 4  # source: ADR-1110 (module + the three arguments above)
@@ -48,18 +55,47 @@ def bin_dir(paths: _pg.PgPaths) -> Path:
     return binaries
 
 
-def _start(paths: _pg.PgPaths) -> subprocess.Popen | None:
-    port, postmaster = _server.start(bin_dir(paths), paths)
+def _start(paths: _pg.PgPaths, preferred: int | None = None) -> subprocess.Popen | None:
+    port, postmaster = _server.start(bin_dir(paths), paths, preferred)
     _pg.write_json(paths.status, {"state": "running", "port": port, "pid": os.getpid()})
     _log(f"server ready on {_pg.HOST}:{port}")
     return postmaster
 
 
+def _restart(
+    paths: _pg.PgPaths, postmaster: subprocess.Popen | None
+) -> subprocess.Popen | None:
+    """The postmaster's group exited under live clients: start a new one."""
+    start = _pg.open_lock(paths.lock("start"))
+    _pg.flock(start, exclusive=True)  # attaching clients wait for the new status
+    try:
+        if postmaster is not None:
+            postmaster.wait()  # reaps the dead child: its group already exited
+        port = _pg.read_json(paths.status).get("port")
+        _log("the postmaster exited while clients were attached; starting it again")
+        return _start(paths, port)
+    except Exception as exc:  # noqa: BLE001 — recorded for the clients, then re-raised
+        cause = f"the postmaster exited and did not start again: {exc}"
+        _pg.write_json(paths.status, {"state": "failed", "error": cause})
+        _log(cause)
+        raise
+    finally:
+        os.close(start)
+
+
 def _serve_until_last_client(
     paths: _pg.PgPaths, postmaster: subprocess.Popen | None, supervisor: int
 ) -> None:
-    clients = _pg.open_lock(paths.lock("clients"))
-    _pg.flock(clients, exclusive=True)  # granted when the last client has exited
+    held: list[int] = []
+    last_client = _process.acquired(paths.lock("clients"), held)
+    while True:
+        died = _process.released(paths.lock("postmaster"))
+        ready, _, _ = select.select([last_client, died], [], [])
+        os.close(died)
+        if last_client in ready:
+            break
+        postmaster = _restart(paths, postmaster)
+    os.close(last_client)
     final = {"state": "failed", "error": "interrupted while stopping"}
     try:
         _server.stop(paths, postmaster)
@@ -71,7 +107,7 @@ def _serve_until_last_client(
     finally:
         _pg.write_json(paths.status, final)
         os.close(supervisor)  # before clients: a new client must see no supervisor
-        os.close(clients)
+        os.close(held[0])
 
 
 def supervise(paths: _pg.PgPaths, supervisor: int, start: int) -> int:

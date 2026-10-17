@@ -214,26 +214,35 @@ def attach(paths: PgPaths, environ: MutableMapping[str, str]) -> str:
     return _ATTACHED[key]
 
 
-def _attach_once(paths: PgPaths) -> str:
-    clients = open_lock(paths.lock("clients"))
-    flock(clients, exclusive=False)
-    _HELD.append(clients)
-    _ensure_supervisor(paths)
+def _read_status(paths: PgPaths) -> dict:
     start = open_lock(paths.lock("start"))
     try:
         flock(start, exclusive=False)  # granted once a start in progress is over
     finally:
         os.close(start)
-    status = read_json(paths.status)
-    if status.get("state") != "running":
-        _HELD.remove(clients)
-        os.close(clients)
-        raise ManagedPgError(
-            "the Cortex PostgreSQL server is not running: "
-            f"{status.get('error') or status.get('state') or 'no status written'}"
-            f"\nSee {paths.log}"
-        )
-    return database_url(paths, int(status["port"]))
+    return read_json(paths.status)
+
+
+def _attach_once(paths: PgPaths) -> str:
+    from mcp_server.infrastructure import managed_pg_liveness as live  # noqa: PLC0415 — imports managed_pg_process (ctypes), POSIX only
+
+    clients = open_lock(paths.lock("clients"))
+    flock(clients, exclusive=False)
+    _HELD.append(clients)
+    while True:
+        _ensure_supervisor(paths)
+        status = _read_status(paths)
+        if status.get("state") != "running":
+            _HELD.remove(clients)
+            os.close(clients)
+            raise ManagedPgError(
+                "the Cortex PostgreSQL server is not running: "
+                f"{status.get('error') or status.get('state') or 'no status written'}"
+                f"\nSee {paths.log}"
+            )
+        if live.postmaster_alive(paths.root):
+            return database_url(paths, int(status["port"]))
+        live.await_change(paths.root, status)  # the supervisor is restarting it
 
 
 def use(paths: PgPaths, environ: MutableMapping[str, str]) -> dict[str, str]:
@@ -251,3 +260,10 @@ def detach() -> None:
     _ATTACHED.clear()
     while _HELD:
         os.close(_HELD.pop())
+
+
+def exit_unless_runnable(error: ManagedPgError, surface: str) -> None:
+    """End this process with one line naming why the managed server cannot
+    run: loud, exit 1, never a fallback to another store (ADR-1110, N5)."""
+    print(f"[{surface}] Cortex not ready: {error}", file=sys.stderr)
+    raise SystemExit(1)

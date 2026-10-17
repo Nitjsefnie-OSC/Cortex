@@ -20,11 +20,17 @@ adheres to [Semantic Versioning](https://semver.org/).
   change, loaded Homebrew's and failed in dyld on a Mac without it). The
   pgvector archives are compiled by Cortex's CI (`pgvector.yml`: pinned
   upstream commit, built and load-tested against the pinned PostgreSQL on each
-  platform, build provenance attested) and published as a release of this
-  repository. The server is started and stopped on kernel events (ready in
+  platform, build provenance attested) and published from main only as a
+  release of this repository. The server is started and stopped on kernel events (ready in
   `postmaster.pid`, process exit), never on a timer, and a postmaster is
   adopted or signalled only when its PID and kernel start time are the ones
-  recorded at spawn and it authenticates with the cluster's password. The
+  recorded at spawn and it authenticates with the cluster's password (a
+  wrong server signature, a foreign nonce, trust or a cleartext request is
+  refused). A postmaster that dies under live clients is started again on the
+  same port, and a client never takes a `running` status whose postmaster is
+  dead; one whose supervisor died before recording it is adopted once it
+  proves itself. The Codex hook entry and `hypermnesia-mcp` stop in one line
+  (`Cortex not ready: ...`) when the server cannot run. The
   Codex plugin, `hypermnesia-mcp` and `cortex-doctor` attach to the same
   server, so Claude and Codex on one account share one store. A configured
   `database_url` (`CLAUDE_PLUGIN_OPTION_DATABASE_URL` for hooks and Setup)

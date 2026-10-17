@@ -35,6 +35,7 @@ from mcp_server.hooks.host_dispatch import (
 )
 from mcp_server.hooks.output_streams import use_utf8_output
 from mcp_server.infrastructure.backend_marker import apply_backend_resolution
+from mcp_server.infrastructure.managed_pg import ManagedPgError, exit_unless_runnable
 
 # The eleven hook modules the Claude Code plugin manifest wires
 # (.claude-plugin/plugin.json), verified against that file. Anything else
@@ -115,6 +116,15 @@ def _print_usage() -> None:
     )
 
 
+def _prepare_or_exit(environ: MutableMapping[str, str]) -> None:
+    """``prepare_environment``; a managed server that cannot run ends the
+    hook in one line, exit 1, never a fallback (source: ADR-1110)."""
+    try:
+        prepare_environment(environ)
+    except ManagedPgError as exc:
+        exit_unless_runnable(exc, "cortex-hook")
+
+
 def main() -> None:
     """Validate argv[1] against the allowlist, then dispatch to the hook.
 
@@ -143,7 +153,7 @@ def main() -> None:
         sys.exit(2)
 
     os.environ.setdefault("CORTEX_RUNTIME", "cowork")
-    prepare_environment(os.environ)
+    _prepare_or_exit(os.environ)
     resolve_auto_backend(os.environ)
 
     from mcp_server.hooks.wiring import wire_composition_root  # noqa: PLC0415 - issue number 560, same seam as scripts/launcher.py:153

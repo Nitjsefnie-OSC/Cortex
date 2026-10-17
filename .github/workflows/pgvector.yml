@@ -4,8 +4,10 @@ name: pgvector
 # from the pinned upstream tag, against the pinned theseus PostgreSQL tree, on
 # a runner of each target triple; attests each archive's build provenance and
 # publishes the four archives once as assets of one prerelease of this
-# repository. An existing release is never modified: a rebuild cannot replace
-# the bytes the sha256 pins name.
+# repository, from main only: a branch builds and attests but never creates a
+# release, so `gh attestation verify --source-ref refs/heads/main` holds for
+# what Setup downloads. An existing release is never modified: a rebuild
+# cannot replace the bytes the sha256 pins name.
 # source: ADR-1110
 
 on:
@@ -62,7 +64,7 @@ jobs:
 
   publish:
     needs: build
-    if: github.repository == 'cdeust/Cortex'
+    if: github.repository == 'cdeust/Cortex' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -90,4 +92,4 @@ jobs:
           fi
           gh release create "$tag" dist/*.tar.gz --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" --prerelease --title "$tag" \
-            --notes "pgvector built by .github/workflows/pgvector.yml (run $GITHUB_RUN_ID) from the pinned upstream tag against the pinned theseus PostgreSQL. Verify: gh attestation verify <archive> --repo $GITHUB_REPOSITORY"
+            --notes "pgvector built by .github/workflows/pgvector.yml (run $GITHUB_RUN_ID) from the pinned upstream tag against the pinned theseus PostgreSQL. Verify: gh attestation verify <archive> --repo $GITHUB_REPOSITORY --source-ref refs/heads/main"

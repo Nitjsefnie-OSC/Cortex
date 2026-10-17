@@ -140,3 +140,99 @@ def test_effective_backend_names_a_managed_marker_and_starts_nothing(home):
     marker = claude / "methodology" / "backend.json"
     assert effective_backend({}, marker) == "postgresql"
     assert not (root / "status.json").exists()
+
+
+# source: test helper — a client attached through the real supervisor that
+# prints its URL and stays attached until stdin closes
+_CLIENT = (
+    "import os, sys\n"
+    "from pathlib import Path\n"
+    "from mcp_server.infrastructure import managed_pg as m\n"
+    "print(m.attach(m.PgPaths(Path(sys.argv[1])), dict(os.environ)), flush=True)\n"
+    "sys.stdin.read()\n"
+)
+
+
+def _client(claude: Path, root: Path) -> tuple[subprocess.Popen, str]:
+    proc = subprocess.Popen(
+        [sys.executable, "-c", _CLIENT, str(root)], cwd=REPO_ROOT, env=_env(claude),
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+    )  # fmt: skip
+    return proc, proc.stdout.readline().strip()
+
+
+def _restarted_or_given_up(root: Path, dead: int) -> bool:
+    record = json.loads((root / "postmaster.json").read_text())
+    status = json.loads((root / "status.json").read_text())
+    return record["pid"] != dead or status.get("state") != "running"
+
+
+def _until_root_changes(root: Path, done) -> None:
+    """Block on directory events in ``root`` until ``done()``; re-checked
+    after each wake-up, the watch armed before the first check."""
+    from mcp_server.infrastructure import managed_pg_process
+
+    never_r, never_w = os.pipe()  # no exit event: only the directory wakes us
+    watch = managed_pg_process.watch(root, never_r)
+    try:
+        while not done():
+            watch.wait()
+    finally:
+        watch.close()
+        os.close(never_r)
+        os.close(never_w)
+
+
+def test_a_postmaster_that_dies_under_clients_is_started_again(home):
+    # Round-4 review N3: status stayed "running" and new clients got a dead URL
+    # until every client had left.
+    import signal
+
+    from mcp_server.infrastructure import managed_pg_protocol
+
+    claude, root = home
+    a, url_a = _client(claude, root)
+    supervisor = json.loads((root / "status.json").read_text())["pid"]
+    dead = json.loads((root / "postmaster.json").read_text())["pid"]
+    try:
+        os.kill(dead, signal.SIGKILL)
+        _until_root_changes(root, lambda: _restarted_or_given_up(root, dead))
+        b, url_b = _client(claude, root)
+        try:
+            port = int(url_b.rsplit(":", 1)[1].split("/")[0])
+            managed_pg_protocol.authenticate("127.0.0.1", port, "postgres", "s3cret")
+            assert url_b == url_a  # same port: A's URL works again
+            status = json.loads((root / "status.json").read_text())
+            assert (status["state"], status["pid"]) == ("running", supervisor)
+            assert json.loads((root / "postmaster.json").read_text())["pid"] != dead
+        finally:
+            b.stdin.close()
+            b.wait()
+    finally:
+        a.stdin.close()
+        a.wait()
+
+
+@pytest.mark.parametrize(
+    ("argv", "surface"),
+    [
+        (["-m", "mcp_server"], "cortex-mcp"),
+        (["-m", "mcp_server.hooks.entry", "session_start"], "cortex-hook"),
+    ],
+)
+def test_a_managed_server_that_cannot_run_ends_a_launch_in_one_line(
+    home, argv, surface
+):
+    # Round-4 review N5: a raw traceback; now one line, exit 1, no fallback.
+    claude, root = home
+    (root / "installed.json").write_text("{}")  # the plugin's data was removed
+    done = subprocess.run(
+        [sys.executable, *argv], cwd=REPO_ROOT, input="{}",
+        env=_env(claude, CORTEX_RUNTIME="cowork"),
+        capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    assert done.returncode == 1
+    assert "Traceback" not in done.stderr
+    lines = [line for line in done.stderr.splitlines() if "Cortex not ready" in line]
+    assert len(lines) == 1 and lines[0].startswith(f"[{surface}] Cortex not ready:")
+    assert "claude --init-only" in lines[0]

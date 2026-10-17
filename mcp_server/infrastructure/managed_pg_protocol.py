@@ -85,6 +85,20 @@ def _hmac(key: bytes, text: bytes) -> bytes:
     return hmac.new(key, text, hashlib.sha256).digest()
 
 
+def _server_first(message: str) -> dict:
+    """``r``, ``s`` (decoded) and ``i`` of a server-first-message (RFC 5802
+    section 7); anything malformed is a ``ProtocolError``, never a crash."""
+    try:
+        attrs = dict(item.split("=", 1) for item in message.split(","))
+        parsed = {"r": attrs["r"], "s": base64.b64decode(attrs["s"], validate=True)}
+        parsed["i"] = int(attrs["i"])
+    except (KeyError, ValueError) as exc:
+        raise ProtocolError(f"malformed SCRAM server-first-message: {exc!r}") from None
+    if parsed["i"] < 1:
+        raise ProtocolError("SCRAM iteration count below 1")
+    return parsed
+
+
 def _scram(sock: socket.socket, password: str) -> None:
     if _MECHANISM not in _auth(sock, _SASL).split(b"\0"):
         raise ProtocolError("the server does not offer SCRAM-SHA-256")
@@ -92,12 +106,12 @@ def _scram(sock: socket.socket, password: str) -> None:
     first_bare = f"n=,r={nonce}"
     first = f"n,,{first_bare}".encode()
     _send(sock, b"p", _MECHANISM + b"\0" + struct.pack("!i", len(first)) + first)
-    server_first = _auth(sock, _SASL_CONTINUE).decode()
-    attrs = dict(item.split("=", 1) for item in server_first.split(","))
-    if not attrs.get("r", "").startswith(nonce):
+    server_first = _auth(sock, _SASL_CONTINUE).decode("utf-8", "replace")
+    attrs = _server_first(server_first)
+    if not attrs["r"].startswith(nonce):
         raise ProtocolError("the server's SCRAM nonce does not extend ours")
     salted = hashlib.pbkdf2_hmac(
-        "sha256", password.encode(), base64.b64decode(attrs["s"]), int(attrs["i"])
+        "sha256", password.encode(), attrs["s"], int(attrs["i"])
     )
     client_key = _hmac(salted, b"Client Key")
     without_proof = f"c=biws,r={attrs['r']}"
