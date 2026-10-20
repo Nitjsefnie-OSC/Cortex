@@ -25,7 +25,7 @@ from unittest.mock import patch
 import pytest
 
 from tests_py._hermetic_hook_env import await_capture_worker_exit, hermetic_hook_env
-from tests_py._launcher_ready import ready_launcher_argv
+from tests_py._launcher_ready import ready_launcher_argv, ready_plugin_data
 
 # tomllib is 3.11+; requires-python is >=3.10 (pyproject.toml), so the
 # fallback backport is used on 3.10, exactly like build/hatchling's own
@@ -78,6 +78,7 @@ def _isolated_env(tmp_path: Path) -> dict[str, str]:
     env["CORTEX_CLAUDE_DIR"] = str(claude_dir)
     env["CORTEX_MEMORY_STORE_BACKEND"] = "sqlite"
     env["CLAUDE_PLUGIN_ROOT"] = str(REPO_ROOT)
+    env["CLAUDE_PLUGIN_DATA"] = str(ready_plugin_data(tmp_path))
     env.pop("DATABASE_URL", None)
     return env
 
