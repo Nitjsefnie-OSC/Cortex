@@ -29,6 +29,7 @@ import sys
 
 # source: reading thresholds for the blast tags (callers), stated in the docstring
 BLAST_LOW_MAX = 5
+# source: reading threshold for the blast tags (callers), stated in the docstring
 BLAST_MEDIUM_MAX = 50
 
 REPO, GP, BASE, OUT = sys.argv[1:5]

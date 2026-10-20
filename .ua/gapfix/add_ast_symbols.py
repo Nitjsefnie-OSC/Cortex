@@ -28,10 +28,8 @@ fid = {
 nodes, edges = [], []
 
 
-def add(p, kind, n, parent_id):
-    nid = f"{kind}:{p}:{n.name}"
-    if nid in ids:
-        return nid
+def symbol_node(p, kind, n, nid):
+    """The graph node of AST definition `n` (summary = first docstring line)."""
     doc = (ast.get_docstring(n) or "").strip().splitlines()
     summary = (
         doc[0]
@@ -44,21 +42,26 @@ def add(p, kind, n, parent_id):
         else ("benchmark" if p.startswith("benchmarks/") else "production")
     )
     tags = [area, kind] + (["private"] if n.name.startswith("_") else [])
-    nodes.append(
-        {
-            "id": nid,
-            "type": kind,
-            "name": n.name,
-            "filePath": p,
-            "lineRange": [n.lineno, n.end_lineno],
-            "summary": summary,
-            "tags": tags,
-            "complexity": "simple"
-            if (n.end_lineno - n.lineno) < SIMPLE_MAX_LINES
-            else "moderate",
-            "provenance": "gapfix/add_ast_symbols.py",
-        }
-    )
+    return {
+        "id": nid,
+        "type": kind,
+        "name": n.name,
+        "filePath": p,
+        "lineRange": [n.lineno, n.end_lineno],
+        "summary": summary,
+        "tags": tags,
+        "complexity": "simple"
+        if (n.end_lineno - n.lineno) < SIMPLE_MAX_LINES
+        else "moderate",
+        "provenance": "gapfix/add_ast_symbols.py",
+    }
+
+
+def add(p, kind, n, parent_id):
+    nid = f"{kind}:{p}:{n.name}"
+    if nid in ids:
+        return nid
+    nodes.append(symbol_node(p, kind, n, nid))
     ids.add(nid)
     edges.append(
         {

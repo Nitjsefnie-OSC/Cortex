@@ -51,14 +51,17 @@ Base: `/understand` (LLM file analysis, layers, tour). Then, from the repository
 3. `link_sql_dataflow.py . $G` — store tables from `CREATE TABLE`, `reads_from` /
    `writes_to` / `defines_schema` from SQL literals.
 4. `link_calls_resolved.py . $G` — call graph resolved through imports, re-exports,
-   classes, mixins, factory return types and callables passed as references.
+   classes, mixins, factory return types and callables passed as references. Rules in
+   `call_resolution.py` (modules, imports, classes) and `call_targets.py` (types,
+   mixins, per-call targets).
 5. `link_adr_citations.py . $G` — `documents` edges ADR → module from `ADR-NNNN` citations.
 6. `summaries_from_docstrings.py . $G` — short summaries replaced by the author's docstring.
 7. `function_depth.py . $G` — signature, McCabe complexity, raises, SQL effects.
 8. `build_knowledge_layer.py . $G` — ADR articles, topics, scientific sources.
 9. `compute_impact.py . $G df3a447 .ua/overlays pr770=<ref> ...` — per-function impact
    (`impact`, `blast:*` / `entry:*` tags) and per-PR overlays.
-10. `build_domain_graph.py . $G .ua/domain-graph.json`.
+10. `build_domain_graph.py . $G .ua/domain-graph.json` (source readers in
+    `domain_sources.py`).
 11. `scorecard.py . $G` — the table above.
 
 Each pass is idempotent on the graph it reads (it skips edges already present, and the

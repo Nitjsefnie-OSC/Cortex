@@ -16,14 +16,18 @@ usage: python3 build_domain_graph.py <repo> <knowledge-graph.json> <out domain-
 graph.json>
 """
 
+import collections
+import datetime
 import json
 import re
 import sys
-import collections
-import datetime
-import ast
-import glob
-import os
+
+from domain_sources import (
+    entry_function,
+    plugin_hooks,
+    read_catalogue,
+    registered_tools,
+)
 
 # source: below this many direct project calls an entry only delegates;
 # its steps are taken from the function it delegates to (see module docstring)
@@ -47,62 +51,9 @@ def kebab(s):
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
 
 
-# ── catalogue: tier headings and Purpose per tool ────────────────────────
-tier, tool_tier, purpose = None, {}, {}
-for line in open(f"{REPO}/docs/mcp-tools.md", encoding="utf-8"):
-    h = re.match(r"^## (.+)", line)
-    if h:
-        tier = re.sub(r"\s*\(\d+.*\)$", "", h.group(1)).strip()
-        continue
-    row = re.match(r"^\| `([a-z_]+)` \| (.+?) \|", line)
-    if row and tier:
-        tool_tier[row.group(1)] = tier
-        purpose[row.group(1)] = row.group(2).strip()
-
-# ── tools: @mcp.tool(name="T") followed by safe_handler(<module>.<fn>) in a registry ──
-tools = {}  # tool -> (handler path, entry function name, registry group)
-for p in sorted(glob.glob(f"{REPO}/mcp_server/tool_registry_*.py")):
-    src = open(p, encoding="utf-8").read()
-    gname = os.path.basename(p)[len("tool_registry_") : -3]
-    for m in re.finditer(r'@mcp\.tool\(\s*name="([a-z_]+)"', src):
-        h = re.search(
-            r"safe_handler\(\s*([a-z_]+)\.([a-z_]+)", src[m.end() : m.end() + 2500]
-        )
-        if h and m.group(1) not in tools:
-            path = f"mcp_server/handlers/{h.group(1)}.py"
-            if os.path.exists(f"{REPO}/{path}"):
-                tools[m.group(1)] = (path, h.group(2), gname)
-for t in tool_tier:  # catalogue tools registered another way: handlers/<tool>.py
-    if t not in tools and os.path.exists(f"{REPO}/mcp_server/handlers/{t}.py"):
-        tools[t] = (f"mcp_server/handlers/{t}.py", "handler", "other")
-
-
-def entry_function(path, name):
-    """`name` itself when defined; the wrapped implementation for `name = instrument(n,
-    impl, ...)`."""
-    tree = ast.parse(open(f"{REPO}/{path}", encoding="utf-8").read())
-    for n in tree.body:
-        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == name:
-            return name
-        if (
-            isinstance(n, ast.Assign)
-            and any(isinstance(t, ast.Name) and t.id == name for t in n.targets)
-            and isinstance(n.value, ast.Call)
-        ):
-            for a in n.value.args:
-                if isinstance(a, ast.Name):
-                    return a.id
-    return name
-
-
-hooks = []
-plugin = json.load(open(f"{REPO}/.claude-plugin/plugin.json"))
-for event, matchers in plugin.get("hooks", {}).items():
-    for m in matchers:
-        for h in m.get("hooks", []):
-            mm = re.search(r"mcp_server\.hooks\.([a-z_]+)", h.get("command", ""))
-            if mm:
-                hooks.append((mm.group(1), event, m.get("matcher", "")))
+tool_tier, purpose = read_catalogue(REPO)
+tools = registered_tools(REPO, tool_tier)
+hooks = plugin_hooks(REPO)
 
 D, E = [], []
 domains = {}
@@ -167,6 +118,11 @@ def flow(fid, name, summary, entry_point, entry_type, entry_id, did, path):
         }
     )
     flow_entry[entry_id] = (fid, did)
+    add_steps(fid, entry_id)
+
+
+def add_steps(fid, entry_id):
+    """The flow's steps: the entry's project callees in source order (steps_for)."""
     seq = steps_for(entry_id)
     k = len(seq)
     for i, t in enumerate(seq, 1):
@@ -208,7 +164,7 @@ for tool, (path, fn, gname) in sorted(tools.items()):
         ),
         ["mcp-tools"],
     )
-    entry = f"function:{path}:{entry_function(path, fn)}"
+    entry = f"function:{path}:{entry_function(REPO, path, fn)}"
     flow(
         f"flow:{kebab(tool)}",
         tool,
