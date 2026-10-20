@@ -40,8 +40,9 @@ def ready_launcher_argv(launcher: Path, *arguments: str) -> list[str]:
     ]
 
 
-def ready_plugin_data(tmp_path: Path) -> Path:
-    """A ``CLAUDE_PLUGIN_DATA`` whose base set is stamped installed for this tree.
+def ready_plugin_env(tmp_path: Path) -> dict[str, str]:
+    """``CLAUDE_PLUGIN_ROOT`` (this tree) and a ``CLAUDE_PLUGIN_DATA`` whose base
+    set is stamped installed for it.
 
     A hook started through the patched driver above may itself spawn the real
     launcher (``post_tool_capture`` starts its capture worker that way, issue
@@ -63,4 +64,4 @@ def ready_plugin_data(tmp_path: Path) -> Path:
     deps = Path(launcher_layout.deps_dir(data, key))
     deps.mkdir(parents=True, exist_ok=True)
     launcher_deps._write_stamp(str(deps), "base", key, "test")
-    return data
+    return {"CLAUDE_PLUGIN_ROOT": str(REPO_ROOT), "CLAUDE_PLUGIN_DATA": str(data)}
