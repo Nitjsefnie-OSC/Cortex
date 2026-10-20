@@ -30,16 +30,7 @@ def test_ingest_privileges_survive_reopen(origin, write_class, tmp_path):
         "local_action",
         "deliberate",
     }
-    if type(store).__name__ == "PgMemoryStore":
-        # Force the migration path, including backfill, in this scratch DB:
-        # the explicit step (ADR-1112; opening a store never migrates).
-        from mcp_server.infrastructure.pg_migrations import apply_schema  # noqa: PLC0415 — PG-only import
-
-        store._conn.execute("DELETE FROM schema_meta")
-        apply_schema(store._url)
-        reopened = type(store)(store._url)
-    else:
-        reopened = type(store)(sqlite_path)
+    reopened = _reopen_through_migration(store, sqlite_path)
     try:
         for mid in ids:
             row = reopened.get_memory(mid)
@@ -52,3 +43,15 @@ def test_ingest_privileges_survive_reopen(origin, write_class, tmp_path):
         reopened.close()
         if type(store).__name__ != "PgMemoryStore":
             store.close()
+
+
+def _reopen_through_migration(store, sqlite_path):
+    """Reopen after the migration path, including backfill, in this scratch
+    DB: the explicit step on PostgreSQL (ADR-1112; opening never migrates)."""
+    if type(store).__name__ != "PgMemoryStore":
+        return type(store)(sqlite_path)
+    from mcp_server.infrastructure.pg_migrations import apply_schema  # noqa: PLC0415 — PG-only import
+
+    store._conn.execute("DELETE FROM schema_meta")
+    apply_schema(store._url)
+    return type(store)(store._url)

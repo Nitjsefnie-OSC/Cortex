@@ -1,6 +1,6 @@
 """DDL/schema-migration + query-execution mixin for PgMemoryStore.
 
-``compute_ddl_hash`` / ``read_schema_hash`` / ``_get_database_url`` are
+``read_schema_hash`` / ``_get_database_url`` are
 module-level functions re-exported by ``pg_store.py`` — ``mcp_server.migrate``
 (a standalone entry point that must decide "is the DB current" without
 constructing a full store) imports them from that facade path.
@@ -19,9 +19,7 @@ from psycopg.rows import DictRow
 
 from mcp_server.infrastructure.memory_config import get_memory_settings
 from mcp_server.infrastructure.pg_migrations import (
-    apply_schema,
     check_runtime,
-    compute_ddl_hash,
     migrate_locked,
     read_state,
 )
@@ -29,9 +27,6 @@ from mcp_server.infrastructure.pg_store_host import MaterializedCursor, PgStoreH
 
 if TYPE_CHECKING:
     from typing_extensions import LiteralString
-
-# source: ADR-1112 the facade names pg_store.py and the migrate step import
-__all__ = ["apply_schema", "compute_ddl_hash", "read_schema_hash", "PgDdlMixin"]
 
 
 # source: ADR-0545

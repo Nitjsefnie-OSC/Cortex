@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EXTRAS = "postgresql,sqlite"
 # source: ADR-1112 what the installed tree must report
 _FINGERPRINT = (
-    "from mcp_server.infrastructure.pg_migrations import compute_ddl_hash;"
+    "from mcp_server.infrastructure.pg_schema_fingerprint import compute_ddl_hash;"
     " print(compute_ddl_hash())"
 )
 
@@ -82,7 +82,7 @@ def _installed_fingerprint() -> str:
 
 def _execute(python: str) -> None:
     sys.path.insert(0, str(ROOT))
-    from mcp_server.infrastructure.pg_migrations import compute_ddl_hash  # noqa: PLC0415 -- this checkout
+    from mcp_server.infrastructure.pg_schema_fingerprint import compute_ddl_hash  # noqa: PLC0415 -- this checkout, no driver needed
 
     head = _clean_head()
     with tempfile.TemporaryDirectory(prefix="cortex-codex-wheel-") as scratch:

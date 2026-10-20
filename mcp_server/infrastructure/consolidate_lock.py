@@ -15,7 +15,7 @@ Idea and first implementation: commit 4dc9f66e (worktree
 fix-idle-tx-pileup, Claude session 01BxsVCVscNG2Vb7fafCgqYR); this module is
 the same design written for this branch.
 
-source: ADR-1112; lock pattern: pipeline_install_lock (ADR-0586)
+source: ADR-1112 (lock pattern of pipeline_install_lock, ADR-0586)
 """
 
 from __future__ import annotations

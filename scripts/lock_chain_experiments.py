@@ -36,7 +36,7 @@ def prepare_database(maint: str) -> str:
 
 
 def _branch_hash() -> str:
-    from mcp_server.infrastructure.pg_migrations import compute_ddl_hash  # noqa: PLC0415 -- branch code
+    from mcp_server.infrastructure.pg_schema_fingerprint import compute_ddl_hash  # noqa: PLC0415 -- branch code
 
     return compute_ddl_hash()
 

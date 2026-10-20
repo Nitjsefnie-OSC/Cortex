@@ -20,7 +20,6 @@ source: ADR-1112
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version as package_version
@@ -40,7 +39,7 @@ SCHEMA_VERSION = 1
 SCHEMA_HASHES: dict[int, str] = {
     1: "44002703f29f0c2d8d01b5b343bf6fe5e995b989126b7b00f7e6a96474c21f87",
 }
-# source: ADR-0545: the schema advisory lock key, unchanged
+# source: ADR-0545 (the schema advisory lock key, unchanged)
 SCHEMA_LOCK_ID = 1357020271
 # source: ADR-0545
 _SCHEMA_META_DDL = (
@@ -116,13 +115,6 @@ class SchemaState:
             if fingerprint == self.recorded_hash:
                 return number
         return None
-
-
-def compute_ddl_hash() -> str:
-    """SHA-256 fingerprint of the code's full ordered DDL set.
-
-    source: ADR-0545"""
-    return hashlib.sha256("\n".join(get_all_ddl()).encode("utf-8")).hexdigest()
 
 
 def code_revision() -> str:

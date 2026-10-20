@@ -33,7 +33,9 @@ CURRENT = mig.SCHEMA_HASHES[mig.SCHEMA_VERSION]
 
 def test_the_code_ddl_is_the_released_fingerprint_of_its_version():
     """A DDL change without a new SCHEMA_VERSION entry fails here."""
-    assert mig.compute_ddl_hash() == CURRENT
+    from mcp_server.infrastructure.pg_schema_fingerprint import compute_ddl_hash  # noqa: PLC0415
+
+    assert compute_ddl_hash() == CURRENT
 
 
 def test_versions_only_grow_and_every_one_has_a_fingerprint():

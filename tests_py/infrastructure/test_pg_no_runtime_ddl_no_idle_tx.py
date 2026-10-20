@@ -115,10 +115,8 @@ def _open_in_thread(opened: dict[str, object]) -> threading.Thread:
 
 
 def test_opening_a_store_on_another_revision_runs_no_ddl_and_refuses():
-    from mcp_server.infrastructure.pg_migrations import (  # noqa: PLC0415 — PG-only import
-        SchemaError,
-        compute_ddl_hash,
-    )
+    from mcp_server.infrastructure.pg_migrations import SchemaError  # noqa: PLC0415 — PG-only import
+    from mcp_server.infrastructure.pg_schema_fingerprint import compute_ddl_hash  # noqa: PLC0415
 
     opened: dict[str, object] = {}
     _set_recorded_hash(_FOREIGN_HASH)
@@ -141,10 +139,8 @@ def test_opening_a_store_on_another_revision_runs_no_ddl_and_refuses():
 
 
 def test_explicit_migration_applies_and_records_the_revision():
-    from mcp_server.infrastructure.pg_migrations import (  # noqa: PLC0415 — PG-only import
-        apply_schema,
-        compute_ddl_hash,
-    )
+    from mcp_server.infrastructure.pg_migrations import apply_schema  # noqa: PLC0415 — PG-only import
+    from mcp_server.infrastructure.pg_schema_fingerprint import compute_ddl_hash  # noqa: PLC0415
 
     _set_recorded_hash(_FOREIGN_HASH)
     try:
