@@ -107,6 +107,14 @@ class PgStoreHost:
             **kwargs: Any,
         ) -> MaterializedCursor: ...
 
+        def _execute_on_conn(
+            self,
+            conn: psycopg.Connection[DictRow],
+            query: str | sql.Composable,
+            params: Any,
+            **kwargs: Any,
+        ) -> MaterializedCursor: ...
+
         def _normalize_memory_row(self, row: dict[str, Any]) -> dict[str, Any]: ...
 
         @staticmethod

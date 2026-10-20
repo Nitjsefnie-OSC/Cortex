@@ -35,6 +35,22 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A consolidation pass no longer holds a transaction, and opening a store
+  no longer runs DDL (incident 2026-10-20, ADR-1112 increment 0).**
+  `iter_memories_for_decay` read the corpus through a named cursor inside a
+  transaction and yielded between fetches, so every consolidation stage ran
+  `idle in transaction`; `PgMemoryStore.__init__` re-applied the whole DDL set
+  whenever the recorded revision differed from its own, and two installs of
+  different revisions on one store flipped it on every alternate start. A
+  no-op `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` then queued for its
+  AccessExclusive lock behind the stream, every reader queued behind it, and
+  the consumer's own write closed a cycle the server cannot detect
+  (reproduced: `python scripts/repro_lock_chain.py`). The stream now pages by
+  `id`, one autocommit statement per chunk; a store opening on a database
+  recorded at another revision runs no DDL and warns, and
+  `python -m mcp_server.migrate` (`pg_store_ddl.apply_schema`) is the only
+  migration path. `scripts/setup_db.py` records the revision it applies.
+
 - **No hook installs dependencies any more; run `claude --init-only` after
   `claude plugin install` and after `claude plugin update`** (ADR-1108,
   replacing ADR-1104 decision 4). Every hook used to install whenever its

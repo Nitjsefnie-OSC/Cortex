@@ -37,10 +37,10 @@ def _run() -> int:
     every exception is caught and mapped to the frozen exit contract.
     """
     from mcp_server.infrastructure.pg_store import (  # noqa: PLC0415 — source: ADR-0637
-        PgMemoryStore,
         _get_database_url,
         compute_ddl_hash,
     )
+    from mcp_server.infrastructure import pg_store_ddl  # noqa: PLC0415 — source: ADR-1112
 
     url = _get_database_url()
     target_hash = compute_ddl_hash()
@@ -51,19 +51,14 @@ def _run() -> int:
         print(f"cortex-migrate: cannot connect to database: {exc}", file=sys.stderr)
         return 1
 
-    store: PgMemoryStore | None = None
     try:
-        # Constructing PgMemoryStore IS the migration: __init__ calls
-        # _init_schema(), which applies get_all_ddl() under the advisory
-        # lock iff the recorded hash is stale. Single source of truth —
-        # this module never re-applies DDL itself.
-        store = PgMemoryStore(database_url=url)
+        # The explicit migration step (ADR-1112): opening a store no longer
+        # migrates an existing schema, this does. apply_schema is the single
+        # DDL path (hash-gated, under the schema advisory lock).
+        pg_store_ddl.apply_schema(url)
     except Exception as exc:  # noqa: BLE001 — source: ADR-0637
         print(f"cortex-migrate: schema migration failed: {exc}", file=sys.stderr)
         return 1
-    finally:
-        if store is not None:
-            store.close()
 
     if was_current:
         print("cortex-migrate: schema up to date")

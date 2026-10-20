@@ -4348,11 +4348,6 @@
       "detail": "mcp_server.observability"
     },
     {
-      "file": "mcp_server/migrate.py",
-      "kind": "method-size",
-      "detail": "_run"
-    },
-    {
       "file": "mcp_server/observability/metrics.py",
       "kind": "method-size",
       "detail": "render"

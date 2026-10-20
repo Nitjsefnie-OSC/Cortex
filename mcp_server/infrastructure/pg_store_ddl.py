@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import psycopg
 from psycopg import sql
-from psycopg.rows import DictRow
+from psycopg.rows import DictRow, dict_row
 
 from mcp_server.infrastructure.pg_schema import get_all_ddl
 from mcp_server.infrastructure.pg_store_host import MaterializedCursor, PgStoreHost
@@ -56,6 +56,81 @@ def _get_database_url() -> str:
     if not url or "${" in url:
         url = get_memory_settings().DATABASE_URL
     return url
+
+
+# source: ADR-0545
+_SCHEMA_LOCK_ID = 1357020271
+
+# source: ADR-0545
+_SCHEMA_META_DDL = (
+    "CREATE TABLE IF NOT EXISTS schema_meta ("
+    " id integer PRIMARY KEY DEFAULT 1 CHECK (id = 1),"
+    " ddl_hash text NOT NULL,"
+    " applied_at timestamptz NOT NULL DEFAULT now());"
+)
+
+
+def _record_schema_hash(conn: psycopg.Connection[DictRow], ddl_hash: str) -> None:
+    """Persist the just-applied DDL revision (upsert the single row).
+
+    source: ADR-0545"""
+    conn.execute(_SCHEMA_META_DDL)
+    conn.execute(
+        "INSERT INTO schema_meta (id, ddl_hash, applied_at)"
+        " VALUES (1, %s, now())"
+        " ON CONFLICT (id) DO UPDATE SET"
+        " ddl_hash = EXCLUDED.ddl_hash, applied_at = EXCLUDED.applied_at;",
+        (ddl_hash,),
+    )
+
+
+def _apply_ddl_locked(
+    conn: psycopg.Connection[DictRow], ddl_list: list[LiteralString], ddl_hash: str
+) -> bool:
+    """Apply ``ddl_list`` under the schema advisory lock; True iff applied.
+
+    A peer that applied the same revision while this one waited makes it a
+    no-op. The lock is released even on failure.
+
+    source: ADR-0545"""
+    conn.execute("SELECT pg_advisory_lock(%s);", (_SCHEMA_LOCK_ID,))
+    try:
+        if read_schema_hash(conn) == ddl_hash:
+            return False
+        for ddl in ddl_list:
+            try:
+                conn.execute(ddl)
+            except Exception as exc:  # noqa: BLE001 — last-resort boundary — failure is logged; degraded mode continues
+                logger.warning(
+                    "Schema statement failed: %s — %s", ddl.split("\n")[0][:50], exc
+                )
+        _record_schema_hash(conn, ddl_hash)
+        conn.commit()
+        return True
+    finally:
+        try:
+            conn.execute("SELECT pg_advisory_unlock(%s);", (_SCHEMA_LOCK_ID,))
+            conn.commit()
+        except Exception as exc:  # noqa: BLE001 — last-resort boundary — failure is logged; degraded mode continues
+            logger.warning("Failed to release schema advisory lock: %s", exc)
+
+
+def apply_schema(database_url: str) -> bool:
+    """The explicit migration step: bring ``database_url`` to the code's
+    schema revision; True iff DDL ran, False when already current.
+
+    The only DDL path for a database that already has a recorded revision
+    (``python -m mcp_server.migrate``, ``scripts/setup_db.py``, the test
+    harness); opening a store never calls it (ADR-1112).
+
+    source: ADR-1112"""
+    ddl_hash = compute_ddl_hash()
+    with psycopg.Connection[DictRow].connect(
+        database_url, row_factory=dict_row, autocommit=True
+    ) as conn:
+        if read_schema_hash(conn) == ddl_hash:
+            return False
+        return _apply_ddl_locked(conn, get_all_ddl(), ddl_hash)
 
 
 class PgDdlMixin(PgStoreHost):
@@ -112,79 +187,38 @@ class PgDdlMixin(PgStoreHost):
             cur = conn.execute(typed_query, params, **kwargs)
         return MaterializedCursor(cur)
 
-    # source: ADR-0545
-    _SCHEMA_LOCK_ID = 1357020271
-
-    # source: ADR-0545
-    _SCHEMA_META_DDL = (
-        "CREATE TABLE IF NOT EXISTS schema_meta ("
-        " id integer PRIMARY KEY DEFAULT 1 CHECK (id = 1),"
-        " ddl_hash text NOT NULL,"
-        " applied_at timestamptz NOT NULL DEFAULT now());"
-    )
-
-    def _recorded_schema_hash(self) -> str | None:
-        """Return the DDL hash recorded in ``schema_meta``, or None.
-
-        source: ADR-0545"""
-        return read_schema_hash(self._conn)
-
-    def _record_schema_hash(self, ddl_hash: str) -> None:
-        """Persist the just-applied DDL revision (upsert the single row)."""
-        self._conn.execute(self._SCHEMA_META_DDL)
-        self._conn.execute(
-            "INSERT INTO schema_meta (id, ddl_hash, applied_at)"
-            " VALUES (1, %s, now())"
-            " ON CONFLICT (id) DO UPDATE SET"
-            " ddl_hash = EXCLUDED.ddl_hash, applied_at = EXCLUDED.applied_at;",
-            (ddl_hash,),
-        )
-
     def _init_schema(self) -> None:
-        """Create/upgrade tables, indexes, and stored procedures — once
-                per schema REVISION, not once per ``MemoryStore``.
+        """Read the recorded schema revision; run DDL only on first run.
 
-                Pre: self._conn is a live psycopg connection (autocommit).
-                Post: schema is at the code's revision; advisory lock released
-                even on failure (try/finally, inside ``_apply_ddl_locked``).
+        A process that opens a store never migrates an existing schema:
+        ``ALTER TABLE ... IF NOT EXISTS`` takes its AccessExclusive lock
+        before it checks anything, so a runtime no-op migration queues
+        behind any open transaction and every later read queues behind it
+        (incident 2026-10-20, ADR-1112). Schema changes go through the
+        explicit step, ``apply_schema`` (``python -m mcp_server.migrate``).
 
-        source: ADR-0545"""
-        ddl_list = get_all_ddl()
+        Pre: self._conn is a live psycopg connection (autocommit).
+        Post: on a database with no recorded revision (first run, no
+        readers yet) the schema is at the code's revision; on a database
+        recorded at another revision nothing is executed and a warning
+        names the explicit step.
+
+        source: ADR-1112"""
         ddl_hash = compute_ddl_hash()
-
-        # source: ADR-0545
-        if self._recorded_schema_hash() == ddl_hash:
+        recorded = read_schema_hash(self._conn)
+        if recorded == ddl_hash:
             return
-        self._apply_ddl_locked(ddl_list, ddl_hash)
-
-    def _apply_ddl_locked(self, ddl_list: list[LiteralString], ddl_hash: str) -> None:
-        """Serialize DDL application under the schema advisory lock.
-
-        source: ADR-0545"""
-        self._conn.execute("SELECT pg_advisory_lock(%s);", (self._SCHEMA_LOCK_ID,))
-        try:
-            # A peer may have applied the new revision while we waited.
-            if self._recorded_schema_hash() == ddl_hash:
-                return
-            for ddl in ddl_list:
-                try:
-                    self._conn.execute(ddl)
-                except Exception as exc:  # noqa: BLE001 — last-resort boundary — failure is logged; degraded mode continues
-                    logger.warning(
-                        "Schema statement failed: %s — %s",
-                        ddl.split("\n")[0][:50],
-                        exc,
-                    )
-            self._record_schema_hash(ddl_hash)
-            self._conn.commit()
-        finally:
-            try:
-                self._conn.execute(
-                    "SELECT pg_advisory_unlock(%s);", (self._SCHEMA_LOCK_ID,)
-                )
-                self._conn.commit()
-            except Exception as exc:  # noqa: BLE001 — last-resort boundary — failure is logged; degraded mode continues
-                logger.warning("Failed to release schema advisory lock: %s", exc)
+        if recorded is None:
+            _apply_ddl_locked(self._conn, get_all_ddl(), ddl_hash)
+            return
+        logger.warning(
+            "PostgreSQL schema is recorded at revision %s, this code expects %s; "
+            "no DDL runs when a store opens (ADR-1112). Run "
+            "'python -m mcp_server.migrate' once to migrate, or check whether "
+            "another Cortex install on a different revision shares this database.",
+            recorded[:16],
+            ddl_hash[:16],
+        )
 
     @property
     def has_vec(self) -> bool:
