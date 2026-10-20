@@ -51,7 +51,11 @@ def main() -> None:
     _say("TREE", os.path.dirname(os.path.dirname(mcp_server.__file__)))
     from mcp_server.infrastructure.pg_store import PgMemoryStore  # noqa: PLC0415 -- same
 
-    store = PgMemoryStore(database_url=url)
+    try:
+        store = PgMemoryStore(database_url=url)
+    except Exception as exc:  # noqa: BLE001 -- the outcome is the measurement
+        _say("REFUSED", type(exc).__name__)
+        return
     _say("OPENED")
     if mode == "stream":
         _stream(store)

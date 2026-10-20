@@ -3093,11 +3093,6 @@
       "detail": "_run_cycles"
     },
     {
-      "file": "mcp_server/handlers/consolidate.py",
-      "kind": "method-size",
-      "detail": "handler"
-    },
-    {
       "file": "mcp_server/handlers/consolidation/authoring_prompts.py",
       "kind": "file-size",
       "detail": "exceeds 300-line cap"

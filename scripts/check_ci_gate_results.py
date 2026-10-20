@@ -21,6 +21,8 @@ CODE_JOBS = frozenset(
         "typecheck",
         "build",
         "install-e2e",
+        # source: ADR-1112 (broker and versioned schema)
+        "broker-measurements",
     }
 )
 DOCKER_BUILD_JOBS = frozenset({"docker-runtime-build", "devcontainer-build"})

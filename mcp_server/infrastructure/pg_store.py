@@ -10,10 +10,10 @@ import psycopg
 from psycopg.rows import DictRow
 from psycopg_pool import ConnectionPool
 
+from mcp_server.infrastructure.pg_migrations import compute_ddl_hash
 from mcp_server.infrastructure.pg_store_ddl import (
     PgDdlMixin,
     _get_database_url,
-    compute_ddl_hash,
     read_schema_hash,
 )
 from mcp_server.infrastructure.pg_store_schema import PgSchemaMixin

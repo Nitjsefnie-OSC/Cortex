@@ -110,7 +110,7 @@ def _settle(children, monitor) -> dict[str, tuple[int, int]]:
 
 
 def _schema(url: str) -> str:
-    from mcp_server.infrastructure.pg_store_ddl import apply_schema  # noqa: PLC0415 — PG-only import
+    from mcp_server.infrastructure.pg_migrations import apply_schema  # noqa: PLC0415 — PG-only import
 
     with psycopg.connect(url, autocommit=True) as conn:
         conn.execute("CREATE DATABASE cortex_saturation")
@@ -126,7 +126,8 @@ def _record(measured: dict) -> None:
         Path(target).write_text(json.dumps(measured), encoding="utf-8")
 
 
-def test_per_process_pools_exhaust_max_connections(tmp_path):
+def _run_scenario(tmp_path: Path, children: int) -> dict:
+    """Idle reader + queued no-op ALTER + ``children`` hook-like processes."""
     with cluster.private_cluster(tmp_path, _MAX_CONNECTIONS) as maint:
         url = _schema(maint)
         monitor = psycopg.connect(url, autocommit=True)
@@ -135,42 +136,38 @@ def test_per_process_pools_exhaust_max_connections(tmp_path):
         ddl = psycopg.connect(url, autocommit=True)
         alter = threading.Thread(target=ddl.execute, args=(_NOOP_ALTER,), daemon=True)
         alter.start()
-        children = [_spawn(url, i) for i in range(_CHILDREN)]
+        procs = [_spawn(url, i) for i in range(children)]
         try:
-            seen = _settle(children, monitor)
-            refused = [c for c in children if c.poll() is not None]
+            seen = _settle(procs, monitor)
+            refused = [c for c in procs if c.poll() is not None]
         finally:
             reader.rollback()
             alter.join(timeout=30)
-            outcomes = [c.communicate(timeout=60)[0].strip() for c in children]
+            outcomes = [c.communicate(timeout=60)[0].strip() for c in procs]
             for conn in (reader, ddl, monitor):
                 conn.close()
-
     held = {k: v for k, v in seen.items() if k.startswith("sat-child-")}
-    total = sum(v[0] for v in seen.values())
-    print(
-        f"\n[saturation] max_connections={_MAX_CONNECTIONS} children={_CHILDREN} "
-        f"backends_at_peak={total} "
-        f"per_blocked_child={sorted(v[0] for v in held.values())} "
-        f"refused_or_timed_out={len(refused)} outcomes={[o for o in outcomes if o]}"
-    )
-    _record(
-        {
-            "max_connections": _MAX_CONNECTIONS,
-            "children": _CHILDREN,
-            "backends_at_peak": total,
-            "per_blocked_child": sorted(v[0] for v in held.values()),
-            "refused_or_timed_out": len(refused),
-            "outcomes": [o for o in outcomes if o],
-        }
-    )
-    assert refused, "no child was refused: saturation not reproduced"
+    return {
+        "max_connections": _MAX_CONNECTIONS,
+        "children": children,
+        "backends_at_peak": sum(v[0] for v in seen.values()),
+        "per_blocked_child": sorted(v[0] for v in held.values()),
+        "blocked_children": sum(1 for v in held.values() if v[1] > 0),
+        "refused_or_timed_out": len(refused),
+        "outcomes": [o for o in outcomes if o],
+    }
+
+
+def test_per_process_pools_exhaust_max_connections(tmp_path):
+    measured = _run_scenario(tmp_path, _CHILDREN)
+    print(f"\n[saturation] {measured}")
+    _record(measured)
+    assert measured["refused_or_timed_out"], "saturation not reproduced"
     assert any(
         "too many clients" in o
         or "PoolTimeout" in o
         or "couldn't get a connection" in o
-        for o in outcomes
-    ), outcomes
-    blocked = [v for v in held.values() if v[1] > 0]
-    assert blocked, "no child queued behind the ALTER"
-    assert all(total_ >= 2 for total_, _ in blocked), held
+        for o in measured["outcomes"]
+    ), measured
+    assert measured["blocked_children"], "no child queued behind the ALTER"
+    assert min(measured["per_blocked_child"]) >= 2, measured

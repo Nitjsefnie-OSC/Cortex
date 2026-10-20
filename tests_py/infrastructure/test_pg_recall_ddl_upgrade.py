@@ -1,6 +1,6 @@
 """An existing database gets the tie-broken recall_memories() on upgrade.
 
-The explicit migration step, ``pg_store_ddl.apply_schema`` (ADR-1112; it
+The explicit migration step, ``pg_migrations.apply_schema`` (ADR-1112; it
 was ``PgDdlMixin._init_schema`` on store open before), re-applies the whole
 DDL set when the recorded ``schema_meta.ddl_hash`` differs from the code's
 (ADR-0545). Here the database is put back in origin/main's state:
@@ -60,7 +60,7 @@ def test_migrating_replaces_the_old_recall_function():
     from mcp_server.infrastructure.pg_store import (  # noqa: PLC0415 — PG-only import
         compute_ddl_hash,
     )
-    from mcp_server.infrastructure.pg_store_ddl import apply_schema  # noqa: PLC0415 — PG-only import
+    from mcp_server.infrastructure.pg_migrations import apply_schema  # noqa: PLC0415 — PG-only import
 
     url = os.environ["DATABASE_URL"]
     with psycopg.connect(url, autocommit=True) as conn:
@@ -92,7 +92,7 @@ def test_migrating_installs_the_tie_keeping_pools():
     from mcp_server.infrastructure.pg_store import (  # noqa: PLC0415 — PG-only import
         compute_ddl_hash,
     )
-    from mcp_server.infrastructure.pg_store_ddl import apply_schema  # noqa: PLC0415 — PG-only import
+    from mcp_server.infrastructure.pg_migrations import apply_schema  # noqa: PLC0415 — PG-only import
 
     url = os.environ["DATABASE_URL"]
     with psycopg.connect(url, autocommit=True) as conn:

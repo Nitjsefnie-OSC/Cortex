@@ -15,14 +15,14 @@ from pathlib import Path
 
 from scripts import lock_chain_lab as lab
 
-# source: ADR-1112: a revision no tree has, as left by another install
+# source: ADR-1112 a revision no tree has, as left by another install
 FOREIGN = "another-install-revision"
 
 
 def prepare_database(maint: str) -> str:
     """Create the experiment database at this branch's schema, with 3 rows."""
     from mcp_server.infrastructure.pg_store import PgMemoryStore  # noqa: PLC0415 -- branch code
-    from mcp_server.infrastructure.pg_store_ddl import apply_schema  # noqa: PLC0415 -- branch code
+    from mcp_server.infrastructure.pg_migrations import apply_schema  # noqa: PLC0415 -- branch code
 
     with lab.connect(maint, "setup") as conn:
         conn.execute("CREATE DATABASE cortex_lock_chain")
@@ -36,7 +36,7 @@ def prepare_database(maint: str) -> str:
 
 
 def _branch_hash() -> str:
-    from mcp_server.infrastructure.pg_store_ddl import compute_ddl_hash  # noqa: PLC0415 -- branch code
+    from mcp_server.infrastructure.pg_migrations import compute_ddl_hash  # noqa: PLC0415 -- branch code
 
     return compute_ddl_hash()
 
@@ -141,7 +141,9 @@ def open_experiment(tree: Path, name: str, url: str, log: Path) -> dict:
     out["chain"] = lab.capture(monitor)
     blocker.rollback()
     release = time.monotonic()
-    out["store_done"] = probe.wait("DONE") is not None
+    first = out["opened_while_reader_idle"]
+    refused = first is not None and first.startswith("REFUSED")
+    out["store_outcome"] = first if refused else probe.wait("DONE")
     probe.stop()
     _finish(out, release, readers, readers_done)
     _, lines = lab.ddl_lines(log, offset, app)
@@ -162,13 +164,13 @@ def flipflop_experiment(trees: dict, order: list[str], url: str, log: Path) -> d
         offset, _ = lab.ddl_lines(log, 0, "\x00")
         app = f"flip-{i}-{name}"
         probe = lab.Probe(trees[name], "open", url, app)
-        completed = probe.wait("DONE", lab.WAIT_S * 4) is not None
+        outcome = probe.wait("DONE", lab.WAIT_S * 4)
         probe.stop()
         _, lines = lab.ddl_lines(log, offset, app)
         steps.append(
             {
                 "tree": name,
-                "completed": completed,
+                "outcome": outcome,
                 "ddl_statements_logged": len(lines),
                 "recorded_revision_after": _recorded(monitor),
             }

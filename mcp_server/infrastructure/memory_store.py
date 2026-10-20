@@ -28,13 +28,24 @@ _shared_stores: dict[tuple[str, str, int], "MemoryStore"] = {}
 def _try_pg_verbose(
     database_url: str,
 ) -> tuple[PgMemoryStore | None, str | None]:
-    """Try connecting to PostgreSQL. Returns (store, error_message)."""
+    """Try connecting to PostgreSQL. Returns (store, error_message).
+
+    A schema this code cannot use (``SchemaError``: newer, behind, or rewritten
+    by another install) propagates: it is not "PostgreSQL unavailable" and must
+    never turn into a silent SQLite fallback (ADR-1112)."""
     try:
         import psycopg  # noqa: PLC0415, F401 — optional dependency ([postgresql] extra); imported where used so environments without it keep working
 
+        from mcp_server.infrastructure.pg_migrations import SchemaError  # noqa: PLC0415 — same optional dependency
         from mcp_server.infrastructure.pg_store import PgMemoryStore  # noqa: PLC0415 — deferred: module hard-imports pgvector/psycopg/psycopg_pool at top level; hoisting would break installs without it
-
+    except Exception as exc:  # noqa: BLE001 — last-resort boundary — failure is logged; degraded mode continues
+        msg = f"{type(exc).__name__}: {exc}"
+        logger.warning("PostgreSQL unavailable (%s), falling back to SQLite", msg)
+        return None, msg
+    try:
         return PgMemoryStore(database_url=database_url), None
+    except SchemaError:
+        raise
     except Exception as exc:  # noqa: BLE001 — last-resort boundary — failure is logged; degraded mode continues
         msg = f"{type(exc).__name__}: {exc}"
         logger.warning("PostgreSQL unavailable (%s), falling back to SQLite", msg)

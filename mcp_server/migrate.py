@@ -5,7 +5,6 @@ source: ADR-0637"""
 from __future__ import annotations
 
 import sys
-from mcp_server.infrastructure.pg_schema import get_all_ddl
 
 
 def _probe_was_current(url: str, target_hash: str) -> bool:
@@ -40,30 +39,31 @@ def _run() -> int:
         _get_database_url,
         compute_ddl_hash,
     )
-    from mcp_server.infrastructure import pg_store_ddl  # noqa: PLC0415 — source: ADR-1112
+    from mcp_server.infrastructure import pg_migrations  # noqa: PLC0415 — source: ADR-1112
 
     url = _get_database_url()
     target_hash = compute_ddl_hash()
 
     try:
-        was_current = _probe_was_current(url, target_hash)
+        _probe_was_current(url, target_hash)
     except Exception as exc:  # noqa: BLE001 — source: ADR-0637
         print(f"cortex-migrate: cannot connect to database: {exc}", file=sys.stderr)
         return 1
 
     try:
-        # The explicit migration step (ADR-1112): opening a store no longer
+        # The explicit migration step (ADR-1112): opening a store never
         # migrates an existing schema, this does. apply_schema is the single
-        # DDL path (hash-gated, under the schema advisory lock).
-        pg_store_ddl.apply_schema(url)
+        # DDL path (versioned, under the schema advisory lock); it refuses a
+        # newer schema and records nothing when a statement fails.
+        applied = pg_migrations.apply_schema(url)
     except Exception as exc:  # noqa: BLE001 — source: ADR-0637
         print(f"cortex-migrate: schema migration failed: {exc}", file=sys.stderr)
         return 1
 
-    if was_current:
+    if applied == 0:
         print("cortex-migrate: schema up to date")
     else:
-        print(f"cortex-migrate: applied {len(get_all_ddl())} statements")
+        print(f"cortex-migrate: applied {applied} statements")
     return 0
 
 

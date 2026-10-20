@@ -10,10 +10,10 @@ CI accidentally ends up ready, without depending on which test happens to
 run first.
 
 Reuses the production migration path — never a hand-copied schema.
-`pg_store_ddl.apply_schema(url)` applies `pg_schema.get_all_ddl()`
+`pg_migrations.apply_schema(url)` applies `pg_schema.get_all_ddl()`
 idempotently (hash-gated: a DB already at the code's revision costs one
 indexed SELECT). This is the exact same call `mcp_server/migrate.py`
-makes to migrate a live install (ADR-1112: opening a store no longer
+makes to migrate a live install (ADR-1112 opening a store no longer
 migrates an existing schema), so a test session and a real deployment
 can never drift onto two different schemas.
 
@@ -131,7 +131,7 @@ def _create_database(url: str) -> None:
 
 def _provision_schema(url: str) -> None:
     """Apply Cortex's production DDL to `url` via the explicit migration
-    step, `pg_store_ddl.apply_schema` — never a second, hand-copied
+    step, `pg_migrations.apply_schema` — never a second, hand-copied
     definition of the schema (issue #312's explicit requirement; see
     `mcp_server/migrate.py`, which makes the identical call to migrate a
     live install, ADR-1112).
@@ -140,10 +140,10 @@ def _provision_schema(url: str) -> None:
     already at the code's revision costs one indexed SELECT — this is
     cheap to call on every session, not just the first.
     """
-    from mcp_server.infrastructure import pg_store_ddl  # noqa: PLC0415 — deferred: hard-imports psycopg, absent on SQLite-only installs
+    from mcp_server.infrastructure import pg_migrations  # noqa: PLC0415 — deferred: hard-imports psycopg, absent on SQLite-only installs
 
     try:
-        pg_store_ddl.apply_schema(url)
+        pg_migrations.apply_schema(url)
     except Exception as exc:  # noqa: BLE001 — last-resort boundary: reported via pytest.exit below, never swallowed
         pytest.exit(
             f"REFUSING to run: PostgreSQL database {url!r} is reachable "

@@ -19,18 +19,18 @@ from pathlib import Path
 
 import psycopg
 
-# source: ADR-1112: the no-op migration of pg_schema.MIGRATIONS_DDL (ADR-1083)
+# source: ADR-1112 the no-op migration of pg_schema.MIGRATIONS_DDL (ADR-1083)
 NOOP_ALTER = (
     "ALTER TABLE memories ADD COLUMN IF NOT EXISTS "
     "is_team_decision BOOLEAN NOT NULL DEFAULT FALSE"
 )
-# source: ADR-1112: harness bound for any single wait (never a product timeout)
+# source: ADR-1112 harness bound for any single wait (never a product timeout)
 WAIT_S = 15.0
 # source: PostgreSQL deadlock_timeout default 1 s; three detection rounds
 DEADLOCK_WINDOW_S = 3.0
-# source: ADR-1112: three queued readers make the queue visible
+# source: ADR-1112 three queued readers make the queue visible
 READERS = 3
-# source: ADR-1112: the child client
+# source: ADR-1112 the child client
 _PROBE = Path(__file__).resolve().with_name("lock_chain_probe.py")
 # source: PostgreSQL pg_stat_activity and pg_blocking_pids
 _ACTIVITY = (
@@ -70,13 +70,14 @@ class Probe:
             self.lines.put(line.strip())
 
     def wait(self, token: str, seconds: float = WAIT_S) -> str | None:
+        """First line starting with ``token`` (or ``REFUSED``), else None."""
         end = time.monotonic() + seconds
         while (left := end - time.monotonic()) > 0:
             try:
                 line = self.lines.get(timeout=left)
             except queue.Empty:
                 return None
-            if line.startswith(token):
+            if line.startswith((token, "REFUSED")):
                 return line
         return None
 

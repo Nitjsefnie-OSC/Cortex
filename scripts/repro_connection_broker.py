@@ -17,7 +17,7 @@ recorded like a passing one.
 * ``increment0``: the increment-0 guarantees on the throwaway test database
   (tests_py/infrastructure/test_pg_no_runtime_ddl_no_idle_tx.py).
 
-The broker's acceptance measurements (ADR-1112, section Acceptance) are
+The broker's acceptance measurements (ADR-1112 section Acceptance) are
 added here by the increments that implement them, never before.
 
 source: ADR-1112
@@ -34,11 +34,11 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-# source: ADR-1112: repository root, from this file's location
+# source: ADR-1112 repository root, from this file's location
 ROOT = Path(__file__).resolve().parents[1]
-# source: ADR-1112: the append-only experiment log
+# source: ADR-1112 the append-only experiment log
 LOG = ROOT / "docs" / "verification" / "connection-broker" / "experiment-log.md"
-# source: ADR-1112: one measurement per subcommand
+# source: ADR-1112 one measurement per subcommand
 TARGETS = {
     "baseline": "tests_py/infrastructure/test_pg_connection_saturation_repro.py",
     "increment0": "tests_py/infrastructure/test_pg_no_runtime_ddl_no_idle_tx.py",

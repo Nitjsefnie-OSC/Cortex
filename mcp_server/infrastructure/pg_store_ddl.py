@@ -9,43 +9,46 @@ source: ADR-0545"""
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 from typing import TYPE_CHECKING, Any, cast
 
 import psycopg
 from psycopg import sql
-from psycopg.rows import DictRow, dict_row
+from psycopg.rows import DictRow
 
-from mcp_server.infrastructure.pg_schema import get_all_ddl
-from mcp_server.infrastructure.pg_store_host import MaterializedCursor, PgStoreHost
 from mcp_server.infrastructure.memory_config import get_memory_settings
+from mcp_server.infrastructure.pg_migrations import (
+    apply_schema,
+    check_runtime,
+    compute_ddl_hash,
+    migrate_locked,
+    read_state,
+)
+from mcp_server.infrastructure.pg_store_host import MaterializedCursor, PgStoreHost
 
 if TYPE_CHECKING:
     from typing_extensions import LiteralString
+
+# source: ADR-1112 the facade names pg_store.py and the migrate step import
+__all__ = ["apply_schema", "compute_ddl_hash", "read_schema_hash", "PgDdlMixin"]
 
 
 # source: ADR-0545
 logger = logging.getLogger("mcp_server.infrastructure.pg_store")
 
 
-def compute_ddl_hash() -> str:
-    """SHA-256 fingerprint of the code's full ordered DDL set.
-
-    source: ADR-0545"""
-    return hashlib.sha256("\n".join(get_all_ddl()).encode("utf-8")).hexdigest()
-
-
 def read_schema_hash(conn: psycopg.Connection[DictRow]) -> str | None:
-    """Read the recorded DDL hash from ``schema_meta`` on ``conn``, or None.
+    """Read the recorded DDL hash from ``schema_meta`` on ``conn``; None only
+    when the table or its row does not exist. Any other error propagates
+    (ADR-1112 a failed read is never taken for "no schema").
 
     source: ADR-0545"""
     try:
         row = conn.execute("SELECT ddl_hash FROM schema_meta WHERE id = 1;").fetchone()
-        return row["ddl_hash"] if row else None
-    except psycopg.Error:
+    except psycopg.errors.UndefinedTable:
         return None
+    return row["ddl_hash"] if row else None
 
 
 def _get_database_url() -> str:
@@ -56,81 +59,6 @@ def _get_database_url() -> str:
     if not url or "${" in url:
         url = get_memory_settings().DATABASE_URL
     return url
-
-
-# source: ADR-0545
-_SCHEMA_LOCK_ID = 1357020271
-
-# source: ADR-0545
-_SCHEMA_META_DDL = (
-    "CREATE TABLE IF NOT EXISTS schema_meta ("
-    " id integer PRIMARY KEY DEFAULT 1 CHECK (id = 1),"
-    " ddl_hash text NOT NULL,"
-    " applied_at timestamptz NOT NULL DEFAULT now());"
-)
-
-
-def _record_schema_hash(conn: psycopg.Connection[DictRow], ddl_hash: str) -> None:
-    """Persist the just-applied DDL revision (upsert the single row).
-
-    source: ADR-0545"""
-    conn.execute(_SCHEMA_META_DDL)
-    conn.execute(
-        "INSERT INTO schema_meta (id, ddl_hash, applied_at)"
-        " VALUES (1, %s, now())"
-        " ON CONFLICT (id) DO UPDATE SET"
-        " ddl_hash = EXCLUDED.ddl_hash, applied_at = EXCLUDED.applied_at;",
-        (ddl_hash,),
-    )
-
-
-def _apply_ddl_locked(
-    conn: psycopg.Connection[DictRow], ddl_list: list[LiteralString], ddl_hash: str
-) -> bool:
-    """Apply ``ddl_list`` under the schema advisory lock; True iff applied.
-
-    A peer that applied the same revision while this one waited makes it a
-    no-op. The lock is released even on failure.
-
-    source: ADR-0545"""
-    conn.execute("SELECT pg_advisory_lock(%s);", (_SCHEMA_LOCK_ID,))
-    try:
-        if read_schema_hash(conn) == ddl_hash:
-            return False
-        for ddl in ddl_list:
-            try:
-                conn.execute(ddl)
-            except Exception as exc:  # noqa: BLE001 — last-resort boundary — failure is logged; degraded mode continues
-                logger.warning(
-                    "Schema statement failed: %s — %s", ddl.split("\n")[0][:50], exc
-                )
-        _record_schema_hash(conn, ddl_hash)
-        conn.commit()
-        return True
-    finally:
-        try:
-            conn.execute("SELECT pg_advisory_unlock(%s);", (_SCHEMA_LOCK_ID,))
-            conn.commit()
-        except Exception as exc:  # noqa: BLE001 — last-resort boundary — failure is logged; degraded mode continues
-            logger.warning("Failed to release schema advisory lock: %s", exc)
-
-
-def apply_schema(database_url: str) -> bool:
-    """The explicit migration step: bring ``database_url`` to the code's
-    schema revision; True iff DDL ran, False when already current.
-
-    The only DDL path for a database that already has a recorded revision
-    (``python -m mcp_server.migrate``, ``scripts/setup_db.py``, the test
-    harness); opening a store never calls it (ADR-1112).
-
-    source: ADR-1112"""
-    ddl_hash = compute_ddl_hash()
-    with psycopg.Connection[DictRow].connect(
-        database_url, row_factory=dict_row, autocommit=True
-    ) as conn:
-        if read_schema_hash(conn) == ddl_hash:
-            return False
-        return _apply_ddl_locked(conn, get_all_ddl(), ddl_hash)
 
 
 class PgDdlMixin(PgStoreHost):
@@ -188,37 +116,19 @@ class PgDdlMixin(PgStoreHost):
         return MaterializedCursor(cur)
 
     def _init_schema(self) -> None:
-        """Read the recorded schema revision; run DDL only on first run.
+        """Read the schema state; run DDL only on a database with no Cortex
+        schema at all (first run, nothing can be reading it).
 
-        A process that opens a store never migrates an existing schema:
-        ``ALTER TABLE ... IF NOT EXISTS`` takes its AccessExclusive lock
-        before it checks anything, so a runtime no-op migration queues
-        behind any open transaction and every later read queues behind it
-        (incident 2026-10-20, ADR-1112). Schema changes go through the
-        explicit step, ``apply_schema`` (``python -m mcp_server.migrate``).
-
-        Pre: self._conn is a live psycopg connection (autocommit).
-        Post: on a database with no recorded revision (first run, no
-        readers yet) the schema is at the code's revision; on a database
-        recorded at another revision nothing is executed and a warning
-        names the explicit step.
+        Any other state that is not current is refused with a
+        ``SchemaError`` and nothing is executed: a runtime ``ALTER TABLE ...
+        IF NOT EXISTS`` takes its AccessExclusive lock before it checks
+        anything and queues every later read behind any open transaction
+        (incident 2026-10-20). Migrations go through the explicit step,
+        ``apply_schema`` (``python -m mcp_server.migrate``).
 
         source: ADR-1112"""
-        ddl_hash = compute_ddl_hash()
-        recorded = read_schema_hash(self._conn)
-        if recorded == ddl_hash:
-            return
-        if recorded is None:
-            _apply_ddl_locked(self._conn, get_all_ddl(), ddl_hash)
-            return
-        logger.warning(
-            "PostgreSQL schema is recorded at revision %s, this code expects %s; "
-            "no DDL runs when a store opens (ADR-1112). Run "
-            "'python -m mcp_server.migrate' once to migrate, or check whether "
-            "another Cortex install on a different revision shares this database.",
-            recorded[:16],
-            ddl_hash[:16],
-        )
+        if not check_runtime(read_state(self._conn)):
+            migrate_locked(self._conn)
 
     @property
     def has_vec(self) -> bool:

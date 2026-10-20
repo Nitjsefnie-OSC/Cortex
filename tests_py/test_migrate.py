@@ -149,7 +149,7 @@ class TestFailurePath:
         self, monkeypatch, capsys
     ):
         """The DB is reachable (probe succeeds) but the migration step
-        (``pg_store_ddl.apply_schema``, ADR-1112) itself raises — e.g. auth
+        (``pg_migrations.apply_schema``, ADR-1112) itself raises — e.g. auth
         rejected mid-migration, a driver error, or any exception that
         escapes rather than being logged+skipped per-statement. This is a
         distinct error path from "cannot connect" and must report its own,
@@ -164,7 +164,7 @@ class TestFailurePath:
             raise RuntimeError("simulated PgMemoryStore construction failure")
 
         monkeypatch.setattr(
-            "mcp_server.infrastructure.pg_store_ddl.apply_schema",
+            "mcp_server.infrastructure.pg_migrations.apply_schema",
             _raise_on_apply,
         )
 

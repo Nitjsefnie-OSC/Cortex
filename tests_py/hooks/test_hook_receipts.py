@@ -441,7 +441,7 @@ def test_pg_rejects_unknown_channel_live(_db) -> None:
 def test_channel_enum_migration_restores_dropped_constraint(_db) -> None:
     # Exercise the real T1→T2 path: on a T1 database the table exists with
     # free-TEXT channel AND schema_meta records the T1 DDL hash — which
-    # differs from the T2 hash, so _init_schema replays the DDL and the
+    # differs from the T2 hash, so the migration step replays the DDL and the
     # MIGRATIONS_DDL DO block adds the CHECK. Simulate that state by
     # dropping the constraint and invalidating the recorded revision
     # (schema init is hash-gated; without this it correctly no-ops).
@@ -450,8 +450,10 @@ def test_channel_enum_migration_restores_dropped_constraint(_db) -> None:
         "DROP CONSTRAINT IF EXISTS injection_receipts_channel_enum"
     )
     _db.execute("DELETE FROM schema_meta WHERE id = 1")
+    from mcp_server.infrastructure.pg_migrations import apply_schema
     from mcp_server.infrastructure.pg_store import PgMemoryStore
 
+    apply_schema(_TEST_DB_URL)  # the explicit migration step (ADR-1112)
     store = PgMemoryStore(database_url=_TEST_DB_URL)
     try:
         row = _db.execute(

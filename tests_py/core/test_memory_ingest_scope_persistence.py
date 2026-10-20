@@ -31,8 +31,12 @@ def test_ingest_privileges_survive_reopen(origin, write_class, tmp_path):
         "deliberate",
     }
     if type(store).__name__ == "PgMemoryStore":
-        # Force the schema-init path, including backfill, in this scratch DB.
+        # Force the migration path, including backfill, in this scratch DB:
+        # the explicit step (ADR-1112; opening a store never migrates).
+        from mcp_server.infrastructure.pg_migrations import apply_schema  # noqa: PLC0415 — PG-only import
+
         store._conn.execute("DELETE FROM schema_meta")
+        apply_schema(store._url)
         reopened = type(store)(store._url)
     else:
         reopened = type(store)(sqlite_path)

@@ -35,30 +35,33 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-# source: ADR-1112: repository root, from this file's location
+# source: ADR-1112 repository root, from this file's location
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts import lock_chain_experiments as lab  # noqa: E402
 from tests_py import _pg_private_cluster as cluster  # noqa: E402
 
-# source: ADR-1112: evidence and log locations
+# source: ADR-1112 evidence and log locations
 VERIFY = ROOT / "docs" / "verification" / "connection-broker"
-# source: ADR-1112: the Codex install measured in experiment-log entry 2
+# source: ADR-1112 the Codex install measured in experiment-log entry 2
 CODEX_TREE = (
     Path.home() / ".local/share/uv/tools/hypermnesia-mcp/lib/python3.13/site-packages"
 )
-# source: ADR-1112: room for the probes' pools plus readers; not a saturation run
+# source: ADR-1112 room for the probes' pools plus readers; not a saturation run
 MAX_CONNECTIONS = 60
 # source: PostgreSQL log_statement / log_line_prefix (runtime-config-logging)
 SERVER_OPTIONS = "-c log_statement=ddl -c log_line_prefix='%m [%p] %a '"
 
 
-def _trees(work: Path, other: Path | None) -> dict[str, Path]:
+def _trees(work: Path, other: Path | None, base_ref: str) -> dict[str, Path]:
     trees = {"branch": ROOT, "main": work / "main"}
     trees["main"].mkdir()
     archive = subprocess.run(
-        ["git", "archive", "main", "mcp_server"], cwd=ROOT, capture_output=True
+        ["git", "archive", base_ref, "mcp_server"],
+        cwd=ROOT,
+        capture_output=True,
+        check=True,
     ).stdout
     subprocess.run(["tar", "-x", "-C", str(trees["main"])], input=archive, check=True)
     if other is not None and (other / "mcp_server").is_dir():
@@ -112,14 +115,22 @@ def _record(results: dict) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--other-tree", type=Path, default=CODEX_TREE)
+    parser.add_argument(
+        "--other-tree",
+        default=str(CODEX_TREE),
+        help="a second installed tree for the flipflop experiment; empty to skip",
+    )
+    parser.add_argument(
+        "--base-ref", default="main", help="the pre-fix tree (git ref) to compare"
+    )
     args = parser.parse_args()
     if not cluster.available():
         print("initdb/pg_ctl not on PATH", file=sys.stderr)
         return 2
     with tempfile.TemporaryDirectory(prefix="cortex-lock-chain-") as scratch:
         work = Path(scratch)
-        results = _run_all(_trees(work, args.other_tree), work)
+        other = Path(args.other_tree) if args.other_tree else None
+        results = _run_all(_trees(work, other, args.base_ref), work)
     print(_record(results))
     return 0
 

@@ -35,6 +35,18 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **PostgreSQL schema versions; a store this code cannot use is refused, never
+  migrated by a runtime (ADR-1112 increment 1).** `schema_version` records an
+  integer version and `SCHEMA_HASHES` the DDL fingerprint of each. Opening a
+  store reads the state with one catalog query whose errors propagate and
+  refuses a newer schema (`SchemaTooNewError`, upgrade Cortex), an older or
+  unknown one (`SchemaBehindError`, run `python -m mcp_server.migrate`) and one
+  rewritten by an install that does not version (`SchemaTamperedError`, rebuild
+  it with `scripts/rebuild_codex_install.py`). A migration records its version
+  only when every statement succeeded. Consolidation cycles are single-flight
+  across processes (`consolidate_lock`, idea from commit 4dc9f66e): a second
+  caller returns `status: skipped`.
+
 - **A consolidation pass no longer holds a transaction, and opening a store
   no longer runs DDL (incident 2026-10-20, ADR-1112 increment 0).**
   `iter_memories_for_decay` read the corpus through a named cursor inside a

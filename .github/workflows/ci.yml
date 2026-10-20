@@ -1082,6 +1082,58 @@ jobs:
         if: always()
         run: cat "$RUNNER_TEMP/install-e2e.json" || true
 
+  broker-measurements:
+    needs: [changes, lint]
+    if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || needs.changes.outputs.code == 'true' || needs.changes.outputs.deps == 'true' || needs.changes.outputs.workflows == 'true')
+    name: Broker measurements (private PostgreSQL clusters)
+    runs-on: ubuntu-latest
+    # source: ADR-1112 the lock-chain run takes about 40 s and the saturation
+    # run about 30 s locally (experiment log); 20 minutes leaves room for apt.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - uses: ./.github/actions/pg-binaries
+
+      - name: Install the locked dev+postgresql set
+        uses: ./.github/actions/uv-locked-install
+        with:
+          set: --extra dev --extra postgresql
+          environment: ${{ env.pythonLocation }}
+
+      - name: Install the project
+        run: pip install --no-deps -e .
+
+      # Every measurement runs against throwaway clusters started from the
+      # runner's binaries; the suite's own server is not involved.
+      - name: Saturation, role probes and migration probes
+        env:
+          CORTEX_TEST_DATABASE_URL: postgresql://127.0.0.1:1/unused
+        run: >-
+          pytest -q -s -p no:cacheprovider
+          tests_py/infrastructure/test_pg_connection_saturation_repro.py
+          tests_py/infrastructure/test_pg_role_probes.py
+
+      - name: Lock-chain reproduction (pre-fix main against this tree)
+        run: python scripts/repro_lock_chain.py --base-ref origin/main --other-tree ""
+
+      - name: DDL census (failing schema statements, before and after)
+        run: python scripts/repro_ddl_census.py
+
+      - name: Keep the evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: broker-measurements
+          path: docs/verification/connection-broker/
+
   ci-green:
     name: CI Green
     if: always()
@@ -1103,6 +1155,7 @@ jobs:
       - devcontainer-build
       - docker-smoke
       - install-e2e
+      - broker-measurements
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Require successful jobs or justified skips
@@ -1111,7 +1164,7 @@ jobs:
           # source: ADR-0802
 
 
-          ALLOWED_SKIPS: test,test-sqlite,mcp-host-config,test-windows,release-deps,craftsmanship,typecheck,build,docker-runtime-build,devcontainer-build,docker-smoke,install-e2e
+          ALLOWED_SKIPS: test,test-sqlite,mcp-host-config,test-windows,release-deps,craftsmanship,typecheck,build,docker-runtime-build,devcontainer-build,docker-smoke,install-e2e,broker-measurements
         run: python3 scripts/check_ci_gate_results.py
 
   # source: ADR-0802

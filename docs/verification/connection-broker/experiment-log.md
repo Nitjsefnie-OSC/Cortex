@@ -204,3 +204,128 @@ local time).
   statement is the ADR-1083 `ADD COLUMN IF NOT EXISTS`; the branch variants
   form no chain and log no DDL; `flipflop/main+other` logs 0, 98, 98, 98 DDL
   statements and `flipflop/branch+other` 0, 98, 0, 0.
+
+### 20261020T230256Z lock chain
+
+- head: `8b1e2d2b9819646d5d2a661152805248613f2544`
+- command: `python scripts/repro_lock_chain.py`
+- evidence: `docs/verification/connection-broker/evidence/lock-chain-20261020T230256Z.json`
+- stream/main: `{'tree': 'main', 'consumer_ready': True, 'consumer_write_done_within_deadlock_window': False, 'released_by': 'consumer process killed by the harness', 'alter': {'at': 18519.786166166}, 'readers_completed': 3, 'readers_waited_s': 3.132, 'readers_completed_before_release': 0}`
+  chain at capture:
+  - `main-consolidation` idle
+  - `main-consolidation` idle in transaction
+  - `main-consolidation` idle
+  - `ddl` active, waits Lock, blocked by ['main-consolidation']
+  - `reader-0` active, waits Lock, blocked by ['ddl']
+  - `reader-1` active, waits Lock, blocked by ['ddl']
+  - `reader-2` active, waits Lock, blocked by ['ddl']
+  after the consumer's own write:
+  - `main-consolidation` idle
+  - `main-consolidation` idle in transaction
+  - `main-consolidation` idle
+  - `ddl` active, waits Lock, blocked by ['main-consolidation']
+  - `reader-0` active, waits Lock, blocked by ['ddl']
+  - `reader-1` active, waits Lock, blocked by ['ddl']
+  - `reader-2` active, waits Lock, blocked by ['ddl']
+  - `main-consolidation` idle
+  - `main-consolidation` active, waits Lock, blocked by ['ddl']
+  - `main-consolidation` idle
+- open/main: `{'tree': 'main', 'opened_while_reader_idle': None, 'store_outcome': 'DONE', 'readers_completed': 3, 'readers_waited_s': 0.162, 'readers_completed_before_release': 0, 'ddl_statements_logged': 98, 'ddl_sample': ['2026-10-21 01:02:48.289 CEST [43384] main-store-open LOG:  statement: CREATE EXTENSION IF NOT EXISTS vector;', '2026-10-21 01:02:48.289 CEST [43384] main-store-open LOG:  statement: CREATE EXTENSION IF NOT EXISTS pg_trgm;', '2026-10-21 01:02:48.289 CEST [43384] main-store-open LOG:  statement: CREATE TABLE IF NOT EXISTS memories ('], 'recorded_revision_after': '44002703f29f0c2d'}`
+  chain at capture:
+  - `blocker` idle in transaction
+  - `main-store-open` active, waits Lock, blocked by ['blocker']
+  - `reader-0` active, waits Lock, blocked by ['main-store-open']
+  - `reader-1` active, waits Lock, blocked by ['main-store-open']
+  - `reader-2` active, waits Lock, blocked by ['main-store-open']
+- stream/branch: `{'tree': 'branch', 'consumer_ready': True, 'consumer_write_done_within_deadlock_window': True, 'released_by': 'consumer finished its pass', 'alter': {'at': 18525.297148458}, 'readers_completed': 3, 'readers_waited_s': 0.007, 'readers_completed_before_release': 3}`
+  chain at capture:
+  - `branch-consolidation` idle
+  - `branch-consolidation` idle
+  - `branch-consolidation` idle
+  - `ddl` idle
+  after the consumer's own write:
+  - `branch-consolidation` idle
+  - `branch-consolidation` idle
+  - `branch-consolidation` idle
+  - `ddl` idle
+  - `branch-consolidation` idle
+  - `branch-consolidation` idle
+  - `branch-consolidation` idle
+- open/branch: `{'tree': 'branch', 'opened_while_reader_idle': 'REFUSED SchemaTamperedError', 'store_outcome': 'REFUSED SchemaTamperedError', 'readers_completed': 3, 'readers_waited_s': 0.009, 'readers_completed_before_release': 3, 'ddl_statements_logged': 0, 'ddl_sample': [], 'recorded_revision_after': 'another-install-'}`
+  chain at capture:
+  - `blocker` idle in transaction
+- flipflop/main+other: `{'order': ['main', 'other', 'main', 'other'], 'steps': [{'tree': 'main', 'outcome': 'DONE', 'ddl_statements_logged': 0, 'recorded_revision_after': '44002703f29f0c2d'}, {'tree': 'other', 'outcome': 'DONE', 'ddl_statements_logged': 98, 'recorded_revision_after': 'c867454173d6227e'}, {'tree': 'main', 'outcome': 'DONE', 'ddl_statements_logged': 98, 'recorded_revision_after': '44002703f29f0c2d'}, {'tree': 'other', 'outcome': 'DONE', 'ddl_statements_logged': 98, 'recorded_revision_after': 'c867454173d6227e'}]}`
+- flipflop/branch+other: `{'order': ['branch', 'other', 'branch', 'other'], 'steps': [{'tree': 'branch', 'outcome': 'DONE', 'ddl_statements_logged': 0, 'recorded_revision_after': '44002703f29f0c2d'}, {'tree': 'other', 'outcome': 'DONE', 'ddl_statements_logged': 98, 'recorded_revision_after': 'c867454173d6227e'}, {'tree': 'branch', 'outcome': 'REFUSED SchemaTamperedError', 'ddl_statements_logged': 0, 'recorded_revision_after': 'c867454173d6227e'}, {'tree': 'other', 'outcome': 'DONE', 'ddl_statements_logged': 0, 'recorded_revision_after': 'c867454173d6227e'}]}`
+
+### 10. 2026-10-20T23:10Z: increment 1 measurements (by hand)
+
+- Variable: increment 1 code (versioned schema, refusal, atomic migration).
+- `pytest tests_py/infrastructure/test_pg_migrations.py`: 15 passed (state
+  table of refusals, first migration, newer schema refused and untouched,
+  failed statement records nothing then retried, pre-versioning database
+  adopted, two concurrent migrations apply once, failed state read never a
+  first run).
+- Audit probe D on a private cluster (`test_pg_role_probes.py`): owner role
+  without superuser; `CREATE EXTENSION vector` fails; `MigrationFailedError`;
+  `schema_version` and `schema_meta` both absent; `python -m mcp_server.migrate`
+  exits 1 with "was not recorded". On main the same probe recorded the
+  fingerprint after 58 swallowed failures (audit E13).
+- Measured before writing increment 1 (scratch script, private cluster): the
+  full DDL set applied on a fresh database and re-applied over itself with 0
+  failing statements, so "record only when every statement succeeded" does not
+  block a normal migration.
+- Lock-chain rerun (entry above): `open/branch` refuses with
+  `SchemaTamperedError` and logs 0 DDL; `flipflop/branch+other` 0, 98, 0, 0 with
+  the branch's second open refused.
+- CI job `broker-measurements` simulated locally with
+  `CORTEX_TEST_DATABASE_URL=postgresql://127.0.0.1:1/unused`: the saturation
+  and role-probe tests ran on private clusters only, 2 passed.
+
+### 2026-10-20T23:22:44+00:00 DDL census
+
+- command: `python scripts/repro_ddl_census.py`
+- statements: `99`
+- before/superuser/fresh: `{"failed": 0, "by_error": {}}`
+- before/superuser/rerun: `{"failed": 0, "by_error": {}}`
+- before/owner-noext/fresh: `{"failed": 58, "by_error": {"UndefinedTable: relation \"memories\" does not exist": 23, "UndefinedTable: relation \"wiki.pages\" does not exist": 8, "UndefinedObject: type \"vector\" does not exist": 5, "UndefinedTable: relation \"wiki.concepts\" does not exist": 3, "UndefinedTable: relation \"wiki.claim_events\" does not exist": 3, "UndefinedTable: relation \"wiki.links\" does not exist": 3, "UndefinedTable: relation \"wiki.citations\" does not exist": 3, "UndefinedTable: relation \"stage_transitions\" does not exist": 2, "UndefinedObject: type memories does not exist": 2, "UndefinedObject: type vector does not exist": 2, "InsufficientPrivilege: permission denied to create extension \"vector\"": 1, "UndefinedTable: relation \"memory_entities\" does not exist": 1, "UndefinedTable: relation \"wiki.drafts\" does not exist": 1, "UndefinedTable: relation \"wiki.page_sources\" does not exist": 1}}`
+- before/owner-noext/rerun: `{"failed": 58, "by_error": {"UndefinedTable: relation \"memories\" does not exist": 23, "UndefinedTable: relation \"wiki.pages\" does not exist": 8, "UndefinedObject: type \"vector\" does not exist": 5, "UndefinedTable: relation \"wiki.concepts\" does not exist": 3, "UndefinedTable: relation \"wiki.claim_events\" does not exist": 3, "UndefinedTable: relation \"wiki.links\" does not exist": 3, "UndefinedTable: relation \"wiki.citations\" does not exist": 3, "UndefinedTable: relation \"stage_transitions\" does not exist": 2, "UndefinedObject: type memories does not exist": 2, "InsufficientPrivilege: permission denied to create extension \"vector\"": 1, "UndefinedTable: relation \"memory_entities\" does not exist": 1, "UndefinedTable: relation \"wiki.drafts\" does not exist": 1, "UndefinedTable: relation \"wiki.page_sources\" does not exist": 1, "InsufficientPrivilege: permission denied to set parameter \"pg_trgm.similarity_threshold\"": 1, "UndefinedObject: type vector does not exist": 1}}`
+- before/owner-ext/fresh: `{"failed": 0, "by_error": {}}`
+- before/owner-ext/rerun: `{"failed": 1, "by_error": {"InsufficientPrivilege: permission denied to set parameter \"pg_trgm.similarity_threshold\"": 1}}`
+- after/superuser/fresh: `{"failed": 0, "applied": 99}`
+- after/superuser/rerun: `{"failed": 0, "applied": 99}`
+- after/owner-noext/fresh: `{"failed": 0, "refused_before_any_statement": "MigrationPrerequisiteError"}`
+- after/owner-noext/rerun: `{"failed": 0, "refused_before_any_statement": "MigrationPrerequisiteError"}`
+- after/owner-ext/fresh: `{"failed": 0, "applied": 99}`
+- after/owner-ext/rerun: `{"failed": 0, "applied": 99}`
+
+### 11. 2026-10-20T23:30Z: root causes of the failing schema statements (by hand)
+
+- Variable: database setup (role and extensions), runner (main's loop vs
+  increment 1). Raw counts: the DDL census entry above
+  (`python scripts/repro_ddl_census.py`), 99 statements per run.
+- Superuser owner: 0 failed, fresh and re-run, with both runners.
+- Non-superuser owner, no extensions (audit probe D): 58 failed with main's
+  loop. One root cause: `CREATE EXTENSION IF NOT EXISTS vector` raises
+  `InsufficientPrivilege` (pgvector is not a trusted extension). The other 57
+  are its consequences: the `memories` table needs the `vector` type
+  (`UndefinedObject`), and every table with a foreign key to `memories` or
+  `wiki.pages`, every index on them and every function over them follows
+  (`UndefinedTable`). Fix: a prerequisite step before any statement creates a
+  missing extension when the role can, and otherwise stops with
+  `MigrationPrerequisiteError` naming the one administrator command. After:
+  0 statements run, 0 failed, nothing recorded.
+- Non-superuser owner, extensions created by an administrator: fresh 0
+  failed, but the re-run failed 1 statement with main's loop:
+  `recall_memories()` declares `SET pg_trgm.similarity_threshold`
+  (pg_schema.py:1201), and a non-superuser may set that parameter only once
+  pg_trgm's library has defined it in the session. On a fresh database an
+  earlier trigram index creation loads the library; on a re-run every
+  `CREATE INDEX IF NOT EXISTS` is skipped, the library is never loaded, the
+  parameter is a placeholder, and the function statement is refused (an
+  ordering dependency on session state). Fix: the prerequisite step calls
+  `similarity('', '')`, which loads the library, before the statements. After:
+  0 failed, fresh and re-run.
+- Tests that pin it: `tests_py/infrastructure/test_pg_role_probes.py`
+  (zero failures fresh and on a full re-run, superuser and non-superuser
+  owner; probe D refused before any statement) and
+  `tests_py/infrastructure/test_pg_migrations.py`.

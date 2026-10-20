@@ -100,9 +100,23 @@ def test_noop_add_column_if_not_exists_still_queues_behind_an_idle_reader():
     assert _noop_alter_completes()
 
 
-def test_opening_a_store_on_another_revision_runs_no_ddl():
-    from mcp_server.infrastructure.pg_store import (  # noqa: PLC0415 — PG-only import
-        PgMemoryStore,
+def _open_in_thread(opened: dict[str, object]) -> threading.Thread:
+    from mcp_server.infrastructure.pg_store import PgMemoryStore  # noqa: PLC0415 — PG-only import
+
+    def target() -> None:
+        try:
+            opened["store"] = PgMemoryStore(database_url=_url())
+        except Exception as exc:  # noqa: BLE001 — the outcome under test
+            opened["error"] = exc
+
+    worker = threading.Thread(target=target, daemon=True)
+    worker.start()
+    return worker
+
+
+def test_opening_a_store_on_another_revision_runs_no_ddl_and_refuses():
+    from mcp_server.infrastructure.pg_migrations import (  # noqa: PLC0415 — PG-only import
+        SchemaError,
         compute_ddl_hash,
     )
 
@@ -110,17 +124,14 @@ def test_opening_a_store_on_another_revision_runs_no_ddl():
     _set_recorded_hash(_FOREIGN_HASH)
     try:
         with _idle_reader():
-            worker = threading.Thread(
-                target=lambda: opened.update(store=PgMemoryStore(database_url=_url())),
-                daemon=True,
-            )
-            worker.start()
+            worker = _open_in_thread(opened)
             worker.join(timeout=10)
             queued_behind_reader = worker.is_alive()
         worker.join(timeout=120)
         assert not queued_behind_reader, (
             "opening a store queued DDL behind an idle transaction"
         )
+        assert isinstance(opened.get("error"), SchemaError), opened
         assert _recorded_hash() == _FOREIGN_HASH, "opening a store migrated"
     finally:
         store = opened.get("store")
@@ -130,14 +141,16 @@ def test_opening_a_store_on_another_revision_runs_no_ddl():
 
 
 def test_explicit_migration_applies_and_records_the_revision():
-    from mcp_server.infrastructure.pg_store import compute_ddl_hash  # noqa: PLC0415 — PG-only import
-    from mcp_server.infrastructure.pg_store_ddl import apply_schema  # noqa: PLC0415 — PG-only import
+    from mcp_server.infrastructure.pg_migrations import (  # noqa: PLC0415 — PG-only import
+        apply_schema,
+        compute_ddl_hash,
+    )
 
     _set_recorded_hash(_FOREIGN_HASH)
     try:
-        assert apply_schema(_url()) is True
+        assert apply_schema(_url()) > 0
         assert _recorded_hash() == compute_ddl_hash()
-        assert apply_schema(_url()) is False  # already current: no DDL
+        assert apply_schema(_url()) == 0  # already current: no DDL
     finally:
         _set_recorded_hash(compute_ddl_hash())
 

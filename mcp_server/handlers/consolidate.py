@@ -34,6 +34,7 @@ from mcp_server.infrastructure.embedding_engine import (
     EmbeddingEngine,
     get_embedding_engine,
 )
+from mcp_server.infrastructure.consolidate_lock import consolidate_single_flight
 from mcp_server.infrastructure.memory_config import get_memory_settings
 from mcp_server.infrastructure.memory_store import MemoryStore, get_shared_store
 from mcp_server.handlers._tool_meta import IDEMPOTENT_WRITE
@@ -232,8 +233,16 @@ async def _atimed(fn, *args, **kwargs) -> dict[str, Any]:
 
 
 async def handler(args: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Run maintenance cycles on the memory system."""
-    args = args or {}
+    """Run maintenance cycles on the memory system, one cycle at a time across
+    every process: a second caller returns ``status: skipped`` (ADR-1112)."""
+    with consolidate_single_flight() as held:
+        if not held:
+            return {"status": "skipped", "reason": "another consolidation is running"}
+        return await _run_handler(args or {})
+
+
+async def _run_handler(args: dict[str, Any]) -> dict[str, Any]:
+    """Body of ``handler``; the caller holds the single-flight lock."""
     settings = get_memory_settings()
     store = _get_store()
     embeddings = get_embedding_engine()

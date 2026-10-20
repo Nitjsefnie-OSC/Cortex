@@ -206,7 +206,7 @@ def _init_schema(database_url: str) -> tuple[bool, str]:
 
     source: ADR-1112"""
     try:
-        from mcp_server.infrastructure.pg_store_ddl import apply_schema  # noqa: PLC0415 — optional-feature probe: ImportError here is a handled degraded mode
+        from mcp_server.infrastructure.pg_migrations import apply_schema  # noqa: PLC0415 — optional-feature probe: ImportError here is a handled degraded mode
 
         apply_schema(database_url)
         return True, ""
