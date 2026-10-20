@@ -15,7 +15,7 @@ ADR pages, docstrings), and records its evidence (`file:line`).
 | `domain-graph.json` | Domain view: 6 domains, 71 flows (one per MCP tool and per hook), their ordered steps |
 | `overlays/diff-overlay-<pr>.json` | Impact of PRs #770–#773: changed nodes, affected nodes, entry points, tests |
 | `meta.json`, `config.json`, `fingerprints.json`, `.understandignore`, `intermediate/` | Understand-Anything metadata, per-file fingerprints (incremental updates), scan result |
-| `reports/` | Diagnostic report, coverage cycles 0–2, dead-code candidates, coverage scorecard |
+| `reports/` | Diagnostic report, coverage cycles 0–2, dead-code candidates, coverage scorecard, `/understand` phase warnings (moved from `.ua/phase-warnings.txt`: `tests_py/scripts/test_uv_lock_single_source.py` refuses a shallow `.txt`) |
 | `probe/` | Probe that measured PostgreSQL dials from each entry point (issues #703/#704, PR #770) |
 | `gapfix/` | The passes below, `scorecard.py`, `pack_standalone.py` (+ `standalone_shim.js`) |
 | `gapfix/added_*.json`, `stale_sources.json` | Logs of edges added by the coverage/test passes and of stale doc sources |
