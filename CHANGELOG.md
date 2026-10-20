@@ -35,6 +35,14 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **SessionStart no longer downloads or builds ai-architect-mcp-codebase**
+  (#705, ADR-1111). When no pipeline was found, the hook called
+  `install_pipeline()` in band: a 46 MB release download, or rustup +
+  `git clone` + `cargo build` (1800 s timeout) inside a 30 s hook, without
+  consent and unlisted in PRIVACY. SessionStart now only registers a pipeline
+  that is already installed; `scripts/setup.sh` remains the one step that
+  installs it, and PRIVACY lists that download.
+
 - **No hook installs dependencies any more; run `claude --init-only` after
   `claude plugin install` and after `claude plugin update`** (ADR-1108,
   replacing ADR-1104 decision 4). Every hook used to install whenever its
