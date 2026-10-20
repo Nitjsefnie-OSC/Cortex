@@ -11,7 +11,7 @@ ADR pages, docstrings), and records its evidence (`file:line`).
 
 | Path | What it is |
 |---|---|
-| `knowledge-graph.json` | The graph read by the dashboard: files, functions, classes, configs, docs, store tables; layers; 14-step tour; knowledge layer (ADR articles, topics, scientific sources) |
+| `knowledge-graph.json.gz` | The graph read by the dashboard (versioned compressed; see *Viewing*): files, functions, classes, configs, docs, store tables; layers; 14-step tour; knowledge layer (ADR articles, topics, scientific sources) |
 | `domain-graph.json` | Domain view: 6 domains, 71 flows (one per MCP tool and per hook), their ordered steps |
 | `overlays/diff-overlay-<pr>.json` | Impact of PRs #770–#773: changed nodes, affected nodes, entry points, tests |
 | `meta.json`, `config.json`, `fingerprints.json`, `.understandignore`, `intermediate/` | Understand-Anything metadata, per-file fingerprints (incremental updates), scan result |
@@ -68,6 +68,12 @@ Each pass is idempotent on the graph it reads (it skips edges already present, a
 knowledge layer is rebuilt from scratch).
 
 ## Viewing
+
+First restore the graph: `gunzip -k .ua/knowledge-graph.json.gz` (the plain file is
+ignored by `.ua/.gitignore`: at 38 MB it exceeds the 16 MB per-file budget of the HOL
+plugin scanner in CI, which then stops the repository's security scan early; a `.gz`
+is skipped as binary). After refreshing the graph, re-compress it with
+`gzip -9 -n -k -f .ua/knowledge-graph.json` before committing.
 
 - With the plugin: `/understand-dashboard` from the repository root.
 - Offline single file: build the dashboard once in single-chunk mode, then

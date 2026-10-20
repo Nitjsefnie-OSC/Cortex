@@ -1,0 +1,4 @@
+# The graph is versioned compressed (knowledge-graph.json.gz): the plain file is
+# 38 MB, above the 16 MB per-file budget of the HOL plugin scanner (CI), which
+# then stops the security scan early. Restore it with: gunzip -k knowledge-graph.json.gz
+knowledge-graph.json
