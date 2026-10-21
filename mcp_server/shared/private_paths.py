@@ -181,9 +181,15 @@ Runner = Callable[[Sequence[str]], object]
 
 
 def restrict_windows_acl(path: Path, run: Runner | None = None) -> None:
-    """Grant only the current user full control, inherited by the tree."""
-    user = os.environ.get("USERNAME", "")
-    domain = os.environ.get("USERDOMAIN", "")
+    """Grant only the current user full control, inherited by the tree.
+
+    Inheritance is removed in the same call, so an empty principal would
+    leave the tree with no usable grant: an empty ``USERNAME`` is refused
+    before icacls runs (review of PR #775, N5)."""
+    user = os.environ.get("USERNAME", "").strip()
+    domain = os.environ.get("USERDOMAIN", "").strip()
+    if not user:
+        raise OSError(errno.EINVAL, "USERNAME is empty; no ACL principal", str(path))
     principal = f"{domain}\\{user}" if domain else user
     command = [
         "icacls",

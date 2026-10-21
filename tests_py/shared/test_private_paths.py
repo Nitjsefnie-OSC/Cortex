@@ -205,3 +205,15 @@ def test_a_symlinked_root_is_reported_at_startup(tmp_path, monkeypatch, capsys):
     (tmp_path / "claude" / "methodology").symlink_to(elsewhere)
     private_paths.harden_at_startup()
     assert "is a symbolic link" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("user", ["", "   "])
+def test_an_empty_windows_user_name_is_refused(tmp_path, monkeypatch, user):
+    """Review of #775, N5: an empty USERNAME made the icacls principal empty
+    (``:(OI)(CI)F`` or ``HOST\\:(OI)(CI)F``) after inheritance was removed."""
+    monkeypatch.setenv("USERNAME", user)
+    monkeypatch.setenv("USERDOMAIN", "HOST")
+    commands: list[list[str]] = []
+    with pytest.raises(OSError, match="USERNAME"):
+        private_paths.restrict_windows_acl(tmp_path, commands.append)
+    assert commands == []
