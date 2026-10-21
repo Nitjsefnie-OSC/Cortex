@@ -1213,7 +1213,7 @@ BEGIN
     LIMIT p_max_results * 3;
     -- source: pg_trgm's default threshold when the caller had none set
     PERFORM set_config(
-        'pg_trgm.similarity_threshold', COALESCE(v_caller_trgm, '0.3'), true
+        'pg_trgm.similarity_threshold', COALESCE(NULLIF(v_caller_trgm, ''), '0.3'), true
     );
 END;
 $$ LANGUAGE plpgsql STABLE

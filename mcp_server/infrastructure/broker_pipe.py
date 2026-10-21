@@ -144,7 +144,7 @@ class PipeChannel:
             raise TimeoutError("broker deadline exceeded")
         try:
             return self.conn.recv_bytes(limit)
-        except OSError as exc:
+        except (OSError, EOFError) as exc:
             raise ConnectionError(str(exc)) from exc
 
     def close(self) -> None:
