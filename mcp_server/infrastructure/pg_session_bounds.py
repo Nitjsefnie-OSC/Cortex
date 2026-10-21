@@ -48,3 +48,11 @@ def session_options(pool: str) -> dict[str, str]:
     )
     name = f"cortex-store-{pool}-{os.getpid()}"
     return {"application_name": name, "options": options}
+
+
+def migration_name() -> str:
+    """``application_name`` of a connection that runs the migration step or
+    the runtime grants: ``cortex-migrate-<pid>``, so a census attributes it to
+    its process (the broker at start). No timeouts: the owner rejected
+    timeouts on DDL as the fix (ADR-1112, alternatives rejected)."""
+    return f"cortex-migrate-{os.getpid()}"

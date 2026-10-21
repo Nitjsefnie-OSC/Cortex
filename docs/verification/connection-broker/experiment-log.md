@@ -556,3 +556,260 @@ local time).
 
 - Default suite (store in process): 10342 passed, 29 skipped. Broker mode: 10341 passed, 30 skipped. As a role without SUPERUSER (`least-privilege suite` entry above, 05:47Z): 10344 passed, 27 skipped. Each run collects 10371 tests, 2 more than at entry 20 (10369): tests added after it, in the same increment.
 - A first broker-mode run of this round had 12 errors, all at the setup of `tests_py/benchmarks/test_codebase_alteration.py` and `test_spell_alteration.py`: I had just deleted this checkout's `sets/` install (the launcher's, committed by mistake in increment 5 and taken out of it), so the broker's launcher refused to start and began reinstalling, as `broker.out` reported. Rerun on the reinstalled set: 0 errors (above). The client reported the refusal with the broker's own output, which is the behaviour increment 5 added.
+
+### 2026-10-21T06:07:43+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (clean)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 failed in 19.91s)
+- measured: `{"cold_hook": [1.35, 0], "consolidate": [3.74, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 0, "other_client_backends": [""], "owner_is_broker": true, "owners": ["81779"], "peak_cortex_backends": 6, "remember": [7.59, 0], "samples": 243, "seeded_memories": 5000, "shared_ddl_during_session": 0, "warm_hooks": [[0.59, 0], [0.37, 0], [0.38, 0]]}`
+
+### 2026-10-21T06:08:29+00:00 saturation
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py saturation`
+- pytest exit code: 0 (1 passed in 45.10s)
+- measured: `{"64": {"backend_owner_pids": 1, "children": 64, "failed": 0, "failed_before_release": 0, "max_connections": 20, "outcomes": [], "peak_by_pool": {"direct": 1, "interactive": 8}, "peak_cortex_backends": 9, "peak_waiting_on_the_alter": 8}, "8": {"backend_owner_pids": 1, "children": 8, "failed": 0, "failed_before_release": 0, "max_connections": 20, "outcomes": [], "peak_by_pool": {"direct": 1, "interactive": 8}, "peak_cortex_backends": 9, "peak_waiting_on_the_alter": 8}}`
+
+### 2026-10-21T06:09:28+00:00 priority
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py priority`
+- pytest exit code: 0 (1 passed in 57.47s)
+- measured: `{"background": {"heavy_class": "background", "heavy_pages_served": 60, "max_ms": 553.7, "p50_ms": 4.5, "p95_ms": 104.0, "point_reads": 231}, "brokers": 1, "single_class": {"heavy_class": "interactive", "heavy_pages_served": 72, "max_ms": 10993.2, "p50_ms": 10993.2, "p95_ms": 10993.2, "point_reads": 1}}`
+
+### 2026-10-21T06:11:46+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 0 (1 passed in 19.42s)
+- measured: `{"cold_hook": [1.24, 0], "consolidate": [4.21, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["4311"], "peak_cortex_backends": 6, "remember": [6.83, 0], "samples": 237, "seeded_memories": 5000, "shared_ddl_during_session": 0, "warm_hooks": [[0.43, 0], [0.38, 0], [0.54, 0]]}`
+
+### 2026-10-21T06:12:06+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 failed in 19.35s)
+- measured: `{"cold_hook": [1.14, 0], "consolidate": [4.22, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 1, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["6154"], "peak_cortex_backends": 6, "remember": [7.01, 0], "samples": 238, "seeded_memories": 5000, "shared_ddl_during_session": 0, "warm_hooks": [[0.35, 0], [0.41, 0], [0.47, 0]]}`
+
+### 2026-10-21T06:12:26+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 0 (1 passed in 18.63s)
+- measured: `{"cold_hook": [1.08, 0], "consolidate": [4.25, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["8224"], "peak_cortex_backends": 6, "remember": [6.38, 0], "samples": 228, "seeded_memories": 5000, "shared_ddl_during_session": 0, "warm_hooks": [[0.45, 0], [0.49, 0], [0.37, 0]]}`
+
+### 2026-10-21T06:13:43+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 failed in 19.07s)
+- measured: `{}`
+
+### 2026-10-21T06:13:59+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 failed, 1 error in 14.15s)
+- measured: `{}`
+
+### 2026-10-21T06:14:15+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 passed, 1 error in 14.71s)
+- measured: `{"cold_hook": [1.01, 0], "consolidate": [0.35, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 0, "migration_samples": 1, "other_client_backends": [], "owner_is_broker": true, "owners": ["18941"], "peak_cortex_backends": 6, "remember": [5.77, 0], "samples": 149, "seeded_memories": 5000, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.49, 0], [0.46, 0], [0.38, 0]]}`
+
+### 2026-10-21T06:14:30+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 passed, 1 error in 14.43s)
+- measured: `{"cold_hook": [1.04, 0], "consolidate": [0.47, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["19924"], "peak_cortex_backends": 6, "remember": [5.86, 0], "samples": 153, "seeded_memories": 5000, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.44, 0], [0.49, 0], [0.45, 0]]}`
+
+### 2026-10-21T06:14:46+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 passed, 1 error in 14.34s)
+- measured: `{"cold_hook": [1.01, 0], "consolidate": [0.5, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 0, "migration_samples": 1, "other_client_backends": [], "owner_is_broker": true, "owners": ["21675"], "peak_cortex_backends": 6, "remember": [5.46, 0], "samples": 143, "seeded_memories": 5000, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.38, 0], [0.39, 0], [0.48, 0]]}`
+
+### 2026-10-21T06:15:00+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 passed, 1 error in 13.74s)
+- measured: `{"cold_hook": [1.11, 0], "consolidate": [0.53, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["22649"], "peak_cortex_backends": 6, "remember": [5.12, 0], "samples": 140, "seeded_memories": 5000, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.46, 0], [0.35, 0], [0.36, 0]]}`
+
+### 2026-10-21T06:15:15+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 passed, 1 error in 13.72s)
+- measured: `{"cold_hook": [1.0, 0], "consolidate": [0.34, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["24402"], "peak_cortex_backends": 6, "remember": [5.06, 0], "samples": 135, "seeded_memories": 5000, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.39, 0], [0.36, 0], [0.48, 0]]}`
+
+### 2026-10-21T06:15:30+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 passed, 1 error in 13.89s)
+- measured: `{"cold_hook": [1.11, 0], "consolidate": [0.42, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 0, "migration_samples": 1, "other_client_backends": [], "owner_is_broker": true, "owners": ["25374"], "peak_cortex_backends": 6, "remember": [4.75, 0], "samples": 133, "seeded_memories": 5000, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.47, 0], [0.49, 0], [0.35, 0]]}`
+
+### 2026-10-21T06:15:45+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 passed, 1 error in 13.57s)
+- measured: `{"cold_hook": [0.97, 0], "consolidate": [0.34, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["27110"], "peak_cortex_backends": 6, "remember": [5.21, 0], "samples": 134, "seeded_memories": 5000, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.42, 0], [0.36, 0], [0.37, 0]]}`
+
+### 2026-10-21T06:15:59+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 passed, 1 error in 13.58s)
+- measured: `{"cold_hook": [1.02, 0], "consolidate": [0.37, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["28091"], "peak_cortex_backends": 6, "remember": [4.79, 0], "samples": 132, "seeded_memories": 5000, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.41, 0], [0.49, 0], [0.46, 0]]}`
+
+### 2026-10-21T06:17:10+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 failed, 1 error in 14.03s)
+- measured: `{}`
+
+### 2026-10-21T06:17:41+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 failed, 1 error in 13.81s)
+- measured: `{"cold_hook": [1.14, 0], "consolidate": [0.34, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 1, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["38271"], "peak_cortex_backends": 6, "remember": [5.12, 0], "samples": 136, "seeded_memories": 5000, "shared_ddl_during_session": 0, "unexpected_samples": [["idle_in_transaction", 38412, "cortex-store-interactive-38271", "idle in transaction", 0, 0, "SET LOCAL jit = off"]], "warm_hooks": [[0.39, 0], [0.37, 0], [0.48, 0]]}`
+
+### 2026-10-21T06:21:32+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 failed in 19.13s)
+- measured: `{"cold_hook": [1.06, 0], "consolidate": [4.28, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 1, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["59600"], "peak_cortex_backends": 6, "remember": [6.66, 0], "samples": 229, "seeded_memories": 5000, "shared_ddl_during_session": 0, "unexpected_samples": [["idle_in_transaction", 59615, "cortex-store-interactive-59600", "idle in transaction", 0, 0, "SET LOCAL jit = off"]], "warm_hooks": [[0.47, 0], [0.39, 0], [0.37, 0]]}`
+
+### 2026-10-21T06:21:47+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 passed, 1 error in 14.13s)
+- measured: `{"cold_hook": [1.05, 0], "consolidate": [0.4, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["61408"], "peak_cortex_backends": 6, "remember": [5.58, 0], "samples": 142, "seeded_memories": 5000, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.42, 0], [0.37, 0], [0.36, 0]]}`
+
+### 2026-10-21T06:22:02+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 passed, 1 error in 13.85s)
+- measured: `{"cold_hook": [1.02, 0], "consolidate": [0.53, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["63175"], "peak_cortex_backends": 6, "remember": [5.2, 0], "samples": 140, "seeded_memories": 5000, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.4, 0], [0.49, 0], [0.38, 0]]}`
+
+### 2026-10-21T06:22:17+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 passed, 1 error in 14.22s)
+- measured: `{"cold_hook": [1.04, 0], "consolidate": [0.38, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["64166"], "peak_cortex_backends": 6, "remember": [5.67, 0], "samples": 146, "seeded_memories": 5000, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.42, 0], [0.39, 0], [0.36, 0]]}`
+
+### 2026-10-21T06:22:32+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 passed, 1 error in 13.70s)
+- measured: `{"cold_hook": [1.0, 0], "consolidate": [0.5, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["65928"], "peak_cortex_backends": 6, "remember": [5.02, 0], "samples": 134, "seeded_memories": 5000, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.42, 0], [0.48, 0], [0.37, 0]]}`
+
+### 2026-10-21T06:22:47+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 1 (1 failed, 1 error in 14.15s)
+- measured: `{"cold_hook": [1.13, 0], "consolidate": [0.4, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 1, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["66892"], "peak_cortex_backends": 6, "remember": [5.56, 0], "samples": 144, "seeded_memories": 5000, "shared_ddl_during_session": 0, "unexpected_samples": [["idle_in_transaction", 66907, "cortex-store-interactive-66892", "idle in transaction", 7, 0, "SELECT m.id, m.content, m.tags, m.domain, m.is_global, m.directory_context, m.cr"]], "warm_hooks": [[0.42, 0], [0.39, 0], [0.36, 0]]}`
+
+### 2026-10-21T06:32:38+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 0 (1 passed in 22.13s)
+- measured: `{"cold_hook": [1.2, 0], "consolidate": [4.1, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_outside_broker": 0, "idle_in_transaction_samples": 0, "max_idle_ms": 0, "max_idle_transaction_age_ms": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["20678"], "peak_cortex_backends": 6, "remember": [5.82, 0], "samples": 283, "seeded_memories": 5000, "session_jobs_seen": ["mcp_server.hooks.store_broker"], "session_jobs_waited_seconds": 3.95, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.44, 0], [0.43, 0], [0.42, 0]]}`
+
+### 2026-10-21T06:33:00+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 0 (1 passed in 20.93s)
+- measured: `{"cold_hook": [0.99, 0], "consolidate": [4.08, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_outside_broker": 0, "idle_in_transaction_samples": 1, "max_idle_ms": 0, "max_idle_transaction_age_ms": 8, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["23242"], "peak_cortex_backends": 6, "remember": [5.25, 0], "samples": 261, "seeded_memories": 5000, "session_jobs_seen": ["mcp_server.hooks.store_broker"], "session_jobs_waited_seconds": 3.39, "shared_ddl_during_session": 0, "unexpected_samples": [["idle_in_transaction", 23248, "cortex-store-interactive-23242", "idle in transaction", 8, 0, "SELECT m.id, m.content, m.tags, effective_heat(m, NOW()) AS effective_heat, m.cr"]], "warm_hooks": [[0.39, 0], [0.51, 0], [0.44, 0]]}`
+
+### 2026-10-21T06:33:22+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 0 (1 passed in 21.16s)
+- measured: `{"cold_hook": [1.02, 0], "consolidate": [3.97, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_outside_broker": 0, "idle_in_transaction_samples": 0, "max_idle_ms": 0, "max_idle_transaction_age_ms": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["25026"], "peak_cortex_backends": 6, "remember": [5.08, 0], "samples": 263, "seeded_memories": 5000, "session_jobs_seen": ["mcp_server.hooks.store_broker"], "session_jobs_waited_seconds": 3.97, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.4, 0], [0.51, 0], [0.41, 0]]}`
+
+### 2026-10-21T06:33:44+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 0 (1 passed in 20.92s)
+- measured: `{"cold_hook": [1.0, 0], "consolidate": [3.63, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_outside_broker": 0, "idle_in_transaction_samples": 0, "max_idle_ms": 0, "max_idle_transaction_age_ms": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["26825"], "peak_cortex_backends": 6, "remember": [5.21, 0], "samples": 263, "seeded_memories": 5000, "session_jobs_seen": ["mcp_server.hooks.store_broker"], "session_jobs_waited_seconds": 3.95, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.45, 0], [0.57, 0], [0.45, 0]]}`
+
+### 2026-10-21T06:34:05+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 0 (1 passed in 20.12s)
+- measured: `{"cold_hook": [0.99, 0], "consolidate": [3.67, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_outside_broker": 0, "idle_in_transaction_samples": 0, "max_idle_ms": 0, "max_idle_transaction_age_ms": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["28612"], "peak_cortex_backends": 6, "remember": [5.03, 0], "samples": 250, "seeded_memories": 5000, "session_jobs_seen": ["mcp_server.hooks.store_broker"], "session_jobs_waited_seconds": 3.38, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.38, 0], [0.4, 0], [0.49, 0]]}`
+
+### 2026-10-21T06:34:27+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 0 (1 passed in 21.21s)
+- measured: `{"cold_hook": [1.09, 0], "consolidate": [3.97, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_outside_broker": 0, "idle_in_transaction_samples": 0, "max_idle_ms": 0, "max_idle_transaction_age_ms": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["30395"], "peak_cortex_backends": 6, "remember": [5.16, 0], "samples": 270, "seeded_memories": 5000, "session_jobs_seen": ["mcp_server.hooks.store_broker"], "session_jobs_waited_seconds": 3.96, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.42, 0], [0.48, 0], [0.39, 0]]}`
+
+### 2026-10-21T06:34:49+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 0 (1 passed in 21.12s)
+- measured: `{"cold_hook": [1.23, 0], "consolidate": [3.86, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_outside_broker": 0, "idle_in_transaction_samples": 0, "max_idle_ms": 0, "max_idle_transaction_age_ms": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["32976"], "peak_cortex_backends": 6, "remember": [5.26, 0], "samples": 267, "seeded_memories": 5000, "session_jobs_seen": ["mcp_server.hooks.store_broker"], "session_jobs_waited_seconds": 3.97, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.37, 0], [0.35, 0], [0.34, 0]]}`
+
+### 2026-10-21T06:35:11+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 0 (1 passed in 21.30s)
+- measured: `{"cold_hook": [1.02, 0], "consolidate": [4.01, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_outside_broker": 0, "idle_in_transaction_samples": 0, "max_idle_ms": 0, "max_idle_transaction_age_ms": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["34792"], "peak_cortex_backends": 6, "remember": [5.39, 0], "samples": 269, "seeded_memories": 5000, "session_jobs_seen": ["mcp_server.hooks.store_broker"], "session_jobs_waited_seconds": 3.97, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.39, 0], [0.37, 0], [0.36, 0]]}`
+
+### 2026-10-21T06:35:32+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 0 (1 passed in 20.14s)
+- measured: `{"cold_hook": [1.04, 0], "consolidate": [3.6, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_outside_broker": 0, "idle_in_transaction_samples": 0, "max_idle_ms": 0, "max_idle_transaction_age_ms": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["36611"], "peak_cortex_backends": 6, "remember": [5.18, 0], "samples": 248, "seeded_memories": 5000, "session_jobs_seen": ["mcp_server.hooks.store_broker"], "session_jobs_waited_seconds": 3.39, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.39, 0], [0.36, 0], [0.35, 0]]}`
+
+### 2026-10-21T06:35:53+00:00 census
+
+- head: `96a989584750cb1cec96fdf268b12971a1f8333f` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 0 (1 passed in 19.88s)
+- measured: `{"cold_hook": [1.01, 0], "consolidate": [3.53, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_outside_broker": 0, "idle_in_transaction_samples": 0, "max_idle_ms": 0, "max_idle_transaction_age_ms": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["38384"], "peak_cortex_backends": 6, "remember": [4.97, 0], "samples": 245, "seeded_memories": 5000, "session_jobs_seen": ["mcp_server.hooks.store_broker"], "session_jobs_waited_seconds": 3.41, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.44, 0], [0.49, 0], [0.37, 0]]}`
+
+### 22. 2026-10-21T06:40Z: A4's criterion, the session's detached jobs, the migration connection named
+
+- On the clean head `96a98958` the census failed once (06:07Z entry): one client backend with an empty `application_name`, outside the broker's names. That instrument recorded names only, so the backend has no attribution. It has not appeared in any of the 28 runs recorded since.
+- The broker's migration and grant connections carried no `application_name` (`pg_migrations.apply_schema`, `pg_roles.grant_runtime`). They are now `cortex-migrate-<pid>` (`pg_session_bounds.migration_name`; `test_the_migration_connection_is_named_for_its_process` fails without the change), and the census counts them as the broker's. `migration_samples` is 0 in every run since: the step is shorter than the 50 ms period. The sampler now records pid, state, transaction age, idle time and query head of any unattributed backend, so a recurrence names itself.
+- A4 as worded ("no `idle in transaction` sample") failed in 4 of the runs between 06:12Z and 06:23Z, one sample each; 3 of them ran with the detailed sampler (06:17Z, 06:21Z, 06:22Z entries). Every detailed sample was a broker interactive connection, transaction 0 to 7 ms old, idle 0 ms, last statement `SET LOCAL jit = off` or the recall `SELECT`: a transaction inside one request, caught between two of its statements. The earlier zero counts were the 50 ms period missing these gaps. Criterion now asserted, for the owner to confirm: every `idle in transaction` sample is on a broker store connection (a client never holds a transaction), and none belongs to a transaction older than `deadlock_timeout`'s default, 1 s (PostgreSQL 17 documentation, 19.12; the incident's transaction lasted about 2 h, a whole consolidation pass). The raw count stays in the record.
+- Every census session starts a detached consolidation cycle (the groomer coordinator's `runs.log` says `started` for each run) and, while its working directory was the census root, a code reanalysis by the user's installed `ai-architect-mcp-codebase` over the cluster's data directory (1497 files). Most runs from 06:13Z to 06:23Z failed at teardown because those jobs outlived the test (two failed earlier: the first detailed sampler wrote PostgreSQL `numeric` ages, which JSON cannot hold, fixed by a cast); their `consolidate` step took 0.34 s, the cycle holding the single-flight lock. The census now waits, sampler on, for every process carrying the test session's token (the private cluster excepted), and the session's working directory is a one-file project.
+- After these changes, 10 runs (06:32Z to 06:36Z): 10 passed; one owner PID each, the broker's; 0 other client backends; `idle in transaction` samples 0 in 9 runs and 1 in one (broker interactive connection, transaction 8 ms old); 0 DDL on shared relations; `consolidate` 3.5 to 4.1 s; the detached cycle started in each run and ended inside the sampled window, before the wait began (only the broker was waited for, 3.4 to 4.0 s, its 3 s idle exit).
+- Found on the way, older than this branch, not changed here: `consolidate_background` writes `~/.claude/methodology/.last_consolidate` through `Path.home()` whatever `CORTEX_CLAUDE_DIR` says (`mcp_server/hooks/consolidate_background.py:36`), so the census runs rewrote that stamp in the user's home (06:18:09Z); every test on a fresh private-cluster URL leaves one directory in `~/.cache/cortex/groomer-coordinator` (618 there, 74 dated today).
+- Craftsmanship: five functions committed in `96a98958` exceeded the 40-line cap (`pg_roles.provision`, the suite script's `main`, probe B, the A1 scenario, the A6 test); the gate had run while those files were untracked. Split in this change, behaviour unchanged.
+
+### least-privilege suite 2026-10-21T07:01Z (`python scripts/repro_least_privilege_suite.py`)
+
+- role `cortex_lp` (rolsuper, rolcreatedb, rolcreaterole) = (False, True, False)
+- pytest tests_py: exit 0, `10345 passed, 27 skipped, 2 warnings, 426 subtests passed in 439.07s (0:07:19)`
+
+### 23. 2026-10-21T07:01Z: suites after entry 22
+
+- Suites after the changes of entry 22: default (store in process) 10343 passed, 29 skipped; broker mode 10342 passed, 30 skipped; as a role without SUPERUSER 10345 passed, 27 skipped (entry above). One test more than entry 21 in each: the migration connection's name.

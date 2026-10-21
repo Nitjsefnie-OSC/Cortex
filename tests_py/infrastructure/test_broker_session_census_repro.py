@@ -9,7 +9,16 @@ three UserPromptSubmit recalls, one ``remember`` tool call, one
 - A2: every Cortex backend is named ``cortex-store-<pool>-<pid>`` with one
   PID, the broker's, and no other client backend appears (the sampler's own
   connection excluded).
-- A4: no sample shows a backend ``idle in transaction``.
+- A4: every ``idle in transaction`` sample is on one of the broker's store
+  connections (a client never holds a transaction), and none belongs to a
+  transaction older than ``deadlock_timeout``'s default (the incident's
+  transaction spanned a whole consolidation pass). The first wording, "no
+  sample at all", also counted the broker's own transactions caught between
+  two statements of one request (0 to 7 ms old; experiment log entry 22);
+  the raw count stays in the record.
+- The session's detached jobs (SessionStart's consolidation cycle and code
+  reanalysis, when the host offers them) are waited for with the sampler on,
+  so a full consolidation cycle is inside the measurement.
 - A3: with ``log_statement = ddl``, no DDL on a shared relation is logged
   during the session (the schema is current; the broker's start-up
   migration applies nothing; temporary tables are session-local).
@@ -29,13 +38,13 @@ import os
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 from pathlib import Path
 
 import pytest
 
 from tests_py import _pg_private_cluster as cluster
+from tests_py.infrastructure._census_instruments import Sampler, wait_for_session_jobs
 
 psycopg = pytest.importorskip("psycopg")
 
@@ -52,6 +61,10 @@ pytestmark = [
 ]
 
 _REPO = Path(__file__).resolve().parents[2]
+# source: PostgreSQL 17 docs 19.12 Lock Management, deadlock_timeout
+# default 1 s; the incident's chain needed three such rounds
+# (scripts/repro_lock_chain.py), a younger transaction cannot produce it
+_MAX_IDLE_XACT_MS = 1000
 # source: A2/A4 protocol, the sampler period
 _SAMPLE_SECONDS = 0.05
 # source: A2/A4 protocol, five pages of iter_memories_for_decay's default 1000
@@ -65,39 +78,6 @@ _TOOL = (
     "with close_shared_store_on_exit():\n"
     "    print(asyncio.run(handler({args})))\n"
 )
-
-
-class _Sampler(threading.Thread):
-    def __init__(self, url: str) -> None:
-        super().__init__(daemon=True)
-        self.conn = psycopg.connect(url, autocommit=True)
-        self.stop = threading.Event()
-        self.owners: set[str] = set()
-        self.others: set[str] = set()
-        self.idle_in_tx = 0
-        self.samples = 0
-        self.peak = 0
-
-    def run(self) -> None:
-        own = self.conn.info.backend_pid
-        while not self.stop.is_set():
-            rows = self.conn.execute(
-                "SELECT application_name, state FROM pg_stat_activity"
-                " WHERE backend_type = 'client backend' AND pid <> %s",
-                (own,),
-            ).fetchall()
-            self.samples += 1
-            cortex = [name for name, _ in rows if name.startswith("cortex-store-")]
-            self.peak = max(self.peak, len(cortex))
-            self.owners.update(name.rsplit("-", 1)[1] for name in cortex)
-            self.others.update(
-                name for name, _ in rows if not name.startswith("cortex-store-")
-            )
-            self.idle_in_tx += sum(
-                1 for _, state in rows if state == "idle in transaction"
-            )
-            time.sleep(_SAMPLE_SECONDS)
-        self.conn.close()
 
 
 def _run(
@@ -132,10 +112,13 @@ def _session(url: str, root: Path) -> dict:
     env["CORTEX_BROKER_IDLE_SECONDS"] = "3"
     transcript = root / "session.jsonl"
     transcript.write_text("")
+    project = root / "project"  # a small project, not the cluster's files
+    project.mkdir()
+    (project / "README.md").write_text("census project\n")
     event = {
         "session_id": "census",
         "transcript_path": str(transcript),
-        "cwd": str(root),
+        "cwd": str(project),
     }
     cold = _hook("session_start", env, event)
     warm = [
@@ -168,13 +151,6 @@ def _shared_ddl(log: Path, start: int) -> list[str]:
     return [s for s in statements if not s.upper().startswith("CREATE TEMP")]
 
 
-def _command_of(pid: str) -> str:
-    done = subprocess.run(
-        ["ps", "-o", "command=", "-p", pid], capture_output=True, text=True, check=False
-    )
-    return done.stdout.strip()
-
-
 def _record(result: dict) -> None:
     target = os.environ.get("CORTEX_REPRO_JSON")
     if target:
@@ -199,6 +175,36 @@ def _seed(maint: str) -> str:
     return url
 
 
+def _observe(url: str, root: Path) -> tuple[dict, Sampler, float, list[str]]:
+    """The session and its detached jobs, with the sampler on throughout."""
+    sampler = Sampler(url, _SAMPLE_SECONDS)
+    sampler.start()
+    steps = _session(url, root)
+    waited, jobs = wait_for_session_jobs()  # the sampler keeps sampling
+    sampler.stop.set()
+    sampler.join(timeout=10)
+    return steps, sampler, waited, jobs
+
+
+def _summary(sampler: Sampler, brokers: dict, waited: float, jobs: list) -> dict:
+    return {
+        "owners": sorted(sampler.owners),
+        "owner_is_broker": all("store_broker" in c for c in brokers.values()),
+        "other_client_backends": sorted(sampler.others),
+        "peak_cortex_backends": sampler.peak,
+        "idle_in_transaction_samples": sampler.idle_in_tx,
+        "idle_in_transaction_outside_broker": sampler.idle_outside_broker,
+        "max_idle_transaction_age_ms": sampler.max_idle_xact_ms,
+        "max_idle_ms": sampler.max_idle_ms,
+        "session_jobs_waited_seconds": waited,
+        "session_jobs_seen": jobs,
+        "migration_samples": sampler.migrations,
+        "unexpected_samples": sampler.details[:20],
+        "samples": sampler.samples,
+        "seeded_memories": _SEEDED,
+    }
+
+
 def _measure(root: Path) -> tuple[dict, list[str]]:
     with cluster.private_cluster(
         root / "pg", max_connections=40, extra="-c log_statement=ddl"
@@ -206,17 +212,11 @@ def _measure(root: Path) -> tuple[dict, list[str]]:
         url = _seed(maint)
         log = root / "pg" / "pg.log"
         log_start = log.stat().st_size  # DDL before the session: the setup's
-        sampler = _Sampler(url)
-        sampler.start()
-        steps = _session(url, root)
-        sampler.stop.set()
-        sampler.join(timeout=10)
-        brokers = {pid: _command_of(pid) for pid in sampler.owners}
+        steps, sampler, waited, jobs = _observe(url, root)
+        brokers = sampler.commands
         session_ddl = _shared_ddl(log, log_start)
         # the instrument works: the setup's migration is in the same log
         setup_ddl = len(_shared_ddl(log, 0)) - len(session_ddl)
-        for pid in brokers:
-            subprocess.run(["kill", pid], check=False)
     # seconds and exit code per step: the output tails stay out of the log,
     # they can quote the user's own paths
     timings = {
@@ -225,13 +225,7 @@ def _measure(root: Path) -> tuple[dict, list[str]]:
     }
     return {
         **timings,
-        "owners": sorted(sampler.owners),
-        "owner_is_broker": all("store_broker" in c for c in brokers.values()),
-        "other_client_backends": sorted(sampler.others),
-        "peak_cortex_backends": sampler.peak,
-        "idle_in_transaction_samples": sampler.idle_in_tx,
-        "samples": sampler.samples,
-        "seeded_memories": _SEEDED,
+        **_summary(sampler, brokers, waited, jobs),
         "shared_ddl_during_session": len(session_ddl),
         "ddl_logged_by_the_setup": setup_ddl,
     }, session_ddl
@@ -246,7 +240,8 @@ def test_one_broker_holds_every_connection_and_no_transaction_idles():
     assert result["remember"][1] == 0 and result["consolidate"][1] == 0, result
     assert len(result["owners"]) == 1 and result["owner_is_broker"], result  # A2
     assert result["other_client_backends"] == [], result  # A2
-    assert result["idle_in_transaction_samples"] == 0, result  # A4
+    assert result["idle_in_transaction_outside_broker"] == 0, result  # A4
+    assert result["max_idle_transaction_age_ms"] < _MAX_IDLE_XACT_MS, result  # A4
     assert result["ddl_logged_by_the_setup"] > 0, result  # the log records DDL
     assert result["shared_ddl_during_session"] == 0, (result, session_ddl)  # A3
     assert result["peak_cortex_backends"] <= 12, result  # P + 1 (P = 11)

@@ -79,3 +79,20 @@ def test_background_work_runs_on_the_batch_pool(store):
     assert store._execute(sql).fetchone()["v"].startswith("cortex-store-interactive-")  # noqa: SLF001
     with request_class("background"):
         assert store._execute(sql).fetchone()["v"].startswith("cortex-store-batch-")  # noqa: SLF001
+
+
+def test_the_migration_connection_is_named_for_its_process(monkeypatch):
+    """The broker's start-up migration is a connection of its own; named, a
+    census attributes it to the broker (A2) instead of an unknown client."""
+    from mcp_server.infrastructure import pg_migrations  # noqa: PLC0415 — PG-only import
+
+    seen = []
+
+    def record(conn):
+        row = conn.execute("SELECT current_setting('application_name')").fetchone()
+        seen.append(row[0])
+        return 0
+
+    monkeypatch.setattr(pg_migrations, "migrate_locked", record)
+    pg_migrations.apply_schema(os.environ["DATABASE_URL"])
+    assert seen == [f"cortex-migrate-{os.getpid()}"]

@@ -112,6 +112,51 @@ def _recall(store, embeddings, query: str) -> tuple[float, list[int]]:
     return elapsed, [r.get("memory_id", r.get("id")) for r in results]
 
 
+def _parity_arms(url: str, stores: tuple, embeddings, queries: list[str]) -> dict:
+    """Before any write: the broker, and a second in-process store as the
+    control arm (same code, another set of connections)."""
+    from mcp_server.infrastructure.pg_store import PgMemoryStore  # noqa: PLC0415
+
+    local, remote = stores
+    control = PgMemoryStore(database_url=url)
+    try:
+        return {
+            "broker": _parity(local, remote, embeddings, queries),
+            "control_second_in_process_store": _parity(
+                local, control, embeddings, queries
+            ),
+        }
+    finally:
+        control.close()
+
+
+def _timed(local, remote, embeddings, queries: list[str]) -> dict[str, list[float]]:
+    """Warm both sides, then alternate them query by query."""
+    for query in queries[:_WARMUP]:
+        _recall(local, embeddings, query)
+        _recall(remote, embeddings, query)
+    times: dict[str, list[float]] = {"in_process": [], "broker": []}
+    for query in queries:
+        times["in_process"].append(_recall(local, embeddings, query)[0])
+        times["broker"].append(_recall(remote, embeddings, query)[0])
+    return times
+
+
+def _summary(times: dict, parity: dict, embeddings) -> dict:
+    summary: dict = {
+        name: {
+            "p50_ms": round(statistics.median(values), 2),
+            "p95_ms": _percentile(sorted(values), 0.95),
+        }
+        for name, values in times.items()
+    }
+    summary["queries"] = _QUERIES
+    summary["memories"] = _MEMORIES
+    summary["parity"] = parity
+    summary["embedding_mode"] = getattr(embeddings, "mode", "unknown")
+    return summary
+
+
 def test_recall_through_the_broker_matches_in_process_and_its_overhead_is_measured(
     broker_env,
 ):
@@ -136,36 +181,11 @@ def test_recall_through_the_broker_matches_in_process_and_its_overhead_is_measur
             )
             remote = broker_endpoint.broker_store(url, root, "a6")
             queries = [" ".join(rng.choices(_WORDS, k=5)) for _ in range(_QUERIES)]
-            # before any write: the broker, and a second in-process store as
-            # the control arm (same code, another set of connections)
-            control = PgMemoryStore(database_url=url)
-            parity = {
-                "broker": _parity(local, remote, embeddings, queries),
-                "control_second_in_process_store": _parity(
-                    local, control, embeddings, queries
-                ),
-            }
-            control.close()
-            for query in queries[:_WARMUP]:
-                _recall(local, embeddings, query)
-                _recall(remote, embeddings, query)
-            times = {"in_process": [], "broker": []}
-            for query in queries:
-                times["in_process"].append(_recall(local, embeddings, query)[0])
-                times["broker"].append(_recall(remote, embeddings, query)[0])
+            parity = _parity_arms(url, (local, remote), embeddings, queries)
+            times = _timed(local, remote, embeddings, queries)
             remote.close()
             local.close()
-    summary = {
-        name: {
-            "p50_ms": round(statistics.median(values), 2),
-            "p95_ms": _percentile(sorted(values), 0.95),
-        }
-        for name, values in times.items()
-    }
-    summary["queries"] = _QUERIES
-    summary["memories"] = _MEMORIES
-    summary["parity"] = parity
-    summary["embedding_mode"] = getattr(embeddings, "mode", "unknown")
+    summary = _summary(times, parity, embeddings)
     target = os.environ.get("CORTEX_REPRO_JSON")
     if target:
         Path(target).write_text(json.dumps(summary))

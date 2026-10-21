@@ -22,6 +22,8 @@ import psycopg
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict
 
+from mcp_server.infrastructure.pg_session_bounds import migration_name
+
 # source: pg_schema (public holds the memory tables, wiki the wiki store)
 CORTEX_SCHEMAS = ("public", "wiki")
 # source: ADR-1112 the environment variable naming the migration role's URL
@@ -62,7 +64,7 @@ def grant_runtime(migration_url: str, runtime_role: str) -> int:
     """Grant the runtime role its data access, in one transaction, as the
     migration role (the owner). Returns the number of statements run."""
     statements = _grants(runtime_role)
-    with psycopg.connect(migration_url) as conn:
+    with psycopg.connect(migration_url, application_name=migration_name()) as conn:
         with conn.transaction():
             for statement in statements:
                 conn.execute(statement)
@@ -84,15 +86,7 @@ def provision(
     or a ``.pgpass`` entry); none is set or printed here."""
     with psycopg.connect(admin_url, autocommit=True) as conn:
         for role in (migrate_role, runtime_role):
-            exists = conn.execute(
-                "SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)
-            ).fetchone()
-            if exists is None:
-                conn.execute(
-                    sql.SQL(
-                        "CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE"
-                    ).format(sql.Identifier(role))
-                )
+            _create_login_role(conn, role)
         present = conn.execute(
             "SELECT 1 FROM pg_database WHERE datname = %s", (database,)
         ).fetchone()
@@ -107,7 +101,24 @@ def provision(
                 sql.Identifier(database), sql.Identifier(runtime_role)
             )
         )
-    target = admin_url.rpartition("/")[0] + "/" + database
+    _prepare_database(admin_url.rpartition("/")[0] + "/" + database, migrate_role)
+
+
+def _create_login_role(conn: psycopg.Connection[Any], role: str) -> None:
+    exists = conn.execute(
+        "SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)
+    ).fetchone()
+    if exists is None:
+        conn.execute(
+            sql.SQL("CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE").format(
+                sql.Identifier(role)
+            )
+        )
+
+
+def _prepare_database(target: str, migrate_role: str) -> None:
+    """In the new database, as the administrator: the extensions, and DDL in
+    ``public`` for the migration role only."""
     with psycopg.connect(target, autocommit=True) as conn:
         for extension in ("vector", "pg_trgm"):
             conn.execute(

@@ -55,16 +55,12 @@ def _provision(maint: str) -> tuple[str, str]:
     return f"postgresql://{ROLE}@{host}/{ROLE}_test", str(attributes)
 
 
-def main() -> int:
-    pytest_args = sys.argv[1:] or ["tests_py"]
+def _run_suite(pytest_args: list[str]) -> tuple[subprocess.CompletedProcess, str]:
+    """The suite on a private cluster, as the role without SUPERUSER."""
     with tempfile.TemporaryDirectory(prefix="cortex-lp-") as scratch:
         with cluster.private_cluster(Path(scratch), _MAX_CONNECTIONS) as maint:
             url, attributes = _provision(maint)
-            env = {
-                **os.environ,
-                "CORTEX_TEST_DATABASE_URL": url,
-                "DATABASE_URL": url,
-            }
+            env = {**os.environ, "CORTEX_TEST_DATABASE_URL": url, "DATABASE_URL": url}
             done = subprocess.run(
                 [
                     sys.executable,
@@ -81,6 +77,12 @@ def main() -> int:
                 text=True,
                 check=False,
             )
+    return done, attributes
+
+
+def main() -> int:
+    pytest_args = sys.argv[1:] or ["tests_py"]
+    done, attributes = _run_suite(pytest_args)
     lines = done.stdout.strip().splitlines()
     summary = lines[-1] if lines else ""
     failed = [line for line in lines if line.startswith(("FAILED", "ERROR"))]

@@ -28,6 +28,7 @@ from psycopg import sql
 from psycopg.rows import tuple_row
 
 from mcp_server.infrastructure.pg_schema import get_all_ddl
+from mcp_server.infrastructure.pg_session_bounds import migration_name
 from mcp_server.infrastructure.schema_versions import (
     SCHEMA_HASHES,
     SCHEMA_VERSION,
@@ -193,5 +194,7 @@ def migrate_locked(conn: psycopg.Connection[Any]) -> int:
 def apply_schema(database_url: str) -> int:
     """The explicit migration step on a dedicated connection; see
     ``migrate_locked``."""
-    with psycopg.connect(database_url, autocommit=True) as conn:
+    with psycopg.connect(
+        database_url, autocommit=True, application_name=migration_name()
+    ) as conn:
         return migrate_locked(conn)

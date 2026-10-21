@@ -87,6 +87,38 @@ def _cortex_backends(monitor) -> tuple[int, set[str], int, dict[str, int]]:
     return len(rows), owners, waiting, pools
 
 
+def _start_children(url: str, root: Path, children: int) -> list:
+    env = {**os.environ, "DATABASE_URL": url, "CORTEX_CLAUDE_DIR": str(root)}
+    env.pop("CORTEX_STORE_IN_PROCESS", None)
+    env["CORTEX_BROKER_IDLE_SECONDS"] = "3"
+    return [
+        subprocess.Popen(
+            [sys.executable, "-c", _CHILD],
+            cwd=_REPO,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        for _ in range(children)
+    ]
+
+
+def _watch(monitor) -> tuple[int, set, int, dict]:
+    """Peak Cortex backends (and by pool), owner PIDs, peak waiting on the
+    ``ALTER``, sampled until the scenario has settled."""
+    peak, owners, waiting_peak, peak_pools = 0, set(), 0, {}
+    deadline = time.monotonic() + _SETTLE_SECONDS
+    while time.monotonic() < deadline:
+        total, seen, waiting, pools = _cortex_backends(monitor)
+        if total > peak:
+            peak, peak_pools = total, pools
+        waiting_peak = max(waiting_peak, waiting)
+        owners |= seen
+        time.sleep(0.2)  # source: A1 protocol sampling period
+    return peak, owners, waiting_peak, peak_pools
+
+
 def _scenario(root: Path, children: int) -> dict:
     from mcp_server.infrastructure.pg_migrations import apply_schema  # noqa: PLC0415
 
@@ -101,29 +133,8 @@ def _scenario(root: Path, children: int) -> dict:
         ddl = psycopg.connect(url, autocommit=True)
         alter = threading.Thread(target=ddl.execute, args=(_NOOP_ALTER,), daemon=True)
         alter.start()
-        env = {**os.environ, "DATABASE_URL": url, "CORTEX_CLAUDE_DIR": str(root)}
-        env.pop("CORTEX_STORE_IN_PROCESS", None)
-        env["CORTEX_BROKER_IDLE_SECONDS"] = "3"
-        procs = [
-            subprocess.Popen(
-                [sys.executable, "-c", _CHILD],
-                cwd=_REPO,
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-            )
-            for _ in range(children)
-        ]
-        peak, owners, waiting_peak, peak_pools = 0, set(), 0, {}
-        deadline = time.monotonic() + _SETTLE_SECONDS
-        while time.monotonic() < deadline:
-            total, seen, waiting, pools = _cortex_backends(monitor)
-            if total > peak:
-                peak, peak_pools = total, pools
-            waiting_peak = max(waiting_peak, waiting)
-            owners |= seen
-            time.sleep(0.2)  # source: A1 protocol sampling period
+        procs = _start_children(url, root, children)
+        peak, owners, waiting_peak, peak_pools = _watch(monitor)
         failed_before_release = sum(1 for p in procs if p.poll() not in (None, 0))
         reader.rollback()
         alter.join(timeout=30)

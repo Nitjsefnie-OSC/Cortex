@@ -51,7 +51,12 @@ adheres to [Semantic Versioning](https://semver.org/).
   the saturation scenario with 64 clients now holds 9 connections, refuses
   none and fails none (`python scripts/repro_connection_broker.py
   saturation`); recall through the broker p95 276 ms against 262 ms in
-  process (`latency`).
+  process (`latency`). The broker's migration and grant connections are
+  named `cortex-migrate-<pid>`; the session census waits for the session's
+  detached jobs, and its A4 check now requires every transaction seen idle
+  to be the broker's and younger than 1 s (the first wording, no idle sample
+  at all, also counted transactions caught between two statements of one
+  request; experiment log entry 22).
 
 - **Every Cortex process talks to one store broker per store (ADR-1112
   increment 5).** With PostgreSQL, MCP servers, hooks, background jobs, the
