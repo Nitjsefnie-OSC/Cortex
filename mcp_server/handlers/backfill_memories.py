@@ -24,7 +24,6 @@ from mcp_server.core.session_extractor import (
 )
 from mcp_server.handlers.backfill_helpers import (
     discover_files,
-    ensure_backfill_log,
     file_hash,
     find_concepts,
     is_already_backfilled,
@@ -397,7 +396,6 @@ async def handler(args: dict[str, Any] | None = None) -> dict[str, Any]:
     parsed = _parse_args(args)
     settings = get_memory_settings()
     store = get_shared_store(settings.DB_PATH, settings.EMBEDDING_DIM)
-    ensure_backfill_log(store)
 
     candidates = discover_files(parsed["project_filter"], parsed["max_files"])
     if not candidates:

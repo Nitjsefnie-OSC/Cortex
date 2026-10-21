@@ -74,7 +74,7 @@ def test_pg_team_readers_scope_both_agent_passes():
         agent_topic="engineer",
         directory="/tmp/project-b",
     )
-    conn = store._conn
+    conn = store  # the hooks read through the store (ADR-1112)
     team_ids = {r["id"] for r in _fetch_team_decisions(conn, set(), "/tmp/project-a")}
     assert own in team_ids and foreign not in team_ids
     briefing_ids = {

@@ -34,10 +34,12 @@ from mcp_server.infrastructure.pg_schema import get_all_ddl
 logger = logging.getLogger("mcp_server.infrastructure.pg_store")
 
 # source: ADR-1112 the version this code defines; bump with every DDL change
-SCHEMA_VERSION = 1
-# source: ADR-1112 compute_ddl_hash() of each released version (v1 = main df3a4479)
+SCHEMA_VERSION = 2
+# source: ADR-1112 compute_ddl_hash() of each version (v1 = main df3a4479)
 SCHEMA_HASHES: dict[int, str] = {
     1: "44002703f29f0c2d8d01b5b343bf6fe5e995b989126b7b00f7e6a96474c21f87",
+    # v2: backfill_log is part of the schema (ADR-1112 increment 2)
+    2: "88211fbd5be16f33b6401d81b9fef8a29180eaf3ec155a8e765af7343416a3a5",
 }
 # source: ADR-0545 (the schema advisory lock key, unchanged)
 SCHEMA_LOCK_ID = 1357020271
@@ -173,7 +175,7 @@ def check_runtime(state: SchemaState) -> bool:
             f"{str(state.recorded_hash)[:16]}: an install that does not version its "
             "schema (an older Cortex, e.g. a Codex uv-tool wheel) re-applied its "
             "own DDL. Rebuild that install from this release "
-            f"(scripts/rebuild_codex_install.sh), then {_MIGRATE_HINT}."
+            f"(scripts/rebuild_codex_install.py), then {_MIGRATE_HINT}."
         )
     return True
 

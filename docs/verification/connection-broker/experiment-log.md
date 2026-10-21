@@ -329,3 +329,18 @@ local time).
   (zero failures fresh and on a full re-run, superuser and non-superuser
   owner; probe D refused before any statement) and
   `tests_py/infrastructure/test_pg_migrations.py`.
+
+### store funnel census 2026-10-21T01:22Z (`python scripts/repro_store_funnel.py`)
+
+- Variable: the code tree (main vs working tree); no database.
+- main: `{"connection_access_lines": 59, "connection_access_files": 42, "driver_importers_outside_diagnostics": 3}`
+- working tree: `{"connection_access_lines": 0, "connection_access_files": 0, "driver_importers_outside_diagnostics": 0}`
+- main files: handlers/anchor.py, handlers/backfill_helpers.py, handlers/calibration.py, handlers/codebase_analyze.py, handlers/codebase_analyze_helpers.py, handlers/consolidation/cascade.py, handlers/consolidation/memify.py, handlers/consolidation/memify_derive.py, handlers/consolidation/memory_dedup_exact_pass.py, handlers/consolidation/memory_domain_backfill_pass.py, handlers/consolidation/memory_reheat_pass.py, handlers/consolidation/near_dup_calibration_pass.py, handlers/consolidation/sleep.py, handlers/consolidation/wiki_backlog_pass.py, handlers/consolidation/wiki_citation_seed_pass.py, handlers/consolidation/wiki_domain_backfill_pass.py, handlers/consolidation/wiki_source_backfill_pass.py, handlers/consolidation/write_class_backfill_pass.py, handlers/curate_wiki_uncited.py, handlers/forget.py, handlers/get_grooming_health.py, handlers/get_rules.py, handlers/ingest_codebase.py, handlers/ingest_findings.py, handlers/lesson_promotion.py, handlers/predict.py, handlers/remember_helpers.py, handlers/resolve_prediction.py, handlers/wiki_compile.py, handlers/wiki_consolidate.py, handlers/wiki_curate.py, handlers/wiki_emerge.py, handlers/wiki_extract.py, handlers/wiki_migrate.py, handlers/wiki_read.py, handlers/wiki_refine.py, handlers/wiki_resolve.py, handlers/wiki_synthesize.py, handlers/wiki_view.py, handlers/wiki_write.py, hooks/agent_briefing_role.py, hooks/agent_briefing_sqlite.py
+- main driver importers: hooks/agent_briefing_query.py, hooks/auto_recall.py, hooks/session_start_db.py
+
+### 12. 2026-10-21T01:25Z: increment 2 closed (funnel)
+
+- Measurement: the store funnel census above (`python scripts/repro_store_funnel.py`): 59 connection-reaching lines in 42 files and 3 driver importers on `main`, 0 and 0 on the branch.
+- Side measurement while migrating the hook tests (scratch database, dropped after): a hook process that used the shared store without closing it waited 5 s per pool worker thread at exit, 20.7 s for `auto_recall` with 0.57 s of work; with `close_shared_store_on_exit` around `main()`, 0.44 s.
+- Schema: version 2 (`backfill_log` in the DDL); a version-1 database is refused at runtime and migrated by the explicit step (`test_pg_migrations.py`, 16 passed).
+- Full suite: 10246 passed, 22 skipped (`pytest tests_py`, 545 s).

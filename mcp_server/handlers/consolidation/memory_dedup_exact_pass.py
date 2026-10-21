@@ -39,7 +39,7 @@ def _rows_to_groups(rows: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
 
 
 def _process_group(
-    conn: Any,
+    store: Any,
     group: list[dict[str, Any]],
     *,
     apply: bool,
@@ -62,7 +62,9 @@ def _process_group(
     for duplicate_id in election.superseded_ids:
         written = False
         if apply:
-            written = supersede_to_existing(conn, duplicate_id, election.survivor_id)
+            written = store.call_batch(
+                supersede_to_existing, duplicate_id, election.survivor_id
+            )
         if apply and not written:
             out["skipped_race"] += 1
         else:
@@ -100,11 +102,10 @@ async def run_memory_dedup_exact_pass(
         "status": "ok",
     }
     try:
-        with store.batch_pool.connection() as conn:
-            rows = list_exact_duplicate_groups(conn, limit)
-            out["scanned_rows"] = len(rows)
-            for group in _rows_to_groups(rows):
-                _process_group(conn, group, apply=apply, out=out)
+        rows = store.call_batch(list_exact_duplicate_groups, limit)
+        out["scanned_rows"] = len(rows)
+        for group in _rows_to_groups(rows):
+            _process_group(store, group, apply=apply, out=out)
     except Exception as exc:  # noqa: BLE001 — last-resort boundary — failure is logged; degraded mode continues
         logger.warning("memory_dedup_exact_pass failed (non-fatal): %s", exc)
         out["status"] = f"error: {type(exc).__name__}: {exc}"

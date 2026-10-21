@@ -56,7 +56,7 @@ def test_pending_curation_count_is_fed_heads_only(pg_store, monkeypatch):
         lambda memories, **_kw: seen.extend(m["id"] for m in memories) or 0,
     )
 
-    curation._count_pending_curations(pg_store._conn)
+    curation._count_pending_curations(pg_store)
 
     assert new_id in seen
     assert old_id not in seen

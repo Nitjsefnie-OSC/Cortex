@@ -43,6 +43,7 @@ from mcp_server.infrastructure.pg_store_consolidation_stage import (
     PgConsolidationStageMixin,
 )
 from mcp_server.infrastructure.pg_store_cls import PgClsMixin
+from mcp_server.infrastructure.store_operations import StoreOperationsMixin
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ __all__ = [
 
 
 class PgMemoryStore(
+    StoreOperationsMixin,
     PgSchemaMixin,
     PgDdlMixin,
     PgSerializeMixin,
@@ -83,6 +85,9 @@ class PgMemoryStore(
     PgCorticalSchemaMixin,
 ):
     """PostgreSQL + pgvector storage engine for Cortex memory system."""
+
+    # source: ADR-1112 (callers branch on the backend, never on the class)
+    backend = "postgresql"
 
     def __init__(self, database_url: str | None = None) -> None:
         self._url = database_url or _get_database_url()

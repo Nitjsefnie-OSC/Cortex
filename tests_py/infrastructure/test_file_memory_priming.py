@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from tests_py._store_call import bind_store_calls
 from mcp_server.infrastructure.file_memory_priming import prime_file_memories
 from mcp_server.infrastructure.memory_store import get_shared_store
 
@@ -103,6 +104,7 @@ def test_failed_statement_rolls_back_without_closing_store():
         yield conn
 
     store.acquire_interactive = acquire
+    bind_store_calls(store)
     with pytest.raises(RuntimeError, match="broken statement"):
         prime_file_memories(store, ["/repo/a.py"], "/repo", 0.1)
     conn.rollback.assert_called_once()

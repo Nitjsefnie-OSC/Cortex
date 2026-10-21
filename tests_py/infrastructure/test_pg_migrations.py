@@ -175,3 +175,35 @@ def test_a_failed_state_read_never_becomes_a_first_run(monkeypatch):
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         PgMemoryStore(database_url=os.environ["DATABASE_URL"])
     assert migrations == []
+
+
+def _downgrade_to_v1(url: str) -> None:
+    """The state a version-1 install leaves: no backfill_log, version 1."""
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute("DROP TABLE backfill_log")
+        conn.execute("DELETE FROM schema_version")
+        conn.execute(
+            "INSERT INTO schema_version VALUES (1, %s, 'v1', now())",
+            (mig.SCHEMA_HASHES[1],),
+        )
+        conn.execute("UPDATE schema_meta SET ddl_hash = %s", (mig.SCHEMA_HASHES[1],))
+
+
+@needs_pg
+def test_a_version_1_database_is_refused_at_runtime_then_migrated_to_2(scratch_url):
+    """Increment 2 bumped the schema (backfill_log moved into the DDL): a
+    runtime refuses the v1 database untouched, the migration step brings it
+    to v2 and creates the table."""
+    mig.apply_schema(scratch_url)
+    _downgrade_to_v1(scratch_url)
+    from mcp_server.infrastructure.pg_store import PgMemoryStore  # noqa: PLC0415 — PG-only import
+
+    with pytest.raises(mig.SchemaBehindError, match="version 1"):
+        PgMemoryStore(database_url=scratch_url)
+    assert _read(scratch_url, "SELECT to_regclass('public.backfill_log')") == [(None,)]
+    assert mig.apply_schema(scratch_url) > 0
+    assert _read(scratch_url, "SELECT max(version) FROM schema_version") == [(2,)]
+    assert _read(
+        scratch_url, "SELECT to_regclass('public.backfill_log') IS NOT NULL"
+    ) == [(True,)]
+    PgMemoryStore(database_url=scratch_url).close()

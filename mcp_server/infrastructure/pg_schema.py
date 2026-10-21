@@ -657,6 +657,17 @@ CREATE TABLE IF NOT EXISTS predictions (
 """
 
 
+# source: ADR-1112 (created at runtime by backfill_memories before; now schema)
+BACKFILL_LOG_DDL = """
+CREATE TABLE IF NOT EXISTS backfill_log (
+    id                SERIAL PRIMARY KEY,
+    file_path         TEXT NOT NULL UNIQUE,
+    file_hash         TEXT NOT NULL,
+    memories_imported INTEGER DEFAULT 0,
+    processed_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
 # ── Indexes ───────────────────────────────────────────────────────────────
 
 INDEXES_DDL = """
@@ -1965,6 +1976,7 @@ def get_all_ddl() -> list[LiteralString]:
         SUPPORT_TABLES_DDL,
         PROCEDURAL_SKILLS_DDL,
         PREDICTIONS_DDL,
+        BACKFILL_LOG_DDL,
         # source: ADR-0537
         MIGRATIONS_DDL,
         TEAM_DECISION_BACKFILL_PG,

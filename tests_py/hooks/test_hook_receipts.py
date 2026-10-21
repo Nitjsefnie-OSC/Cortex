@@ -184,10 +184,24 @@ def test_session_start_banner_receipt_roundtrip(_db) -> None:
         is_global=True,
     )
 
-    anchors = session_start_fetch._fetch_anchors(_db)
-    anchor_ids = {a["id"] for a in anchors}
-    hot = session_start_fetch._fetch_hot_memories(_db, anchor_ids)
-    team = session_start_fetch._fetch_team_decisions(_db, anchor_ids)
+    # The hook reads and writes through the store (ADR-1112).
+    from mcp_server.infrastructure.pg_store import PgMemoryStore
+
+    store = PgMemoryStore(database_url=_TEST_DB_URL)
+    try:
+        anchors = session_start_fetch._fetch_anchors(store)
+        anchor_ids = {a["id"] for a in anchors}
+        hot = session_start_fetch._fetch_hot_memories(store, anchor_ids)
+        team = session_start_fetch._fetch_team_decisions(store, anchor_ids)
+        receipt_id = session_start._emit_banner_receipt(
+            store,
+            {"transcript_path": _TRANSCRIPT, "session_id": _DIVERGENT_EVENT_SESSION},
+            anchors,
+            team,
+            hot,
+        )
+    finally:
+        store.close()
 
     assert anchor_id in anchor_ids
     hot_ids = [m["id"] for m in hot]
@@ -197,11 +211,6 @@ def test_session_start_banner_receipt_roundtrip(_db) -> None:
     assert stale_id not in hot_ids
     assert stale_id not in anchor_ids
 
-    event = {
-        "transcript_path": _TRANSCRIPT,
-        "session_id": _DIVERGENT_EVENT_SESSION,
-    }
-    receipt_id = session_start._emit_banner_receipt(_db, event, anchors, team, hot)
     assert receipt_id is not None
 
     # Correction 2: the banner header carries the in-context marker.

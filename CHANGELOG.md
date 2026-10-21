@@ -35,6 +35,20 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Every database access goes through the store (ADR-1112 increment 2).**
+  Outside `mcp_server/infrastructure/` no module reaches a store's connection
+  or pools or imports the PostgreSQL driver (besides `doctor*` and the
+  migrate probe): hooks, handlers and consolidation passes call named store
+  operations (`store.call(fn, ...)` / `store.call_batch`), functions marked
+  `@store_operation` in `mcp_server/infrastructure/`, each one unit of work
+  committed after it or rolled back on error. These names are the only ones
+  the broker will resolve. `backfill_log` is now part of the schema
+  (`SCHEMA_VERSION = 2`): a version-1 database is refused at runtime and
+  brought to version 2 by `python -m mcp_server.migrate`.
+  `python scripts/repro_store_funnel.py` measures it (on `main`: 59 lines in
+  42 files reach a connection, 3 hooks import the driver; here: 0 and 0);
+  `tests_py/architecture/test_store_funnel.py` keeps it at zero.
+
 - **PostgreSQL schema versions; a store this code cannot use is refused, never
   migrated by a runtime (ADR-1112 increment 1).** `schema_version` records an
   integer version and `SCHEMA_HASHES` the DDL fingerprint of each. Opening a

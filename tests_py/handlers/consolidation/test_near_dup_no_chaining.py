@@ -16,6 +16,7 @@ import uuid
 
 import pytest
 
+from tests_py._store_call import mark_test_operation
 from mcp_server.handlers.consolidation.near_dup_calibration_pass import (
     run_near_dup_apply_pass,
 )
@@ -161,6 +162,7 @@ def test_an_error_mid_component_still_reports_count_and_ids_alike(monkeypatch):
     _insert_arc(110, [0.5, 0.9, 0.2])  # hub hottest: one component of three
     calls = []
 
+    @mark_test_operation
     def near_then_fail(conn, survivor_id, others, *, threshold):
         calls.append(survivor_id)
         if len(calls) == 1:
