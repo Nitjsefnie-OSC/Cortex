@@ -24,6 +24,7 @@ from typing import TextIO
 
 from mcp_server.shared.log_rotation import open_rotating_log
 from mcp_server.shared import gated_files
+from mcp_server.shared.private_paths import open_lock_file
 
 if sys.platform == "win32":
     import msvcrt
@@ -167,7 +168,7 @@ def drain_lock(spool: Path) -> Iterator[bool]:
 
     postcondition: at most one process yields True at a time; a lost race
     yields False at once (never waits), any other ``OSError`` propagates."""
-    descriptor = os.open(spool.parent / "drain.lock", os.O_RDWR | os.O_CREAT, 0o600)
+    descriptor = open_lock_file(spool.parent / "drain.lock")
     held = False
     try:
         held = _try_lock(descriptor)

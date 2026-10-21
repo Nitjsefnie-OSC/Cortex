@@ -35,9 +35,10 @@ _AUDITED = {
     ),
     ("shared/gated_files.py", "os.open-write"): (1, "the gate's own temp file"),
     ("shared/private_paths.py", "os.open-write"): (
-        2,
+        3,
         "creates an empty 0600 file before SQLite or a log opens it; opens an "
-        "entry O_RDONLY|O_NOFOLLOW to fchmod it (flags in a variable)",
+        "entry O_RDONLY|O_NOFOLLOW to fchmod it (flags in a variable); "
+        "open_lock_file, the one opener of every (empty) lock file",
     ),
     ("shared/log_rotation.py", "open-write"): (1, "yields only a RedactingStream"),
     ("infrastructure/log_relay.py", "child-stdio-file"): (
@@ -52,12 +53,7 @@ _AUDITED = {
         1,
         "RedactingFilter attached (checked below)",
     ),
-    ("shared/log_file_lock.py", "os.open-write"): (1, "empty lock file"),
-    ("infrastructure/hook_counter_lock.py", "os.open-write"): (1, "empty lock file"),
     ("infrastructure/pipeline_graph_ttl.py", "os.open-write"): (1, "empty lock file"),
-    ("infrastructure/pipeline_install_lock.py", "os.open-write"): (1, "empty lock"),
-    ("infrastructure/capture_spool.py", "os.open-write"): (1, "empty lock file"),
-    ("infrastructure/groomer_coordinator_io.py", "os.open-write"): (1, "lock file"),
     ("infrastructure/capture_socket.py", "os.open-write"): (1, "lease lock file"),
     ("infrastructure/pipeline_install_release.py", "write_bytes"): (
         1,

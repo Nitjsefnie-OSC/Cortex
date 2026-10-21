@@ -123,6 +123,26 @@ def create_private_file(path: str | Path) -> None:
     os.close(os.open(target, flags, PRIVATE_FILE_MODE))
 
 
+def open_lock_file(path: str | Path) -> int:
+    """Open, creating it if needed, a lock file owner-only; return the fd.
+
+    A lock holds no data, but its presence and timestamps tell another user
+    when Cortex runs. Created ``0600`` with ``O_NOFOLLOW``; a lock an older
+    version left with wider bits is tightened through the descriptor. The
+    one opener for every lock file (review of PR #775, N6)."""
+    flags = os.O_RDWR | os.O_CREAT | _NOFOLLOW
+    fd = os.open(path, flags, PRIVATE_FILE_MODE)
+    if sys.platform == "win32":
+        return fd
+    try:
+        if stat.S_IMODE(os.fstat(fd).st_mode) != PRIVATE_FILE_MODE:
+            os.fchmod(fd, PRIVATE_FILE_MODE)
+    except OSError:
+        os.close(fd)
+        raise
+    return fd
+
+
 def _wanted_mode(info: os.stat_result) -> int:
     if stat.S_ISDIR(info.st_mode):
         return PRIVATE_DIR_MODE
