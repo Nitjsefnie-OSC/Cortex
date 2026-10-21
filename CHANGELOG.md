@@ -53,6 +53,14 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Per-project export and import of memories (ADR-1113, GDPR art. 20).**
+  `python -m mcp_server.portability export <project-root> <file>` writes the
+  current memories of a project and its subdirectories (never a sibling or the
+  parent; global memories with `--include-global`) as JSON Lines with a
+  versioned header, every value redacted, file mode 0600;
+  `import <file> [--into <root>]` validates the file, relocates directories,
+  recomputes embeddings and skips memories already present.
+
 - **Benchmark refresh preparation: pinned datasets, a per-query journal,
   offline token counting and energy per scored query.** Scores and retrieval
   are unchanged; nothing here runs a scored benchmark.

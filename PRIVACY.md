@@ -189,6 +189,12 @@ memories over time; this is a local maintenance operation, not a transfer.
   - **`soft=true` keeps everything but the row's visibility.** A soft delete is
     recoverable by design (it sets `is_stale` and `heat=0`), so the artifact is
     deliberately retained. Use a hard delete when you want the content gone.
+- Export and import a project's memories (ADR-1113):
+  `python -m mcp_server.portability export <project-root> <file>` writes the
+  memories of that project and its subdirectories (add `--include-global` for
+  your global memories) to a JSON Lines file, readable and owner-only, with
+  secrets redacted; `python -m mcp_server.portability import <file>
+  [--into <project-root>]` loads it into this or another installation, once.
 - Delete `~/.claude/methodology/memory.db` — remove all SQLite-stored data.
 - Delete `~/.claude/methodology/artifacts/` — remove all raw-output artifacts,
   including any left by soft deletes or still shared between memories.

@@ -3611,6 +3611,10 @@
     "ADR-1112": {
       "mirror": "ADR-1112-personal-data-is-stored-owner-only.md",
       "path": "adr/cortex/1112-personal-data-is-stored-owner-only.md"
+    },
+    "ADR-1113": {
+      "mirror": "ADR-1113-a-project-s-memories-can-be-exported-and-imported.md",
+      "path": "adr/cortex/1113-a-project-s-memories-can-be-exported-and-imported.md"
     }
   },
   "project": "cortex",
