@@ -16,6 +16,7 @@ from collections.abc import Iterator
 import pytest
 
 from mcp_server.infrastructure import pg_migrations as mig
+from mcp_server.infrastructure import schema_versions as sv
 from tests_py import _pg_throwaway_db
 from tests_py.conftest import _USE_PG
 
@@ -24,11 +25,11 @@ psycopg = pytest.importorskip("psycopg")
 needs_pg = pytest.mark.skipif(not _USE_PG, reason="requires isolated PostgreSQL")
 
 
-def _state(version, recorded, fresh=False) -> mig.SchemaState:
-    return mig.SchemaState(fresh=fresh, version=version, recorded_hash=recorded)
+def _state(version, recorded, fresh=False) -> sv.SchemaState:
+    return sv.SchemaState(fresh=fresh, version=version, recorded_hash=recorded)
 
 
-CURRENT = mig.SCHEMA_HASHES[mig.SCHEMA_VERSION]
+CURRENT = sv.SCHEMA_HASHES[sv.SCHEMA_VERSION]
 
 
 def test_the_code_ddl_is_the_released_fingerprint_of_its_version():
@@ -39,32 +40,32 @@ def test_the_code_ddl_is_the_released_fingerprint_of_its_version():
 
 
 def test_versions_only_grow_and_every_one_has_a_fingerprint():
-    assert sorted(mig.SCHEMA_HASHES) == list(range(1, mig.SCHEMA_VERSION + 1))
+    assert sorted(sv.SCHEMA_HASHES) == list(range(1, sv.SCHEMA_VERSION + 1))
 
 
 @pytest.mark.parametrize(
     ("state", "error"),
     [
-        (_state(mig.SCHEMA_VERSION + 1, "x"), mig.SchemaTooNewError),
-        (_state(None, "c867454173d6227e-codex-wheel"), mig.SchemaBehindError),
-        (_state(None, None), mig.SchemaBehindError),
-        (_state(mig.SCHEMA_VERSION - 1, CURRENT), mig.SchemaBehindError),
+        (_state(sv.SCHEMA_VERSION + 1, "x"), sv.SchemaTooNewError),
+        (_state(None, "c867454173d6227e-codex-wheel"), sv.SchemaBehindError),
+        (_state(None, None), sv.SchemaBehindError),
+        (_state(sv.SCHEMA_VERSION - 1, CURRENT), sv.SchemaBehindError),
         (
-            _state(mig.SCHEMA_VERSION, "rewritten-by-an-older-install"),
-            mig.SchemaTamperedError,
+            _state(sv.SCHEMA_VERSION, "rewritten-by-an-older-install"),
+            sv.SchemaTamperedError,
         ),
-        (_state(mig.SCHEMA_VERSION, None), mig.SchemaTamperedError),
+        (_state(sv.SCHEMA_VERSION, None), sv.SchemaTamperedError),
     ],
 )
 def test_runtime_refuses_every_state_that_is_not_current(state, error):
     with pytest.raises(error):
-        mig.check_runtime(state)
+        sv.check_runtime(state)
 
 
 def test_runtime_accepts_current_and_legacy_current_and_reports_first_run():
-    assert mig.check_runtime(_state(mig.SCHEMA_VERSION, CURRENT)) is True
-    assert mig.check_runtime(_state(None, CURRENT)) is True  # migrated before ADR-1112
-    assert mig.check_runtime(_state(None, None, fresh=True)) is False
+    assert sv.check_runtime(_state(sv.SCHEMA_VERSION, CURRENT)) is True
+    assert sv.check_runtime(_state(None, CURRENT)) is True  # migrated before ADR-1112
+    assert sv.check_runtime(_state(None, None, fresh=True)) is False
 
 
 @pytest.fixture
@@ -89,7 +90,7 @@ def _read(url: str, sql: str):
 def test_first_migration_records_version_and_fingerprint(scratch_url):
     assert mig.apply_schema(scratch_url) > 0
     assert _read(scratch_url, "SELECT version, ddl_hash FROM schema_version") == [
-        (mig.SCHEMA_VERSION, CURRENT)
+        (sv.SCHEMA_VERSION, CURRENT)
     ]
     assert _read(scratch_url, "SELECT ddl_hash FROM schema_meta") == [(CURRENT,)]
     assert mig.apply_schema(scratch_url) == 0
@@ -98,17 +99,17 @@ def test_first_migration_records_version_and_fingerprint(scratch_url):
 @needs_pg
 def test_a_newer_schema_is_refused_and_left_untouched(scratch_url):
     mig.apply_schema(scratch_url)
-    future = mig.SCHEMA_VERSION + 1
+    future = sv.SCHEMA_VERSION + 1
     with psycopg.connect(scratch_url, autocommit=True) as conn:
         conn.execute(
             "INSERT INTO schema_version VALUES (%s, 'future', 'future', now())",
             (future,),
         )
-    with pytest.raises(mig.SchemaTooNewError):
+    with pytest.raises(sv.SchemaTooNewError):
         mig.apply_schema(scratch_url)
     from mcp_server.infrastructure.pg_store import PgMemoryStore  # noqa: PLC0415 — PG-only import
 
-    with pytest.raises(mig.SchemaTooNewError):
+    with pytest.raises(sv.SchemaTooNewError):
         PgMemoryStore(database_url=scratch_url)
     assert _read(scratch_url, "SELECT max(version) FROM schema_version") == [(future,)]
 
@@ -119,7 +120,7 @@ def test_a_failed_statement_records_nothing_and_is_retried(scratch_url, monkeypa
     real = mig.get_all_ddl()
     broken = [*real[:3], "ALTER TABLE no_such_table ADD COLUMN x integer", *real[3:]]
     monkeypatch.setattr(mig, "get_all_ddl", lambda: broken)
-    with pytest.raises(mig.MigrationFailedError, match="1 of"):
+    with pytest.raises(sv.MigrationFailedError, match="1 of"):
         mig.apply_schema(scratch_url)
     recorded = _read(
         scratch_url,
@@ -141,7 +142,7 @@ def test_a_database_migrated_before_versioning_opens_and_gets_its_version(scratc
     PgMemoryStore(database_url=scratch_url).close()  # legacy current: opens
     assert mig.apply_schema(scratch_url) == 0  # records the version, no DDL
     assert _read(scratch_url, "SELECT version FROM schema_version") == [
-        (mig.SCHEMA_VERSION,)
+        (sv.SCHEMA_VERSION,)
     ]
 
 
@@ -184,9 +185,9 @@ def _downgrade_to_v1(url: str) -> None:
         conn.execute("DELETE FROM schema_version")
         conn.execute(
             "INSERT INTO schema_version VALUES (1, %s, 'v1', now())",
-            (mig.SCHEMA_HASHES[1],),
+            (sv.SCHEMA_HASHES[1],),
         )
-        conn.execute("UPDATE schema_meta SET ddl_hash = %s", (mig.SCHEMA_HASHES[1],))
+        conn.execute("UPDATE schema_meta SET ddl_hash = %s", (sv.SCHEMA_HASHES[1],))
 
 
 @needs_pg
@@ -198,7 +199,7 @@ def test_a_version_1_database_is_refused_at_runtime_then_migrated_to_2(scratch_u
     _downgrade_to_v1(scratch_url)
     from mcp_server.infrastructure.pg_store import PgMemoryStore  # noqa: PLC0415 — PG-only import
 
-    with pytest.raises(mig.SchemaBehindError, match="version 1"):
+    with pytest.raises(sv.SchemaBehindError, match="version 1"):
         PgMemoryStore(database_url=scratch_url)
     assert _read(scratch_url, "SELECT to_regclass('public.backfill_log')") == [(None,)]
     assert mig.apply_schema(scratch_url) > 0

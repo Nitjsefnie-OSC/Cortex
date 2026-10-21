@@ -18,11 +18,8 @@ from psycopg import sql
 from psycopg.rows import DictRow
 
 from mcp_server.infrastructure.memory_config import get_memory_settings
-from mcp_server.infrastructure.pg_migrations import (
-    check_runtime,
-    migrate_locked,
-    read_state,
-)
+from mcp_server.infrastructure.pg_migrations import migrate_locked, read_state
+from mcp_server.infrastructure.schema_versions import check_runtime
 from mcp_server.infrastructure.pg_store_host import MaterializedCursor, PgStoreHost
 
 if TYPE_CHECKING:

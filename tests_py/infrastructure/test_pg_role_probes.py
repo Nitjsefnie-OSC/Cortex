@@ -86,9 +86,10 @@ def test_probe_d_missing_extension_stops_before_any_statement(maint):
     """On main: 1 privilege failure (vector is untrusted) cascaded into 58
     failed statements and the fingerprint was recorded (audit E13)."""
     from mcp_server.infrastructure import pg_migrations as mig  # noqa: PLC0415 — PG-only import
+    from mcp_server.infrastructure import schema_versions as sv  # noqa: PLC0415 — next to the PG-only import
 
     url = _owned_database(maint, "probe_d", "probe_d_owner")
-    with pytest.raises(mig.MigrationPrerequisiteError, match="CREATE EXTENSION vector"):
+    with pytest.raises(sv.MigrationPrerequisiteError, match="CREATE EXTENSION vector"):
         mig.apply_schema(url)
     assert _recorded(maint, "probe_d") == (None, None)
     assert _tables(maint, "probe_d") == 0  # no statement ran

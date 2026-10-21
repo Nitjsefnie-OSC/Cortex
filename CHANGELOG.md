@@ -35,6 +35,19 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The store broker process (ADR-1112 increment 3), not yet used by
+  clients.** `mcp_server/hooks/store_broker.py` is one resident process per
+  store that will own every PostgreSQL connection: started on demand through
+  the plugin launcher, migrations at start, idle exit after
+  `CORTEX_BROKER_IDLE_SECONDS`. Unix: the capture worker's private socket,
+  lease and peer-UID checks, one directory per store under
+  `.store-broker/`. Windows: a named pipe whose DACL grants the current
+  user's SID only, exercised by the `test-windows` CI job. Requests name an
+  allowlisted store method or a marked operation; values travel as JSON with
+  a closed set of tags (no pickle, no SQL). `python
+  scripts/repro_broker_frame_fuzz.py` and `fuzz/fuzz_broker_frame.py` fuzz
+  the decoder (0 escapes in 2.2 million mutated frames).
+
 - **Every database access goes through the store (ADR-1112 increment 2).**
   Outside `mcp_server/infrastructure/` no module reaches a store's connection
   or pools or imports the PostgreSQL driver (besides `doctor*` and the

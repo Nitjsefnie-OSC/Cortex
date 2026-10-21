@@ -34,6 +34,7 @@ sys.path.insert(0, str(ROOT))
 import psycopg  # noqa: E402
 
 from mcp_server.infrastructure import pg_migrations as mig  # noqa: E402
+from mcp_server.infrastructure import schema_versions as sv  # noqa: E402
 from tests_py import _pg_private_cluster as cluster  # noqa: E402
 
 # source: ADR-1112 the append-only experiment log
@@ -54,9 +55,9 @@ def _before(url: str) -> dict:
 def _after(url: str) -> dict:
     try:
         return {"failed": 0, "applied": mig.apply_schema(url)}
-    except mig.MigrationFailedError as exc:
+    except sv.MigrationFailedError as exc:
         return {"failed": len(exc.failures), "first": exc.failures[:1]}
-    except mig.SchemaError as exc:
+    except sv.SchemaError as exc:
         return {"failed": 0, "refused_before_any_statement": type(exc).__name__}
 
 

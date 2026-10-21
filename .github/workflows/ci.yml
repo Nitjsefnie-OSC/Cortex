@@ -507,6 +507,9 @@ jobs:
       # the job of the runner is read from the real kernel32 (by mcp_server and
       # by the Codex copy) and a child starts with the creation flags decided
       # from it. source: ADR-1102
+      # The store broker's pipe transport joins per ADR-1112 (owner decision
+      # 2): only here does a pipe carry the owner-only DACL read back from
+      # the kernel, refuse a second broker on its name, and serve a request.
       - name: Run portability + backend tests
         env:
           HF_HUB_OFFLINE: "1"
@@ -536,6 +539,7 @@ jobs:
           tests_py/shared/test_detached_spawn.py
           tests_py/shared/test_win32_job.py
           tests_py/hooks/test_codex_windows_job.py
+          tests_py/infrastructure/test_broker_pipe.py
 
   # source: ADR-0802
 

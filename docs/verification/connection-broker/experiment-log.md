@@ -344,3 +344,19 @@ local time).
 - Side measurement while migrating the hook tests (scratch database, dropped after): a hook process that used the shared store without closing it waited 5 s per pool worker thread at exit, 20.7 s for `auto_recall` with 0.57 s of work; with `close_shared_store_on_exit` around `main()`, 0.44 s.
 - Schema: version 2 (`backfill_log` in the DDL); a version-1 database is refused at runtime and migrated by the explicit step (`test_pg_migrations.py`, 16 passed).
 - Full suite: 10246 passed, 22 skipped (`pytest tests_py`, 545 s).
+
+### 13. 2026-10-21T02:10Z: increment 3, the frame decoder under mutation (before the field checks)
+
+- Command: `python scripts/repro_broker_frame_fuzz.py --no-log --inputs 20000` (seed 1112) against the first decoder, which trusted the JSON type of every tagged field.
+- Result: 234 escapes in 20000 inputs. Grouped over 100000 inputs: `AttributeError` from `uuid.UUID` on a non-string (1047), `decimal.InvalidOperation` (97), `OverflowError` from `timedelta` and `Decimal` on huge or infinite numbers (57), `SyntaxError` from `numpy.dtype(",f4")` (2). Each one is a connection thread dying on a stack trace instead of a clean refusal.
+- Fix: every tagged field is type-checked before it is built (`broker_codec._field`); text constructors map their errors to `CodecError`; arrays accept only twelve named numeric dtypes and a shape of non-negative integers; base64 is strict. The four reproducers are committed under `fuzz/corpus/fuzz_broker_frame/repro-*` and replayed by `tests_py/fuzz`.
+- After: 0 escapes in 200000 inputs (seed 1112) and in 400000 inputs for each of seeds 1 to 5; the entry below is the logged run.
+
+### broker frame fuzz 2026-10-21T01:32Z (`python scripts/repro_broker_frame_fuzz.py --seed 1112`)
+
+- `{"inputs": 200000, "refused": 163366, "accepted": 36634, "escapes": 0, "seconds": 2.3, "first_escape": null}`
+
+### 14. 2026-10-21T02:40Z: increment 3 closed (broker process)
+
+- Broker tests: 67 unit (codec, frames, queues, server and client over sockets) plus 4 endpoint and 5 real-process tests on the test database, all passing; the pipe tests run in the `test-windows` job only (3 skipped here, on macOS).
+- Full suite: 10326 passed, 25 skipped (`pytest tests_py`, 517 s).

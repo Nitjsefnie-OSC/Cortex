@@ -115,7 +115,7 @@ def _open_in_thread(opened: dict[str, object]) -> threading.Thread:
 
 
 def test_opening_a_store_on_another_revision_runs_no_ddl_and_refuses():
-    from mcp_server.infrastructure.pg_migrations import SchemaError  # noqa: PLC0415 — PG-only import
+    from mcp_server.infrastructure.schema_versions import SchemaError  # noqa: PLC0415 — PG-only import
     from mcp_server.infrastructure.pg_schema_fingerprint import compute_ddl_hash  # noqa: PLC0415
 
     opened: dict[str, object] = {}
