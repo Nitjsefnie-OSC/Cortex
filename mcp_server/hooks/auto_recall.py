@@ -113,13 +113,13 @@ def _connect():
     """Open the hook's PG connection; None when PG is unreachable."""
     try:
         import psycopg  # noqa: PLC0415 — optional-feature probe: ImportError here is a handled degraded mode
-        from psycopg.rows import DictRow, dict_row  # noqa: PLC0415 — optional-feature probe: ImportError here is a handled degraded mode
     except ImportError:
         return None
+    from mcp_server.infrastructure.db_connect import pg_connect  # noqa: PLC0415 — after the optional-extra probe
+
     try:
-        return psycopg.Connection[DictRow].connect(
-            _DATABASE_URL, row_factory=dict_row, autocommit=True
-        )
+        # source: ADR-1110 — gated: this connection also writes receipts
+        return pg_connect(_DATABASE_URL, autocommit=True)
     except psycopg.Error:
         return None
 

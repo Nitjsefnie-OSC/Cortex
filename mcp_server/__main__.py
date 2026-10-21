@@ -72,6 +72,7 @@ from mcp_server.infrastructure.upstream_availability import (
     prd_upstream_available,
 )
 from mcp_server.infrastructure.wiki_schema_reader import load_registry
+from mcp_server.shared.private_paths import harden_at_startup
 
 # source: ADR-0093
 
@@ -167,6 +168,8 @@ def _shutdown(sig=None, frame=None) -> None:
 def main() -> None:
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
+    # source: ADR-1112 — existing installs become owner-only before serving
+    harden_at_startup()
     # source: ADR-0093
 
     anyio.run(mcp.run_stdio_async)

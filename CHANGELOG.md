@@ -6,7 +6,61 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **Personal data is stored owner-only (ADR-1112).** The 2026-10-21 audit
+  (E18) measured `memory.db`, logs and telemetry at 0644/0664 in 0755/0775
+  directories. Under `~/.claude/methodology`, the capture worker directory,
+  `brain-index.json` and the cache root (`~/.cache/cortex`, which now follows a
+  relocated `CORTEX_CLAUDE_DIR` like the rest of Cortex's data), files are now created 0600 and
+  directories 0700 (the SQLite database before SQLite opens it, so its WAL and
+  shared-memory files follow); existing installs are tightened once at server
+  or session start (directories 0700, files lose group/other bits, symlinks
+  untouched), and on Windows the roots get a user-only inherited ACL. Files
+  written into a user's repository keep the umask.
+- **A hard `forget` erases every stored copy of the memory (ADR-1111).** The
+  2026-10-21 audit (E15) found the full original text left in
+  `memory_archives` after a hard forget. `store.erase_memory` now deletes, in
+  one transaction on both backends, the row with its FTS and vector entries,
+  its archives, the wiki claims, drafts, citations and compiled page derived
+  from it, the reminders and rules mined from it, its receipts and stage
+  history, and the text entities only it referenced; page files compiled or
+  promoted from it are removed and the wiki index rebuilt. A failing step
+  rolls everything back and raises (the old handler logged a failed claim
+  deletion and deleted the row anyway). SQLite runs with `secure_delete`, FTS5
+  `secure-delete` and a WAL truncation, so the bytes leave the file too. The
+  result reports what was erased.
+- **One redaction gate on every write into storage (ADR-1110).** The 2026-10-21
+  audit (E16) found the secret scrubber on the capture hook only, missing
+  GitHub, Anthropic and OpenAI keys and JWTs, while `remember`, session import
+  and session end stored text unfiltered. Now:
+  - the detector is the gitleaks 8.30.1 default rule set, vendored byte-identical
+    under `third_party/gitleaks/v8.30.1/` (sha256-pinned, MIT, in the release
+    SBOM), translated to Python by `scripts/vendor_gitleaks_rules.py` (217 of
+    222 rules; the five that need a file name cannot apply to text) and applied by a port of
+    gitleaks' decision procedure, with exact parity against the binary on the
+    repository tree and on a real-format fake-credential corpus
+    (`scripts/redaction_parity.py`, run in CI); a second pass catches keys
+    followed by sentence punctuation, which six gitleaks rules miss;
+  - SQLite and PostgreSQL store connections are built gated: every write
+    statement, through any helper, pool, cursor, `executemany` or COPY, binds
+    redacted parameters; embeddings, the SQLite FTS augmentation and artifact
+    addresses are derived from redacted text;
+  - files are written only through `shared/gated_files.py`, child processes log
+    through a redacting relay, file log handlers carry a redacting filter; an
+    architecture test fails on any other storage primitive in `mcp_server/`;
+  - `.pre-commit-config.yaml` (gitleaks hook) and a blocking `secret-scan` CI job
+    (full history and tree, pinned and checksum-verified binary).
+
 ### Added
+
+- **Per-project export and import of memories (ADR-1113, GDPR art. 20).**
+  `python -m mcp_server.portability export <project-root> <file>` writes the
+  current memories of a project and its subdirectories (never a sibling or the
+  parent; global memories with `--include-global`) as JSON Lines with a
+  versioned header, every value redacted, file mode 0600;
+  `import <file> [--into <root>]` validates the file, relocates directories,
+  recomputes embeddings and skips memories already present.
 
 - **Benchmark refresh preparation: pinned datasets, a per-query journal,
   offline token counting and energy per scored query.** Scores and retrieval
