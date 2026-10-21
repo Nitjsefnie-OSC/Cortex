@@ -18,18 +18,20 @@ before the gate existed leaves the store redacted. The file is written
 ``0600``. Import writes through the store, hence through the gate again,
 computes each embedding, can move the memories to another project root, and
 skips a memory already present with the same content and directory, so
-importing a file twice adds nothing.
+importing a file twice adds nothing. A file is validated as a whole before
+the first insert: field types, every directory inside the file's project
+root, and the sharing flags off unless trusted (``memory_import_checks``).
 
 source: ADR-1113"""
 
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from mcp_server.handlers.memory_import_checks import canonical_root, checked_records
 from mcp_server.infrastructure.embedding_engine import get_embedding_engine
 from mcp_server.shared import gated_files
 from mcp_server.shared.redaction_gate import redact_value
@@ -61,8 +63,7 @@ _EXPORT_MODE = 0o600  # source: ADR-1112 (personal data, owner-only)
 def _normalise_root(project_root: str) -> str:
     """Absolute and slash-normalised, symlinks kept: memories store the
     directory as it was given (``shared/project_scope.py``)."""
-    absolute = os.path.abspath(os.path.expanduser(project_root))
-    return absolute.replace("\\", "/").rstrip("/")
+    return canonical_root(project_root)
 
 
 def _like_prefix(root: str) -> str:
@@ -140,14 +141,6 @@ def read_export(path: str | Path) -> tuple[dict[str, Any], list[dict[str, Any]]]
     return header, records
 
 
-def _relocate(directory: str | None, old_root: str, new_root: str | None) -> str | None:
-    if new_root is None or not directory:
-        return directory
-    if directory == old_root or directory.startswith(old_root + "/"):
-        return _normalise_root(new_root) + directory[len(old_root) :]
-    return directory
-
-
 def _already_present(store: Any, content: str, directory: str | None) -> bool:
     row = store._conn.execute(
         "SELECT id FROM memories WHERE content = %s AND directory_context = %s",
@@ -157,17 +150,29 @@ def _already_present(store: Any, content: str, directory: str | None) -> bool:
 
 
 def import_export(
-    store: Any, path: str | Path, *, into_project_root: str | None = None
+    store: Any,
+    path: str | Path,
+    *,
+    into_project_root: str | None = None,
+    trust_flags: bool = False,
 ) -> dict[str, int]:
-    """Insert the file's memories; return ``{"imported": n, "skipped": m}``."""
+    """Insert the file's memories; return ``{"imported": n, "skipped": m}``.
+
+    The whole file is validated first (``memory_import_checks``): a record
+    of the wrong type or outside the file's project root fails the import
+    before anything is stored. ``trust_flags`` keeps ``is_global``,
+    ``is_protected`` and ``is_team_decision`` as the file states them."""
     header, records = read_export(path)
+    checked = checked_records(
+        header,
+        redact_value(records),
+        EXPORT_FIELDS,
+        into_project_root=into_project_root,
+        trust_flags=trust_flags,
+    )
     engine = get_embedding_engine()
     imported = skipped = 0
-    for record in redact_value(records):
-        data = {k: v for k, v in record.items() if v is not None}
-        data["directory_context"] = _relocate(
-            record.get("directory_context"), header["project_root"], into_project_root
-        )
+    for data in checked:
         if _already_present(store, data["content"], data["directory_context"]):
             skipped += 1
             continue

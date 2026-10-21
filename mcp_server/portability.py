@@ -3,7 +3,7 @@
 Usage::
 
     python -m mcp_server.portability export <project-root> <file> [--include-global]
-    python -m mcp_server.portability import <file.jsonl> [--into <project-root>]
+    python -m mcp_server.portability import <file.jsonl> [--into <root>] [--trust-flags]
 
 Both use the configured store (``CORTEX_MEMORY_STORE_BACKEND``, ``DATABASE_URL``
 or the SQLite file), exactly as the MCP server does. Exit 0 on success, 1 when
@@ -28,6 +28,11 @@ def _parser() -> argparse.ArgumentParser:
     restore = commands.add_parser("import", help="read an export file")
     restore.add_argument("file")
     restore.add_argument("--into", dest="into_project_root")
+    restore.add_argument(
+        "--trust-flags",
+        action="store_true",
+        help="keep is_global, is_protected and is_team_decision from the file",
+    )
     return parser
 
 
@@ -51,7 +56,10 @@ def main(argv: list[str] | None = None) -> int:
             )
         else:
             result = portability.import_export(
-                store, args.file, into_project_root=args.into_project_root
+                store,
+                args.file,
+                into_project_root=args.into_project_root,
+                trust_flags=args.trust_flags,
             )
     except (ValueError, OSError) as exc:
         print(f"cortex portability: {exc}", file=sys.stderr)

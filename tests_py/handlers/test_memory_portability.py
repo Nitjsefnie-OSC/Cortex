@@ -192,3 +192,93 @@ def test_the_command_line_exports_and_imports(tmp_path):
     refused = _cli(db, "import", str(tmp_path / "missing.jsonl"))
     assert refused.returncode == 1
     assert "cortex portability:" in refused.stderr
+
+
+def _crafted(tmp_path: Path, root: str, records: list[dict]) -> Path:
+    """An export file written by hand, as an attacker would (review of #775, B2)."""
+    header = {
+        "format": "cortex-memory-export",
+        "version": 1,
+        "exported_at": "2026-10-21T00:00:00+00:00",
+        "project_root": root,
+        "include_global": False,
+        "count": len(records),
+        "fields": list(portability.EXPORT_FIELDS),
+    }
+    base = {field: None for field in portability.EXPORT_FIELDS}
+    rows = [{**base, "tags": [], **r} for r in records]
+    path = tmp_path / "crafted.jsonl"
+    lines = [json.dumps(header)] + [json.dumps(r) for r in rows]
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+def _stored(store, content: str) -> list[dict]:
+    rows = store._conn.execute(
+        "SELECT directory_context, is_global, is_protected, is_team_decision "
+        "FROM memories WHERE content = %s",
+        (content,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@pytest.mark.parametrize(
+    "directory",
+    [
+        f"/work/{RUN}/b/planted",  # another project
+        f"/work/{RUN}/a/../b",  # escapes after normalisation
+        f"/work/{RUN}/a/src/../../b",
+        "relative/path",
+        "",
+    ],
+)
+def test_import_refuses_a_record_outside_the_file_root(store, tmp_path, directory):
+    content = f"planted {RUN} {uuid.uuid4().hex[:6]}"
+    path = _crafted(
+        tmp_path,
+        f"/work/{RUN}/a",
+        [
+            {"content": f"ok {content}", "directory_context": f"/work/{RUN}/a"},
+            {"content": content, "directory_context": directory},
+        ],
+    )
+    with pytest.raises(ValueError, match="outside"):
+        portability.import_export(store, path, into_project_root=f"/work/{RUN}/c")
+    assert _stored(store, content) == [] and _stored(store, f"ok {content}") == []
+
+
+def test_import_turns_flags_off_unless_trusted(store, tmp_path):
+    root = f"/work/{RUN}/flags"
+    flags = {"is_global": True, "is_protected": True, "is_team_decision": True}
+    records = [{"content": f"flagged {RUN}", "directory_context": root, **flags}]
+    portability.import_export(store, _crafted(tmp_path, root, records))
+    (row,) = _stored(store, f"flagged {RUN}")
+    assert not any(row[k] for k in flags), row
+    trusted = [{"content": f"trusted {RUN}", "directory_context": root, **flags}]
+    path = _crafted(tmp_path, root, trusted)
+    portability.import_export(store, path, trust_flags=True)
+    (row,) = _stored(store, f"trusted {RUN}")
+    assert all(row[k] for k in flags), row
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"content": 42},
+        {"content": ""},
+        {"tags": "not-a-list"},
+        {"tags": [1, 2]},
+        {"importance": "high"},
+        {"importance": float("nan")},
+        {"is_protected": "yes"},
+        {"domain": ["d"]},
+        {"created_at": "yesterday"},
+    ],
+    ids=lambda b: next(iter(b)) + "=" + repr(next(iter(b.values())))[:12],
+)
+def test_import_type_checks_every_field(store, tmp_path, bad):
+    root = f"/work/{RUN}/types"
+    record = {"content": f"typed {RUN}", "directory_context": root, **bad}
+    with pytest.raises(ValueError):
+        portability.import_export(store, _crafted(tmp_path, root, [record]))
+
