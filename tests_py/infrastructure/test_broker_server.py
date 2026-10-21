@@ -16,11 +16,8 @@ import time
 import pytest
 
 from mcp_server.infrastructure import broker_protocol as protocol
-from mcp_server.infrastructure.broker_client import (
-    BrokerClient,
-    BrokerRemoteError,
-    BrokerStore,
-)
+from mcp_server.infrastructure.broker_client import BrokerClient, BrokerStore
+from mcp_server.infrastructure.broker_errors import BrokerRemoteError
 from mcp_server.infrastructure.broker_executor import StoreExecutor
 from mcp_server.infrastructure.broker_scheduler import SchedulerPolicy
 from mcp_server.infrastructure.broker_server import (
@@ -113,8 +110,10 @@ def test_in_process_and_private_members_are_not_exposed(harness):
 
 
 def test_a_remote_failure_is_reported_with_its_type(harness):
+    """A built-in exception type crosses back as itself, so callers that
+    catch it keep working; anything else is a BrokerRemoteError."""
     store = harness.store_client()
-    with pytest.raises(BrokerRemoteError, match="LookupError: no such memory"):
+    with pytest.raises(LookupError, match="no such memory"):
         store.fail()
 
 

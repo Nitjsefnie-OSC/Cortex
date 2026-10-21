@@ -91,3 +91,26 @@ def test_a_stale_socket_is_replaced_under_the_lease(root):
     finally:
         channel.close()
         started[0].close()
+
+
+def test_a_root_too_long_for_sun_path_moves_the_socket_to_the_user_runtime_dir(
+    root, monkeypatch
+):
+    deep = root / ("d" * 120)
+    deep.mkdir()
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(root / "run"))
+    base = broker_unix.socket_root(deep, "k")
+    assert base == root / "run" / f"cortex-{os.geteuid()}"
+    (root / "run").mkdir(mode=0o700)
+    runtime = broker_unix.runtime_directory(base, "k")
+    assert len(os.fsencode(str(runtime / broker_unix.SOCKET_NAME))) <= 103
+    assert stat.S_IMODE(base.stat().st_mode) == 0o700
+    assert broker_unix.socket_root(root, "k") == root  # short roots stay put
+
+
+def test_a_runtime_base_owned_by_someone_else_is_refused(root, monkeypatch):
+    base = root / "shared"
+    base.mkdir(mode=0o777)
+    base.chmod(0o777)  # writable by other users, as a squatted /tmp entry would be
+    with pytest.raises(PermissionError, match="writable by other users"):
+        broker_unix.runtime_directory(base, "k")

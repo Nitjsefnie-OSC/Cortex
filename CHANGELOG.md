@@ -35,6 +35,25 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Every Cortex process talks to one store broker per store (ADR-1112
+  increment 5).** With PostgreSQL, MCP servers, hooks, background jobs, the
+  capture worker and doctor's store checks no longer open connections: the
+  store factory returns a client of the store's broker, which the first
+  client starts (through the plugin launcher, detached) and which exits
+  after `CORTEX_BROKER_IDLE_SECONDS` without clients. The broker migrates
+  the schema at start; a schema it cannot use reaches every client as the
+  same `SchemaTooNewError` / `SchemaBehindError` an in-process store raised,
+  and a broker that dies before answering is reported with its start-up
+  output, never as a silent SQLite fallback. Built-in exception types raised
+  in the broker are raised again as themselves in the client. Socket paths
+  too long for `sun_path` (a long `CORTEX_CLAUDE_DIR`) move to an owner-only
+  `$XDG_RUNTIME_DIR/cortex-<uid>` or `/tmp/cortex-<uid>`. Doctor reports
+  whether the broker runs, without starting it. Measured on a scripted
+  session (`python scripts/repro_connection_broker.py census`): every Cortex
+  backend belongs to the broker's PID, no other client backend, no
+  `idle in transaction` sample in 284; first hook 1.1 s (broker start),
+  next hooks 0.4 to 0.5 s.
+
 - **Background work stays on its own connections; every store connection
   is named and bounded (ADR-1112 increment 4).** Tool handlers that run
   batch work (consolidate, backfill, ingest, import, seed, rebuild profiles)

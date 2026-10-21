@@ -388,3 +388,21 @@ local time).
 
 - A5 and probe A: the `priority` and `bounds` entries above. The first full-suite run after naming store connections failed one test: the saturation baseline identified its children by `PGAPPNAME`, which the store now overrides. Store connections are named `cortex-store-<pool>-<pid>` and the baseline maps backends to children by PID; it reproduces as before (4 of 8 refused or timed out, blocked children holding 3 to 4 connections).
 - Full suite: 10329 passed, 26 skipped (`pytest tests_py`, 524 s).
+
+### census entry withdrawn before commit
+
+- The first logged `census` run recorded each step's output tail, which quoted a path under the developer's home directory (a SessionStart banner naming another memory tool's database). The entry was removed before any commit and the measurement now records seconds and exit code per step only; the next entry is the re-run.
+
+### 2026-10-21T02:46:54+00:00 census
+
+- head: `36b8237137e560b23da9fbca37ae3f9ca950fb11` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 0 (1 passed in 22.16s)
+- measured: `{"cold_hook": [1.12, 0], "consolidate": [5.33, 0], "idle_in_transaction_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["26471"], "peak_cortex_backends": 6, "remember": [7.87, 0], "samples": 284, "seeded_memories": 5000, "warm_hooks": [[0.44, 0], [0.51, 0], [0.49, 0]]}`
+
+### 16. 2026-10-21T05:40Z: increment 5, the suite through the broker
+
+- Variable: the store a test process gets (`CORTEX_TEST_BROKER_MODE=1`: a real broker per Cortex root, started by the first store user through the production launcher; default: the in-process store the broker runs).
+- First broker-mode run: 40 failed, 40 errors, 10185 passed, 122 skipped. Grouped by error line (a failing test and its teardown error can both count): 56 `AttributeError: _conn` and 10 `AttributeError: acquire_interactive` (tests reaching the store's own connection or pools), 8 `TypeError` from tests re-instantiating the store's class, 3 hook tests failed on `AF_UNIX path too long` (a hook test's own `CORTEX_CLAUDE_DIR` under `/var/folders` put the socket past `sun_path`), 1 used the private `store._now_iso()` (production, `core/write_post_store.py`), 1 asserted the test-database drop statement, 1 asserted a clean process table mid-session, 1 captured a log line emitted where the operation runs; 96 further tests skipped themselves because the store was not a `PgMemoryStore`.
+- Fixes: production, `_now_iso` replaced by the stores' own expression, socket paths that do not fit move to an owner-only per-user runtime directory, built-in exception types cross back as themselves, start-up failures reach the client with their reason. Tests, counted: 24 modules and 1 test marked `in_process_store` (they test the store itself), 8 files read rows through `tests_py/_db_peek.store_connection`, 1 test skipped in broker mode (mid-session process table).
+- Final: default 10336 passed, 27 skipped; broker mode 10335 passed, 28 skipped (the 27 plus that one).

@@ -49,6 +49,10 @@ inputs:
     description: "Run coverage, the Claude/Codex MCP host contract check, the advertised-test-count/badge check, and upload the coverage artifact. Scoped to a single matrix leg (Python 3.12) — the other three legs skip it. Compared against the literal 'true'."
     required: false
     default: "false"
+  broker-mode:
+    description: "Run the suite with every store reached through a real store broker (CORTEX_TEST_BROKER_MODE=1, ADR-1112). Compared against the literal 'true'."
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -276,6 +280,7 @@ runs:
         TRANSFORMERS_OFFLINE: "1"
         CORTEX_RERANKER_OFFLINE: "1"
         RUN_EXTENDED_CHECKS: ${{ inputs.run-extended-checks }}
+        CORTEX_TEST_BROKER_MODE: ${{ inputs.broker-mode == 'true' && '1' || '' }}
       # source: ADR-0800
 
 

@@ -69,8 +69,28 @@ class SocketChannel:
             pass
 
 
+# source: unix(4) on macOS (sun_path holds 104 bytes) and unix(7) on Linux
+# (108); one byte for the terminating NUL
+_SUN_PATH_MAX = 103
+
+
+def socket_root(root: Path, key: str) -> Path:
+    """Where the store's private directory lives: under the Cortex root when
+    the socket path fits in ``sun_path``, else under the user's runtime
+    directory (``$XDG_RUNTIME_DIR``, or ``/tmp/cortex-<uid>`` resolved), which
+    ``runtime_directory`` creates owner-only and checks like the root."""
+    candidate = root.expanduser().absolute() / RUNTIME_NAME / key / SOCKET_NAME
+    if len(os.fsencode(str(candidate))) <= _SUN_PATH_MAX:
+        return root
+    base = os.environ.get("XDG_RUNTIME_DIR") or os.path.realpath("/tmp")
+    return Path(base) / f"cortex-{os.geteuid()}"
+
+
 def runtime_directory(root: Path, key: str) -> Path:
-    """``root/.store-broker/<key>``: owner-only, one per store."""
+    """``root/.store-broker/<key>``: owner-only, one per store. ``root`` is
+    created owner-only if missing (the ``socket_root`` under ``/tmp``); its
+    owner and mode are then checked like every parent (ADR-0512)."""
+    root.expanduser().absolute().mkdir(mode=endpoint.PRIVATE_DIR, exist_ok=True)
     return endpoint.runtime_directory(root / RUNTIME_NAME, key)
 
 

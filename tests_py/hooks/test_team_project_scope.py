@@ -16,6 +16,9 @@ from mcp_server.hooks.agent_briefing_query import _fetch_agent_context
 from mcp_server.hooks.session_start_fetch import _fetch_team_decisions
 from tests_py._hermetic_hook_env import hermetic_hook_env
 
+# source: ADR-1112 (tests of the store itself run on the in-process store)
+pytestmark = pytest.mark.in_process_store
+
 
 def _write(content, **kwargs):
     result = asyncio.run(handler({"content": content, "force": True, **kwargs}))

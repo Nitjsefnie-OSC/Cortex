@@ -9,6 +9,9 @@ from tests_py._store_call import bind_store_calls
 from mcp_server.infrastructure.file_memory_priming import prime_file_memories
 from mcp_server.infrastructure.memory_store import get_shared_store
 
+# source: ADR-1112 (tests of the store itself run on the in-process store)
+pytestmark = pytest.mark.in_process_store
+
 
 def _insert(store, content="a.py", directory="/repo", **flags):
     columns = ["content", "directory_context", "heat_base", *flags]

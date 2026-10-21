@@ -16,6 +16,9 @@ from mcp_server.handlers.forget import _get_store
 from mcp_server.hooks import session_start
 from mcp_server.hooks import session_start_curation as curation
 
+# source: ADR-1112 (tests of the store itself run on the in-process store)
+pytestmark = pytest.mark.in_process_store
+
 _DOMAIN = "session-start-chain-heads"
 _PROJECT = "/fixture/session-start-chain-heads"
 # source: mcp_server/infrastructure/pg_schema.py:29 (memories.embedding vector(384))

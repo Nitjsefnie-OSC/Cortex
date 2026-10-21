@@ -66,7 +66,7 @@ def _seed(url: str) -> None:
 
 
 def _launcher(root: Path, children: list):
-    def launch(module, arguments, environment, fds):
+    def launch(module, arguments, environment, fds, output):
         env = {**os.environ, **environment, "CORTEX_CLAUDE_DIR": str(root)}
         env.update(
             CORTEX_BROKER_QUEUE_LIMIT=str(_QUEUE), CORTEX_BROKER_IDLE_SECONDS="5"

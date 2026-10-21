@@ -40,6 +40,17 @@ from scripts.check_venv_lock_parity import postgresql_extra_drift
 # importers do `from ... import METHODOLOGY_DIR` (a value copy, 40 modules),
 # so the env var must be set before the first import — conftest.py is loaded
 # before any test module, and nothing above this point imports mcp_server.
+# ADR-1112 increment 5: in production every process but the store broker
+# talks to the broker. By default the suite runs the store in process (what
+# the broker itself executes), so a monkeypatch reaches the code it patches;
+# CORTEX_TEST_BROKER_MODE=1 runs the same tests through a real broker
+# (scripts/repro_connection_broker.py brokermode).
+_BROKER_MODE = os.environ.get("CORTEX_TEST_BROKER_MODE") == "1"
+if _BROKER_MODE:
+    os.environ.pop("CORTEX_STORE_IN_PROCESS", None)
+    os.environ.setdefault("CORTEX_BROKER_IDLE_SECONDS", "5")
+else:
+    os.environ["CORTEX_STORE_IN_PROCESS"] = "1"
 _TEST_CLAUDE_DIR = tempfile.mkdtemp(prefix="cortex_test_claude_")
 
 

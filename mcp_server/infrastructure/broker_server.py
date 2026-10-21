@@ -65,12 +65,16 @@ class BrokerServer:
         policy: ServerPolicy,
         identity: Identity,
         peer_label: Callable[[Any], str] = lambda channel: "peer",
+        refusal: tuple[str, str] | None = None,
     ) -> None:
         self._accept = accept
         self._execute = execute
         self._policy = policy
         self._identity = identity
         self._peer_label = peer_label
+        # (type, message) of the failure that kept the store closed: every
+        # client is told why, then the broker exits once idle (decision 7)
+        self._refusal = refusal
         self._scheduler = Scheduler(policy.scheduler)
         self._lock = threading.Lock()
         self._connections = 0
@@ -104,8 +108,17 @@ class BrokerServer:
         deadline = time.monotonic() + HANDSHAKE_SECONDS
         hello = loads(channel.recv_frame(MAX_REQUEST_BYTES, deadline))
         if hello.get("t") != "hello" or hello.get("protocol") != PROTOCOL_VERSION:
-            self._send(channel, {"t": "refused", "error": "unsupported protocol"})
+            refused = {
+                "t": "refused",
+                "type": "ProtocolError",
+                "error": "unsupported protocol",
+            }
+            self._send(channel, refused)
             raise ProtocolError(f"refused hello: {hello.get('protocol')!r}")
+        if self._refusal is not None:
+            kind, message = self._refusal
+            self._send(channel, {"t": "refused", "type": kind, "error": message})
+            raise ConnectionError("store unavailable")
         self._send(
             channel,
             {

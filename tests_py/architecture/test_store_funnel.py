@@ -124,3 +124,20 @@ def test_every_operation_handed_to_the_store_is_marked():
             if not is_store_operation(fn):
                 unmarked.append(f"{path.relative_to(_ROOT)}:{line} {name}")
     assert unmarked == []
+
+
+def test_no_lower_layer_builds_a_shared_store():
+    """The store broker runs infrastructure and core code; if any of it built
+    a store through the factory, the broker would connect to itself
+    (ADR-1112 decision 1)."""
+    builders = [
+        f"{path.relative_to(_ROOT)}:{i}"
+        for package in ("infrastructure", "core", "shared")
+        for path in (_ROOT / package).rglob("*.py")
+        if path.name != "memory_store.py"
+        for i, line in _code_lines(path)
+        if "get_shared_store(" in line
+        or "MemoryStore("
+        in line.replace("PgMemoryStore(", "").replace("SqliteMemoryStore(", "")
+    ]
+    assert builders == []

@@ -23,6 +23,11 @@ import time
 from collections.abc import Callable, Iterator
 from typing import Any
 
+from mcp_server.infrastructure.broker_errors import (
+    BrokerUnavailableError,
+    refusal_error,
+    remote_error,
+)
 from mcp_server.infrastructure.broker_protocol import (
     MAX_REQUEST_BYTES,
     MAX_RESPONSE_BYTES,
@@ -47,26 +52,20 @@ DEADLINES = {"interactive": 30.0, "background": 1800.0}
 Connect = Callable[[float], Any]  # monotonic deadline -> connected channel
 
 
-class BrokerUnavailableError(ConnectionError):
-    """The broker could not be reached or the channel broke mid-request; a
-    write may or may not have happened and is never replayed."""
-
-
-class BrokerRemoteError(RuntimeError):
-    """The broker ran the request and it failed there."""
-
-    def __init__(self, type_name: str, message: str) -> None:
-        super().__init__(f"{type_name}: {message}")
-        self.type_name = type_name
-
-
 class BrokerClient:
-    def __init__(self, connect: Connect, client_kind: str) -> None:
+    def __init__(
+        self,
+        connect: Connect,
+        client_kind: str,
+        diagnose: Callable[[], str] = lambda: "",
+    ) -> None:
         self._connect = connect
         self._kind = client_kind
+        self._diagnose = diagnose
         self._local = threading.local()
         self._ids = 0
         self._ids_lock = threading.Lock()
+        self._open_channels: set[Any] = set()
 
     def _hello(self, channel: Any, deadline: float, drain: bool = False) -> dict:
         hello = {
@@ -83,9 +82,12 @@ class BrokerClient:
     def _open(self, deadline: float) -> Any:
         channel = self._connect(deadline)
         welcome = self._hello(channel, deadline)
+        if welcome.get("t") == "refused":
+            channel.close()
+            raise refusal_error(str(welcome.get("type")), str(welcome.get("error")))
         if welcome.get("t") != "welcome":
             channel.close()
-            raise ProtocolError(f"broker refused: {welcome.get('error')}")
+            raise ProtocolError(f"unexpected handshake answer {welcome.get('t')!r}")
         served = int(welcome.get("schema", 0))
         if served > SCHEMA_VERSION:
             channel.close()
@@ -126,13 +128,27 @@ class BrokerClient:
         if channel is None:
             channel = self._open(deadline)
             self._local.channel = channel
+            with self._ids_lock:
+                self._open_channels.add(channel)
         return channel
 
     def _discard(self) -> None:
         channel = getattr(self._local, "channel", None)
         self._local.channel = None
         if channel is not None:
+            with self._ids_lock:
+                self._open_channels.discard(channel)
             channel.close()
+
+    def connect(self) -> None:
+        """Open this thread's channel now, launching the broker if needed:
+        a store that cannot be opened is reported where the store is made."""
+        try:
+            self._channel(time.monotonic() + DEADLINES["interactive"])
+        except (OSError, ProtocolError, TimeoutError) as exc:
+            raise BrokerUnavailableError(
+                f"store broker: {type(exc).__name__}: {exc}{self._diagnose()}"
+            ) from exc
 
     def request(self, kind: str, name: str, args: tuple, kwargs: dict, cls: str) -> Any:
         budget = DEADLINES[cls]
@@ -156,13 +172,15 @@ class BrokerClient:
             reply = loads(channel.recv_frame(MAX_RESPONSE_BYTES, deadline))
         except (OSError, ProtocolError, TimeoutError) as exc:
             self._discard()
-            raise BrokerUnavailableError(f"store broker: {exc}") from exc
+            raise BrokerUnavailableError(
+                f"store broker: {type(exc).__name__}: {exc}{self._diagnose()}"
+            ) from exc
         if reply.get("id") != request_id:
             self._discard()
             raise BrokerUnavailableError("store broker answered out of order")
         if not reply.get("ok"):
             error = reply.get("error") or {}
-            raise BrokerRemoteError(str(error.get("type")), str(error.get("message")))
+            raise remote_error(str(error.get("type")), str(error.get("message")))
         return reply.get("v")
 
     def broker_pid(self) -> int | None:
@@ -170,7 +188,12 @@ class BrokerClient:
         return getattr(self._local, "broker_pid", None)
 
     def close(self) -> None:
-        self._discard()
+        """Close every channel this client opened, from any thread."""
+        self._local.channel = None
+        with self._ids_lock:
+            channels, self._open_channels = self._open_channels, set()
+        for channel in channels:
+            channel.close()
 
 
 class BrokerStore:

@@ -18,6 +18,7 @@ source: ADR-1112
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import logging
 import os
 import socket
@@ -32,6 +33,10 @@ from mcp_server.infrastructure.pg_migrations import apply_schema
 from mcp_server.infrastructure.schema_versions import SCHEMA_VERSION, code_revision
 
 logger = logging.getLogger("cortex.store_broker")
+
+# source: ADR-1112 decision 7: a refusing broker stays this long after its
+# last client, so the client that launched it reads why, then exits
+REFUSAL_IDLE_SECONDS = 2.0
 
 
 def _arguments() -> argparse.Namespace:
@@ -52,6 +57,40 @@ def _open_store(url: str):
     return PgMemoryStore(database_url=url)
 
 
+def _open_or_refuse(url: str):
+    """The store, or None and the (type, message) every client will be told."""
+    try:
+        return _open_store(url), None
+    except Exception as exc:  # noqa: BLE001 — reported to every client and logged, then the broker exits
+        logger.exception("store broker could not open the store")
+        return None, (type(exc).__name__, str(exc))
+
+
+def _serve(accept, close_listener, url: str, peer_label=None) -> None:
+    store, refusal = _open_or_refuse(url)
+    policy = server_policy()
+    if refusal is not None:
+        # source: ADR-1112 decision 7, long enough for the waiting launcher
+        policy = dataclasses.replace(policy, idle_seconds=REFUSAL_IDLE_SECONDS)
+    extra = {"peer_label": peer_label} if peer_label is not None else {}
+    try:
+        BrokerServer(
+            accept,
+            StoreExecutor(store) if store is not None else _closed_store,
+            policy,
+            Identity(code_revision(), SCHEMA_VERSION),
+            refusal=refusal,
+            **extra,
+        ).run(close_listener)
+    finally:
+        if store is not None:
+            store.close()
+
+
+def _closed_store(*_args, **_kwargs):
+    raise RuntimeError("the store is not open")  # unreachable: the handshake refuses
+
+
 def _serve_unix(args: argparse.Namespace, url: str, runtime: Path) -> None:
     from mcp_server.infrastructure import broker_unix  # noqa: PLC0415 — Unix transport only
     from mcp_server.infrastructure.capture_socket import remove_socket  # noqa: PLC0415 — same
@@ -66,18 +105,12 @@ def _serve_unix(args: argparse.Namespace, url: str, runtime: Path) -> None:
         1.0
     )  # source: ADR-1112 the accept loop re-checks shutdown each second
     try:
-        store = _open_store(url)
-        try:
-            server = BrokerServer(
-                lambda: broker_unix.accept(listener),
-                StoreExecutor(store),
-                server_policy(),
-                Identity(code_revision(), SCHEMA_VERSION),
-                broker_unix.peer_label,
-            )
-            server.run(listener.close)
-        finally:
-            store.close()
+        _serve(
+            lambda: broker_unix.accept(listener),
+            listener.close,
+            url,
+            broker_unix.peer_label,
+        )
     finally:
         listener.close()
         remove_socket(path)
@@ -89,17 +122,7 @@ def _serve_pipe(args: argparse.Namespace, url: str) -> None:
 
     listener = broker_pipe.PipeListener(args.pipe_name)
     try:
-        store = _open_store(url)
-        try:
-            server = BrokerServer(
-                listener.accept,
-                StoreExecutor(store),
-                server_policy(),
-                Identity(code_revision(), SCHEMA_VERSION),
-            )
-            server.run(listener.close)
-        finally:
-            store.close()
+        _serve(listener.accept, listener.close, url)
     finally:
         listener.close()
 
@@ -113,12 +136,16 @@ def main() -> None:
     from mcp_server.infrastructure.config import CLAUDE_DIR  # noqa: PLC0415 — composition resolves the configured root
 
     if sys.platform == "win32":
-        configure_logging(CLAUDE_DIR / ".store-broker", store_key(url))
+        configure_logging(CLAUDE_DIR / ".store-broker", store_key(url, CLAUDE_DIR))
         _serve_pipe(args, url)
         return
-    from mcp_server.infrastructure.broker_unix import runtime_directory  # noqa: PLC0415 — Unix transport only
+    from mcp_server.infrastructure.broker_unix import (  # noqa: PLC0415 — Unix transport only
+        runtime_directory,
+        socket_root,
+    )
 
-    runtime = runtime_directory(CLAUDE_DIR, store_key(url))
+    key = store_key(url, CLAUDE_DIR)
+    runtime = runtime_directory(socket_root(CLAUDE_DIR, key), key)
     configure_logging(runtime, "broker")
     _serve_unix(args, url, runtime)
 

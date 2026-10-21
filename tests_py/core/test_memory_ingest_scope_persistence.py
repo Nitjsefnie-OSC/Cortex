@@ -5,6 +5,9 @@ import pytest
 from mcp_server.core.memory_ingest import ingest_memory
 from mcp_server.handlers.forget import _get_store
 
+# source: ADR-1112 (tests of the store itself run on the in-process store)
+pytestmark = pytest.mark.in_process_store
+
 
 @pytest.mark.parametrize("origin", ["local_action", "deliberate", "network", "unknown"])
 @pytest.mark.parametrize("write_class", ["auto", "deliberate"])

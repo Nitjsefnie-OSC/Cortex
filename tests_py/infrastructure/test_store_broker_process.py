@@ -12,14 +12,13 @@ import os
 import signal
 import subprocess
 import sys
-import tempfile
 import threading
 from pathlib import Path
 
 import pytest
 
 from mcp_server.infrastructure import broker_endpoint
-from mcp_server.infrastructure.broker_client import BrokerUnavailableError
+from mcp_server.infrastructure.broker_errors import BrokerUnavailableError
 from mcp_server.infrastructure.broker_unix import SOCKET_NAME, runtime_directory
 from tests_py.conftest import _USE_PG
 
@@ -29,37 +28,6 @@ pytestmark = [
         sys.platform == "win32", reason="Unix transport; the pipe has its own job"
     ),
 ]
-
-_REPO = Path(__file__).resolve().parents[2]
-
-
-@pytest.fixture
-def broker_env(monkeypatch):
-    # sockaddr_un holds about 104 bytes on macOS: a short root under /tmp
-    root = Path(tempfile.mkdtemp(prefix="sb-", dir=Path("/tmp").resolve()))
-    children: list[subprocess.Popen] = []
-
-    def launcher(module, arguments, environment, fds):
-        env = {**os.environ, **environment, "CORTEX_CLAUDE_DIR": str(root)}
-        env["CORTEX_BROKER_IDLE_SECONDS"] = "2"
-        children.append(
-            subprocess.Popen(
-                [sys.executable, "-m", module, *arguments],
-                pass_fds=fds,
-                start_new_session=True,
-                stdin=subprocess.DEVNULL,
-                cwd=_REPO,
-                env=env,
-            )
-        )
-
-    monkeypatch.setattr(broker_endpoint, "_launcher", launcher)
-    yield root, children
-    for child in children:
-        if child.poll() is None:
-            child.kill()
-        child.wait(timeout=10)
-    subprocess.run(["rm", "-rf", str(root)], check=False)
 
 
 def _store(root: Path):
@@ -99,7 +67,7 @@ def test_a_crashed_broker_is_relaunched_and_no_write_is_replayed(broker_env):
     store.get_memory(-1)
     os.kill(children[0].pid, signal.SIGKILL)
     children[0].wait(timeout=10)
-    key = broker_endpoint.store_key(os.environ["DATABASE_URL"])
+    key = broker_endpoint.store_key(os.environ["DATABASE_URL"], root)
     assert (runtime_directory(root, key) / SOCKET_NAME).exists()  # stale
     with pytest.raises(BrokerUnavailableError):
         store.get_memory(-1)  # the in-flight channel broke: reported, not retried
@@ -113,7 +81,7 @@ def test_the_broker_exits_when_idle_and_removes_its_socket(broker_env):
     store.get_memory(-1)
     store.close()
     assert children[0].wait(timeout=20) == 0
-    key = broker_endpoint.store_key(os.environ["DATABASE_URL"])
+    key = broker_endpoint.store_key(os.environ["DATABASE_URL"], root)
     assert not (runtime_directory(root, key) / SOCKET_NAME).exists()
 
 
@@ -167,7 +135,7 @@ def test_abusive_peers_are_dropped_and_the_broker_keeps_serving(broker_env):
     root, children = broker_env
     store = _store(root)
     store.get_memory(-1)
-    key = broker_endpoint.store_key(os.environ["DATABASE_URL"])
+    key = broker_endpoint.store_key(os.environ["DATABASE_URL"], root)
     path = runtime_directory(root, key) / SOCKET_NAME
     abusive = [_raw(path) for _ in range(3)]
     abusive[0].sendall(b"\x00\x00\x00\x05hello")

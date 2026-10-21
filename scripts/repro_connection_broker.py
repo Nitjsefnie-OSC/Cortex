@@ -19,6 +19,9 @@ recorded like a passing one.
 * ``priority``: acceptance A5, a real broker on a private cluster with the
   heavy load sent as background, then as interactive
   (tests_py/infrastructure/test_broker_priority_repro.py).
+* ``census``: acceptance A2 and A4, a scripted session of real hook and tool
+  processes on a private cluster with a ``pg_stat_activity`` sampler
+  (tests_py/infrastructure/test_broker_session_census_repro.py).
 * ``bounds``: the audit's probe A on the store's connections: name and
   session bounds per pool (tests_py/infrastructure/test_pg_session_bounds.py).
 
@@ -49,6 +52,7 @@ TARGETS = {
     "increment0": "tests_py/infrastructure/test_pg_no_runtime_ddl_no_idle_tx.py",
     "priority": "tests_py/infrastructure/test_broker_priority_repro.py",
     "bounds": "tests_py/infrastructure/test_pg_session_bounds.py",
+    "census": "tests_py/infrastructure/test_broker_session_census_repro.py",
 }
 
 

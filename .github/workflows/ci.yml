@@ -109,6 +109,24 @@ jobs:
 
           run-extended-checks: ${{ matrix.python-version == '3.12' }}
 
+  # The same PostgreSQL suite with every store reached through a real store
+  # broker process (ADR-1112 increment 5): proves the broker serves every
+  # surface the tests exercise, not only the in-process store it runs.
+  test-broker-mode:
+    needs: [changes, lint]
+    if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || needs.changes.outputs.code == 'true' || needs.changes.outputs.deps == 'true' || needs.changes.outputs.workflows == 'true')
+    name: Test through the store broker (Python 3.12)
+    runs-on: ubuntu-latest
+    # source: ADR-1112 the 3.12 suite leg's bound (ADR-0802)
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/test-suite
+        with:
+          python-version: "3.12"
+          broker-mode: "true"
+
   test-sqlite:
     needs: [changes, lint]
     # source: ADR-0802
@@ -1131,6 +1149,12 @@ jobs:
           CORTEX_BROKER_MEASUREMENTS: "1"
         run: python scripts/repro_connection_broker.py priority
 
+      - name: One broker holds every connection, no idle transaction (A2, A4)
+        env:
+          CORTEX_TEST_DATABASE_URL: postgresql://127.0.0.1:1/unused
+          CORTEX_BROKER_MEASUREMENTS: "1"
+        run: python scripts/repro_connection_broker.py census
+
       - name: Lock-chain reproduction (pre-fix main against this tree)
         run: python scripts/repro_lock_chain.py --base-ref origin/main --other-tree ""
 
@@ -1156,6 +1180,7 @@ jobs:
       - test-sqlite
       - mcp-host-config
       - test-windows
+      - test-broker-mode
       - release-deps
       - craftsmanship
       - lint
@@ -1174,7 +1199,7 @@ jobs:
           # source: ADR-0802
 
 
-          ALLOWED_SKIPS: test,test-sqlite,mcp-host-config,test-windows,release-deps,craftsmanship,typecheck,build,docker-runtime-build,devcontainer-build,docker-smoke,install-e2e,broker-measurements
+          ALLOWED_SKIPS: test,test-broker-mode,test-sqlite,mcp-host-config,test-windows,release-deps,craftsmanship,typecheck,build,docker-runtime-build,devcontainer-build,docker-smoke,install-e2e,broker-measurements
         run: python3 scripts/check_ci_gate_results.py
 
   # source: ADR-0802

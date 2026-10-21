@@ -23,6 +23,8 @@ CODE_JOBS = frozenset(
         "install-e2e",
         # source: ADR-1112 (broker and versioned schema)
         "broker-measurements",
+        # source: ADR-1112 increment 5 (the suite through the store broker)
+        "test-broker-mode",
     }
 )
 DOCKER_BUILD_JOBS = frozenset({"docker-runtime-build", "devcontainer-build"})
