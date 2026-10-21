@@ -1,4 +1,4 @@
-"""scrub_secrets runs in linear time (review of PR #775, N2).
+"""redact_shapes (scrub_secrets before PR #775) runs in linear time (N2).
 
 The embedded-URL regex retried from every letter of a long letter run: 100 KB
 of ``a`` took 8 s, 300 KB about 70 s. The scanner that replaced it must
@@ -11,7 +11,7 @@ import random
 import re
 import time
 
-from mcp_server.shared.redaction import scrub_secrets
+from mcp_server.shared.redaction import redact_shapes
 from mcp_server.shared.redaction_gate import redact_text
 
 # source: the pattern scrub_secrets used up to PR #775 (ADR-0663)
@@ -32,7 +32,7 @@ def test_url_spans_match_the_regex_they_replace():
 
 
 def test_a_url_password_is_still_redacted():
-    out = scrub_secrets("see postgres://u:hunter22@db/x and ftp://a/b")
+    out = redact_shapes("see postgres://u:hunter22@db/x and ftp://a/b")
     assert "hunter22" not in out and "ftp://a/b" in out
 
 

@@ -24,14 +24,14 @@ from mcp_server.shared import gated_files
 from mcp_server.shared.log_rotation import open_rotating_log
 from mcp_server.shared.process_liveness import pid_alive
 from mcp_server.shared.redaction_gate import RedactingFilter, redact_text
-from scripts.secret_corpus import samples
+from scripts.secret_corpus import sample, samples
 from tests_py._db_text_scan import locations
 from tests_py.conftest import _USE_PG  # type: ignore  # noqa: E402
 
 CORPUS = samples()
-SECRET = CORPUS["anthropic-api-key"][1]
-GH = CORPUS["github-pat"][1]
-PEM = CORPUS["private-key"][1]
+ANTHROPIC = sample("anthropic-api-key").value
+GH = sample("github-pat").value
+PEM = sample("private-key").value
 DOMAIN = "redaction-gate-test"
 # source: ADR-1110 — upper bound for a detached relay to drain one line
 RELAY_DEADLINE_S = 60.0
@@ -58,8 +58,8 @@ def _memory(store, content: str) -> int:
 
 
 def test_store_insert_redacts_content_and_every_derived_column(store):
-    _memory(store, f"use {SECRET} and {GH} for ci")
-    assert locations(store, SECRET) == []
+    _memory(store, f"use {ANTHROPIC} and {GH} for ci")
+    assert locations(store, ANTHROPIC) == []
     assert locations(store, GH) == []
 
 
@@ -68,8 +68,8 @@ def test_raw_update_through_the_store_connection(store):
     sql = "UPDATE memories SET content = %s WHERE id = %s"
     if isinstance(store, SqliteMemoryStore):
         sql = sql.replace("%s", "?")
-    store._conn.execute(sql, (f"leak {SECRET}", mid))
-    assert locations(store, SECRET) == []
+    store._conn.execute(sql, (f"leak {ANTHROPIC}", mid))
+    assert locations(store, ANTHROPIC) == []
 
 
 def test_cursor_execute_and_executemany(store):
@@ -84,9 +84,9 @@ def test_cursor_execute_and_executemany(store):
         with store._conn.cursor() as cur:
             cur.executemany(sql, [("soft", "global", f"if {GH}", "x")])
     with store._conn.cursor() as cur:
-        cur.execute(sql, ("soft", "global", "y", f"then {SECRET}"))
+        cur.execute(sql, ("soft", "global", "y", f"then {ANTHROPIC}"))
     assert locations(store, GH) == []
-    assert locations(store, SECRET) == []
+    assert locations(store, ANTHROPIC) == []
 
 
 def test_wiki_writer_on_a_caller_supplied_connection(store):
@@ -97,11 +97,11 @@ def test_wiki_writer_on_a_caller_supplied_connection(store):
         "slug": "gate",
         "kind": "note",
         "title": f"title {GH}",
-        "body": f"body {SECRET}",
+        "body": f"body {ANTHROPIC}",
         "domain": DOMAIN,
     }
     upsert_page(store._conn, page)
-    assert locations(store, SECRET) == []
+    assert locations(store, ANTHROPIC) == []
     assert locations(store, GH) == []
 
 
@@ -111,12 +111,12 @@ def test_json_and_dict_parameters_are_redacted_recursively(store):
             "session_id": "s",
             "directory_context": "/x",
             "current_task": f"task {GH}",
-            "key_decisions": [{"nested": [f"deep {SECRET}"]}],
+            "key_decisions": [{"nested": [f"deep {ANTHROPIC}"]}],
             "custom_context": f"ctx {GH}",
             "domain": DOMAIN,
         }
     )
-    assert locations(store, SECRET) == []
+    assert locations(store, ANTHROPIC) == []
     assert locations(store, GH) == []
 
 
@@ -143,11 +143,11 @@ def test_pg_pool_connection_and_copy_are_gated():
             with conn.cursor() as cur:
                 cur.execute("CREATE TEMP TABLE gate_copy (v text) ON COMMIT DROP")
                 with cur.copy("COPY gate_copy (v) FROM STDIN") as cp:
-                    cp.write_row([f"row {SECRET}"])
+                    cp.write_row([f"row {ANTHROPIC}"])
                     with pytest.raises(TypeError, match="bypasses the redaction"):
                         cp.write(b"raw\n")
                 copied = cur.execute("SELECT v FROM gate_copy").fetchone()
-        assert SECRET not in copied["v"]
+        assert ANTHROPIC not in copied["v"]
         assert locations(store, GH) == []
     finally:
         store.close()
@@ -157,36 +157,36 @@ def test_embeddings_are_computed_from_redacted_text():
     from mcp_server.infrastructure.embedding_engine import get_embedding_engine
 
     engine = get_embedding_engine()
-    text = f"deploy with {SECRET}"
+    text = f"deploy with {ANTHROPIC}"
     assert engine.encode(text) == engine.encode(redact_text(text))
     assert engine.encode_batch([text]) == engine.encode_batch([redact_text(text)])
 
 
 def test_gated_file_writers(tmp_path):
     gated_files.write_text(tmp_path / "a.md", f"x {GH}")
-    gated_files.write_json(tmp_path / "b.json", {"k": [f"{SECRET}"]})
+    gated_files.write_json(tmp_path / "b.json", {"k": [f"{ANTHROPIC}"]})
     gated_files.write_bytes(tmp_path / "c.md", f"z {PEM}".encode())
     gated_files.append_text(tmp_path / "d.log", f"line {GH}\n")
     for name in ("a.md", "b.json", "c.md", "d.log"):
         content = (tmp_path / name).read_text()
-        assert GH not in content and SECRET not in content and PEM not in content
+        assert GH not in content and ANTHROPIC not in content and PEM not in content
 
 
 def test_rotating_log_stream_redacts_and_hands_out_no_descriptor(tmp_path):
     with open_rotating_log(tmp_path / "t.jsonl") as stream:
-        stream.write(f'{{"err": "{SECRET}"}}\n')
+        stream.write(f'{{"err": "{ANTHROPIC}"}}\n')
         with pytest.raises(OSError, match="no raw descriptor"):
             stream.fileno()
-    assert SECRET not in (tmp_path / "t.jsonl").read_text()
+    assert ANTHROPIC not in (tmp_path / "t.jsonl").read_text()
 
 
 def test_artifact_address_is_derived_from_redacted_text(monkeypatch, tmp_path):
     from mcp_server.infrastructure import artifact_store
 
     monkeypatch.setattr(artifact_store, "ARTIFACTS_DIR", tmp_path)
-    raw = f"oversized output {SECRET}\n" * 10
+    raw = f"oversized output {ANTHROPIC}\n" * 10
     path = artifact_store.store_artifact(raw)
-    assert SECRET not in path.read_text()
+    assert ANTHROPIC not in path.read_text()
     assert path == artifact_store.store_artifact(redact_text(raw))
 
 
@@ -198,14 +198,14 @@ def test_log_file_handler_filter_redacts_message_and_traceback(tmp_path):
     try:
         logger.error("auth failed for %s", GH)
         try:
-            raise ValueError(f"bad key {SECRET}")
+            raise ValueError(f"bad key {ANTHROPIC}")
         except ValueError:
             logger.exception("boom")
     finally:
         logger.removeHandler(handler)
         handler.close()
     text = (tmp_path / "h.log").read_text()
-    assert GH not in text and SECRET not in text
+    assert GH not in text and ANTHROPIC not in text
     assert "[REDACTED:github-pat]" in text
 
 
@@ -280,7 +280,7 @@ def test_a_page_hash_is_taken_over_the_redacted_body(store):
     from mcp_server.infrastructure.pg_store_wiki_common import body_hash
     from mcp_server.infrastructure.pg_store_wiki_pages import upsert_page
 
-    body = f"body {SECRET}"
+    body = f"body {ANTHROPIC}"
     upsert_page(
         store._conn,
         {

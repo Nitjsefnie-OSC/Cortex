@@ -20,12 +20,12 @@ import pytest
 
 from mcp_server.handlers import memory_portability as portability
 from mcp_server.infrastructure.sqlite_store import SqliteMemoryStore
-from scripts.secret_corpus import samples
+from scripts.secret_corpus import sample
 from tests_py.conftest import _USE_PG  # type: ignore  # noqa: E402
 
 RUN = uuid.uuid4().hex[:10]
 PROJECT = f"/work/{RUN}/app"
-SECRET = samples()["github-pat"][1]
+GITHUB = sample("github-pat").value
 
 
 @pytest.fixture(params=["sqlite", "postgresql"])
@@ -109,15 +109,15 @@ def test_a_secret_stored_before_the_gate_leaves_the_store_redacted(store, tmp_pa
     # an ungated connection stands in for a row written before the gate
     if isinstance(store, SqliteMemoryStore):
         with sqlite3.connect(store._connection_registry._target) as raw:
-            raw.execute(raw_update.replace("%s", "?"), (f"token {SECRET}", mid))
+            raw.execute(raw_update.replace("%s", "?"), (f"token {GITHUB}", mid))
     else:
         import psycopg
 
         with psycopg.connect(store._url, autocommit=True) as raw:
-            raw.execute(raw_update, (f"token {SECRET}", mid))
+            raw.execute(raw_update, (f"token {GITHUB}", mid))
     out = tmp_path / "export.jsonl"
     portability.export_project(store, PROJECT, out)
-    assert SECRET not in out.read_text()
+    assert GITHUB not in out.read_text()
     assert "[REDACTED:github-pat]" in out.read_text()
 
 

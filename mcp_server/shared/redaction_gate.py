@@ -15,7 +15,7 @@ Detection is the vendored gitleaks v8.30.1 rule set
 (``redaction_rules/gitleaks.json``, provenance in
 ``third_party/gitleaks/v8.30.1/PROVENANCE.json``) applied by
 ``shared/redaction_engine``, followed by Cortex's own shapes
-(``shared/redaction.scrub_secrets``: URL passwords, ``Bearer`` values,
+(``shared/redaction.redact_shapes``: URL passwords, ``Bearer`` values,
 ``password=``-style assignments, PEM blocks).
 
 source: ADR-1110"""
@@ -29,11 +29,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from mcp_server.shared.redaction import scrub_secrets
+from mcp_server.shared.redaction import redact_shapes
 from mcp_server.shared.redaction_engine import (
     RuleSet,
     compile_rule_set,
-    find_secrets,
+    redaction_spans,
     redact_spans,
 )
 
@@ -78,11 +78,11 @@ def redact_text(text: str) -> str:
     if not text or type(text) is RedactedText:
         return text
     rules = rule_set()
-    spans = find_secrets(text, rules)
+    spans = redaction_spans(text, rules)
     view = _prose_view(text)
     if view != text:
-        spans += find_secrets(view, rules)
-    return RedactedText(scrub_secrets(redact_spans(text, spans)))
+        spans += redaction_spans(view, rules)
+    return RedactedText(redact_shapes(redact_spans(text, spans)))
 
 
 def redact_value(value: Any) -> Any:

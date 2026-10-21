@@ -20,15 +20,15 @@ from unittest.mock import patch
 import pytest
 
 from mcp_server.infrastructure.config import METHODOLOGY_DIR
-from scripts.secret_corpus import samples
+from scripts.secret_corpus import sample, samples
 from tests_py._db_text_scan import locations
 
 CORPUS = samples()
-ANTHROPIC = CORPUS["anthropic-api-key"][1]
-GITHUB = CORPUS["github-pat"][1]
-OPENAI = CORPUS["openai-api-key"][1]
-JWT = CORPUS["jwt"][1]
-SECRETS = (ANTHROPIC, GITHUB, OPENAI, JWT)
+ANTHROPIC = sample("anthropic-api-key").value
+GITHUB = sample("github-pat").value
+OPENAI = sample("openai-api-key").value
+JWT = sample("jwt").value
+FAKES = (ANTHROPIC, GITHUB, OPENAI, JWT)
 
 
 def _store():
@@ -39,16 +39,16 @@ def _store():
 
 def _assert_store_clean():
     store = _store()
-    for secret in SECRETS:
-        assert locations(store, secret) == [], secret[:8]
+    for fake in FAKES:
+        assert locations(store, fake) == [], fake[:8]
 
 
 def _assert_tree_clean(root: Path):
     for path in root.rglob("*"):
         if path.is_file() and path.suffix in {".md", ".json", ".jsonl", ".log", ""}:
             text = path.read_text(encoding="utf-8", errors="replace")
-            for secret in SECRETS:
-                assert secret not in text, f"{path}: {secret[:8]}"
+            for fake in FAKES:
+                assert fake not in text, f"{path}: {fake[:8]}"
 
 
 def _sentence() -> str:
@@ -132,8 +132,8 @@ def test_capture_hook_passes_only_redacted_content_and_artifacts(tmp_path):
     ):
         post_tool_capture.process_event(event)
     assert stored
-    for secret in SECRETS:
-        assert all(secret not in content for content in stored), secret[:8]
+    for fake in FAKES:
+        assert all(fake not in content for content in stored), fake[:8]
     _assert_tree_clean(tmp_path)
 
 

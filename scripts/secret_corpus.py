@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import random
 import string
+from typing import NamedTuple
 
 _ALNUM = string.ascii_letters + string.digits
 _B32 = string.ascii_uppercase + "234567"
@@ -70,6 +71,23 @@ def samples(seed: int = 20261021) -> dict[str, tuple[str, str]]:
     )
     texts["private-key"] = f"key file follows\n{values['private-key']}\n"
     return {rule: (texts[rule], values[rule]) for rule in values}
+
+
+class Sample(NamedTuple):
+    """One corpus entry: a text holding a fake credential, and the value."""
+
+    text: str
+    value: str
+
+
+def sample(rule_id: str, seed: int = 20261021) -> Sample:
+    """The corpus entry for one gitleaks rule id.
+
+    Tests take fixtures through this call rather than by subscripting the
+    dict with a literal rule id: a literal such as ``"anthropic-api-key"``
+    used as a key marks the value as a user's password for CodeQL's
+    sensitive-data heuristic, and these values are generated fakes."""
+    return Sample(*samples(seed)[rule_id])
 
 
 NEGATIVES = (

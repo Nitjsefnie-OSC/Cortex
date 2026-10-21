@@ -28,7 +28,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from mcp_server.shared.redaction_engine import find_secrets  # noqa: E402
+from mcp_server.shared.redaction_engine import redaction_spans  # noqa: E402
 from mcp_server.shared.redaction_gate import rule_set  # noqa: E402
 from scripts.secret_corpus import NEGATIVES, samples  # noqa: E402
 
@@ -58,7 +58,7 @@ def port_findings(root: Path) -> set[Finding]:
                 text = Path(dirpath, name).read_text(encoding="utf-8")
             except (UnicodeDecodeError, OSError):
                 continue
-            for start, _end, rule_id in find_secrets(text, rule_set()):
+            for start, _end, rule_id in redaction_spans(text, rule_set()):
                 found.add((rel, text.count("\n", 0, start) + 1, rule_id))
     return found
 
@@ -98,7 +98,7 @@ def gitleaks_findings(binary: str, root: Path) -> set[Finding]:
 
 
 def write_corpus(root: Path) -> None:
-    for rule_id, (text, _secret) in samples().items():
+    for rule_id, (text, _fake) in samples().items():
         (root / f"{rule_id}.txt").write_text(text + "\n", encoding="utf-8")
     (root / "negatives.txt").write_text("\n".join(NEGATIVES) + "\n", encoding="utf-8")
 

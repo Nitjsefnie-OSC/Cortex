@@ -14,12 +14,12 @@ import psycopg
 import pytest
 
 from mcp_server.handlers.injection_receipts import emit_hook_receipt
-from scripts.secret_corpus import samples
+from scripts.secret_corpus import sample
 from tests_py.conftest import _TEST_DB_URL, _USE_PG  # type: ignore  # noqa: E402
 
 pytestmark = pytest.mark.skipif(not _USE_PG, reason="PostgreSQL not reachable")
 
-KEY = samples()["github-pat"][1]
+KEY = sample("github-pat").value
 
 
 def _memory_id() -> int:

@@ -176,8 +176,10 @@ def _drop_shadowed_generic(
     return kept
 
 
-def find_secrets(text: str, rule_set: RuleSet) -> list[tuple[int, int, str]]:
-    """Return ``(start, end, rule_id)`` for every secret gitleaks would report."""
+def redaction_spans(text: str, rule_set: RuleSet) -> list[tuple[int, int, str]]:
+    """Return ``(start, end, rule_id)`` for every secret gitleaks would report.
+
+    Positions and public rule ids to redact, never the secret text itself."""
     lowered = text.lower()
     found: list[tuple[int, int, str]] = []
     for rule in rule_set.rules:
@@ -218,4 +220,4 @@ def redact(text: str, rule_set: RuleSet) -> str:
     """Replace every detected secret with ``[REDACTED:<rule-id>]``."""
     if not text:
         return text
-    return redact_spans(text, find_secrets(text, rule_set))
+    return redact_spans(text, redaction_spans(text, rule_set))

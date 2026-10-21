@@ -134,7 +134,7 @@ def _selfcheck() -> None:
 _selfcheck()
 
 
-# ── scrub_secrets ──────────────────────────────────────────────────────────
+# ── redact_shapes ──────────────────────────────────────────────────────────
 
 # source: ADR-0663
 
@@ -216,7 +216,7 @@ def _redact_embedded_urls(text: str) -> str:
     return "".join(out)
 
 
-def scrub_secrets(text: str) -> str:
+def redact_shapes(text: str) -> str:
     """Replace recognized secret shapes in ``text`` with ``[REDACTED]``.
 
     source: ADR-0663

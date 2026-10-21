@@ -18,11 +18,11 @@ import pytest
 
 from mcp_server.shared.redaction_engine import (
     REDACTION_PREFIX,
-    find_secrets,
+    redaction_spans,
     shannon_entropy,
 )
 from mcp_server.shared.redaction_gate import RULES_PATH, redact_text, rule_set
-from scripts.secret_corpus import NEGATIVES, samples
+from scripts.secret_corpus import NEGATIVES, sample, samples
 
 REPO = Path(__file__).resolve().parents[2]
 VENDOR = REPO / "third_party" / "gitleaks" / "v8.30.1"
@@ -31,16 +31,16 @@ CORPUS = samples()
 
 @pytest.mark.parametrize("rule_id", sorted(CORPUS))
 def test_each_provider_shape_is_detected_by_its_own_rule(rule_id):
-    text, secret = CORPUS[rule_id]
-    found = {r for _s, _e, r in find_secrets(text, rule_set())}
+    text, fake = CORPUS[rule_id]
+    found = {r for _s, _e, r in redaction_spans(text, rule_set())}
     assert rule_id in found
 
 
 @pytest.mark.parametrize("rule_id", sorted(CORPUS))
 def test_each_provider_secret_is_gone_after_the_gate(rule_id):
-    text, secret = CORPUS[rule_id]
+    text, fake = CORPUS[rule_id]
     redacted = redact_text(text)
-    assert secret not in redacted
+    assert fake not in redacted
     assert f"{REDACTION_PREFIX}" in redacted
 
 
@@ -48,8 +48,8 @@ def test_the_audit_probe_shapes_are_all_redacted_now():
     """E16 of the 2026-10-21 audit: GitHub, Anthropic, OpenAI and JWT were kept
     by the old scrubber. Every one of them is redacted by the gate."""
     for rule_id in ("github-pat", "anthropic-api-key", "openai-api-key", "jwt"):
-        text, secret = CORPUS[rule_id]
-        assert secret not in redact_text(text), rule_id
+        text, fake = CORPUS[rule_id]
+        assert fake not in redact_text(text), rule_id
 
 
 @pytest.mark.parametrize("text", NEGATIVES)
@@ -76,11 +76,11 @@ def test_global_allowlist_keeps_placeholders():
     The full gate still masks it: Cortex's own ``key=value`` shape (ADR-0663)
     is stricter than gitleaks and has no allowlist."""
     text = 'api_key = "${API_KEY}"'
-    assert find_secrets(text, rule_set()) == []
+    assert redaction_spans(text, rule_set()) == []
 
 
 def test_a_marker_left_by_the_gitleaks_pass_is_not_rewritten():
-    text, _secret = CORPUS["generic-api-key"]
+    text, _fake = sample("generic-api-key")
     assert "[REDACTED:generic-api-key]" in redact_text(text)
 
 
@@ -147,6 +147,6 @@ PROVIDERS = sorted(set(CORPUS) - {"generic-api-key", "private-key"})
 def test_a_key_followed_by_sentence_punctuation_is_still_redacted(rule_id, follow):
     """Six gitleaks rules require whitespace/quote/; after the key; the gate's
     prose pass (ADR-1110) closes that gap for text written as sentences."""
-    _text, secret = CORPUS[rule_id]
-    for context in (f"the key {secret}{follow} next", f'["note {secret}{follow}"]'):
-        assert secret not in redact_text(context), (rule_id, follow, context[:12])
+    _text, fake = CORPUS[rule_id]
+    for context in (f"the key {fake}{follow} next", f'["note {fake}{follow}"]'):
+        assert fake not in redact_text(context), (rule_id, follow, context[:12])
