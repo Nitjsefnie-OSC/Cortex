@@ -8,6 +8,12 @@ receipts, stage transitions, and the entities extracted from its text. This
 module lists them once for both backends; the store mixins run the list inside
 one transaction, so a failure erases nothing and is raised.
 
+What can only run after the commit (SQLite's WAL truncation, removing page
+files and artifacts) cannot undo it: a failure there is recorded in
+``ErasureReport.residue`` and ``complete`` turns False, so the caller reports
+a deleted memory with residue instead of an error that reads as "nothing was
+erased" (review of PR #775, N4).
+
 Entities are removed only when they were extracted from text
 (``origin = 'text_concept'``), were linked to this memory and to no other: a
 code symbol or a concept another memory still cites is kept.
@@ -20,8 +26,11 @@ source: ADR-1111"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypeVar
+
+T = TypeVar("T")
 
 # (report key, statement); every statement takes the memory id once.
 # source: ADR-1111 — table list from pg_schema.py / sqlite_schema*.py
@@ -56,6 +65,21 @@ class ErasureReport:
     # SQLite only: False when another connection's snapshot kept the WAL from
     # being truncated (its old frames go at the next checkpoint); None on PG
     wal_truncated: bool | None = None
+    # post-commit steps that failed: {"step": name, "error": message}
+    residue: list[dict[str, str]] = field(default_factory=list)
+
+    @property
+    def complete(self) -> bool:
+        """True when the rows are gone and no copy is known to remain."""
+        return self.deleted and not self.residue and self.wal_truncated is not False
+
+    def after_commit(self, step: str, run: Callable[[], T], failed: T) -> T:
+        """Run a step that follows the commit; a failure becomes residue."""
+        try:
+            return run()
+        except Exception as exc:  # noqa: BLE001 — the commit happened; the failure is reported in the result, not raised
+            self.residue.append({"step": step, "error": f"{type(exc).__name__}: {exc}"})
+            return failed
 
 
 def _count(cursor: Any) -> int:

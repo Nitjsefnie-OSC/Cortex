@@ -129,14 +129,24 @@ async def _handler_impl(args: dict[str, Any] | None = None) -> dict[str, Any]:
 
     # source: ADR-1111 — one transaction over every copy; raises, never partial
     report = store.erase_memory(memory_id)
-    pages_removed = (
-        remove_derived_pages(Path(WIKI_ROOT), memory_id, report.page_paths)
-        if report.deleted
-        else 0
-    )
-    artifact_deleted = report.deleted and any(
-        [delete_artifact_if_unreferenced(store._conn, p) for p in artifact_paths]
-    )
+    pages_removed, artifact_deleted = 0, False
+    if report.deleted:
+        # after the commit: a failure here is residue, not "nothing erased"
+        pages_removed = report.after_commit(
+            "pages",
+            lambda: remove_derived_pages(Path(WIKI_ROOT), memory_id, report.page_paths),
+            0,
+        )
+        artifact_deleted = report.after_commit(
+            "artifact",
+            lambda: any(
+                [
+                    delete_artifact_if_unreferenced(store._conn, p)
+                    for p in artifact_paths
+                ]
+            ),
+            False,
+        )
 
     return {
         "deleted": report.deleted,
@@ -149,6 +159,8 @@ async def _handler_impl(args: dict[str, Any] | None = None) -> dict[str, Any]:
         "pages_removed": pages_removed,
         "fts_method": report.fts_method,
         "wal_truncated": report.wal_truncated,
+        "complete": report.complete,
+        "residue": report.residue,
     }
 
 

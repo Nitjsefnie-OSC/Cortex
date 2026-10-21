@@ -150,6 +150,7 @@ def test_hard_forget_leaves_the_text_in_no_table(store, tmp_path, monkeypatch):
     assert locations(store, MARKER) != []  # the fixture really wrote copies
     result = _forget(mid)
     assert result["deleted"] is True and result["method"] == "hard"
+    assert result["complete"] is True and result["residue"] == []
     assert locations(store, MARKER) == []
     assert locations(store, f"Jane Placeholder{RUN}") == []  # orphaned extracted entity
     # what was not this memory's survives

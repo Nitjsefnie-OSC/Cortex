@@ -5,8 +5,9 @@ and in the WAL until something overwrites them. Erasure therefore relies on
 ``PRAGMA secure_delete = ON`` (every connection, set by the connection
 registry), FTS5's ``secure-delete`` option (SQLite 3.42+, enabled before the
 first erasure and persistent in the index; on an older library an FTS5
-``optimize`` merge rewrites the index without the deleted entries) and a
-``TRUNCATE`` WAL checkpoint.
+``optimize`` merge, run inside the erasure transaction, rewrites the index
+without the deleted entries) and a ``TRUNCATE`` WAL checkpoint after the
+commit, whose failure is reported as residue (``ErasureReport``).
 
 source: ADR-1111"""
 
@@ -49,7 +50,8 @@ class SqliteErasureMixin:
     def erase_memory(self, memory_id: int) -> ErasureReport:
         """Delete the memory and every row holding a copy of its text.
 
-        Raises (and erases nothing) if any statement fails."""
+        Raises (and erases nothing) if any statement before the commit fails;
+        a WAL truncation that fails after it is reported as residue."""
         report = ErasureReport()
         row = self._conn.execute(
             "SELECT source FROM memories WHERE id = %s", (memory_id,)
@@ -59,12 +61,12 @@ class SqliteErasureMixin:
         secure = enable_fts_secure_delete(self._conn)
         try:
             self._erase_rows(memory_id, row["source"], report)
+            report.fts_method = self._purge_fts(secure)
         except BaseException:
             self._conn.rollback()
             raise
         self._conn.commit()
-        report.fts_method = self._purge_fts(secure)
-        report.wal_truncated = self._truncate_wal()
+        report.wal_truncated = report.after_commit("wal", self._truncate_wal, False)
         return report
 
     def _erase_rows(self, memory_id: int, source: str, report: ErasureReport) -> None:
@@ -82,14 +84,12 @@ class SqliteErasureMixin:
         report.deleted = cur.rowcount > 0
 
     def _purge_fts(self, secure: bool) -> str:
-        method = "secure-delete"
-        if not secure:
-            self._conn.execute(
-                "INSERT INTO memories_fts(memories_fts) VALUES('optimize')"
-            )
-            self._conn.commit()
-            method = "optimize"
-        return method
+        """Inside the erasure transaction: rewrite the FTS index when the
+        library cannot drop deleted entries on its own."""
+        if secure:
+            return "secure-delete"
+        self._conn.execute("INSERT INTO memories_fts(memories_fts) VALUES('optimize')")
+        return "optimize"
 
     def _truncate_wal(self) -> bool:
         """``wal_checkpoint(TRUNCATE)``; True when no reader blocked it."""
