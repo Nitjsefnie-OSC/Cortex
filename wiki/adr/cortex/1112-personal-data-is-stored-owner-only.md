@@ -40,3 +40,10 @@ Limits:
 - A file created after the one-time walk by a process that does not write through the gate (the external code-analysis binary under `<cache root>/code-graphs`, a user's own tool) gets the umask's mode, but sits inside a `0700` root that other accounts cannot traverse.
 - `~/.cortex` (code graphs written by the external pipeline) is not covered. `viz_client` reads the viz server's registry at `~/.cache/cortex/viz-server.json` directly; the file is inside the default cache root and is tightened with it.
 - A developer environment with `XDG_CACHE_HOME` exported points the cache root of the test suite at that real cache (unchanged from `main`, where the groomer already honoured it).
+
+
+## Addendum (2026-10-21): review of PR #775 (B3, N5, N6)
+
+- **No mode change through a symbolic link (B3).** A data root that was a symlink was chmodded and walked (`os.walk` follows a top-level link), and `ensure_private_dir` chmodded each level by path: measured 0755/0644 outside the roots turned 0700/0600. Every change now opens the entry `O_NOFOLLOW` (plus `O_DIRECTORY`, `O_NONBLOCK`), checks it is the inode `lstat` saw and calls `fchmod`; the walk is `os.fwalk(follow_symlinks=False)`. A root that is a link is neither tightened nor walked and is reported at startup; `ensure_private_dir` stops at the first level that is a link. On Windows only roots that are real directories get the ACL.
+- **Empty Windows user (N5).** An empty or blank `USERNAME` made the icacls principal empty in the call that removes inheritance; it is now refused with `OSError(EINVAL)` before icacls runs and reported at startup.
+- **Lock files (N6).** `private_paths.open_lock_file` is the one opener of every lock file: `O_RDWR | O_CREAT | O_NOFOLLOW` at 0600, and a lock an older version left wider is tightened through the descriptor. The pipeline install lock and the groomer decision lock were created 0644.

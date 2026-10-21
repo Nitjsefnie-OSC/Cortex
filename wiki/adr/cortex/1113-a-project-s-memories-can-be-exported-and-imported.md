@@ -40,3 +40,9 @@ Limits and next steps:
 - Exposed as a command line, not as an MCP tool: a tool needs the registry, `docs/mcp-tools.md`, the tool-count tests and profile decisions; planned.
 - Derived structures (entities, relationships, wiki pages, archives) are not exported; the wiki is already plain Markdown on disk. Superseded versions are not exported.
 - Retention (automatic purge after a configurable age, audit Track 3.5) is not part of this decision.
+
+
+## Addendum (2026-10-21): review of PR #775 (B2, N7)
+
+- **An import file is input from outside (B2).** `import_export` trusted it: a record outside the header's root was imported where it said, `..` was not normalised, and `is_global`, `is_protected`, `is_team_decision` were taken as written; a crafted file planted rows in another project and a global protected memory. `handlers/memory_import_checks.py` now validates the whole file before the first insert and fails it on the first violation: header (canonical absolute `project_root`, boolean `include_global`, `fields` equal to this version's), field types (non-empty string content, list of string tags, string or null text fields, finite numbers, booleans, ISO 8601 `created_at`), every directory canonical (no `.`, `..` or empty segment) and equal to or below the root; only a global record of an `include_global` export may come from elsewhere, and it lands at the target root. The sharing flags are off unless the caller passes `trust_flags` (`--trust-flags`).
+- **Exact prefix (N7).** The export scope was `directory_context LIKE 'root/%'`; SQLite's `LIKE` folds ASCII case, so a sibling differing by case only was exported. The scope is now `directory_context = root OR substr(directory_context, 1, len(root/)) = 'root/'` on both backends.

@@ -50,3 +50,12 @@ Limits:
 - PostgreSQL keeps dead tuples until VACUUM reclaims their space, and reclaimed space is not zeroed; the text is unreachable through SQL once the transaction commits. Immediate physical removal needs `VACUUM (FULL)` on the affected tables, an operator action.
 - Copies that do not reference the memory are not found: a semantic memory consolidated from several episodes (CLS), cortical schema signatures (aggregated entity names), predictions that quote it, other versions in a supersession chain (each is a memory of its own and is forgotten by its own id), backups, logs written before ADR-1110, and anything outside Cortex's store.
 - `soft=true` keeps everything by design (recoverable).
+
+
+## Addendum (2026-10-21): review of PR #775 (N4)
+
+On SQLite the FTS5 `optimize` merge (used when the library lacks `secure-delete`) and the WAL truncation ran after the commit, as did the removal of page files and artifacts in the handler. A failure there raised once the rows were deleted, so the caller read "nothing was erased".
+
+- The `optimize` merge now runs inside the erasure transaction: it fails like any other statement and everything rolls back.
+- What can only follow the commit (WAL truncation, page files, artifact) runs through `ErasureReport.after_commit`: a failure is recorded in `residue` (`{"step", "error"}`) and `complete` is false. The `forget` result carries `deleted`, `complete` and `residue`.
+- Fault-injection tests: `tests_py/handlers/test_forget_residue.py` (optimize failure erases nothing and raises; WAL, page-file and artifact failures return `deleted: true, complete: false` with the error).
