@@ -128,10 +128,10 @@ def test_windows_roots_get_a_user_only_inherited_acl(tmp_path, monkeypatch):
 def test_a_path_that_cannot_be_tightened_is_reported_not_hidden(
     legacy_install, monkeypatch, capsys
 ):
-    def refuse(path, mode):
-        raise PermissionError(1, "Operation not permitted", str(path))
+    def refuse(fd, mode):
+        raise PermissionError(1, "Operation not permitted")
 
-    monkeypatch.setattr(private_paths.os, "chmod", refuse)
+    monkeypatch.setattr(private_paths.os, "fchmod", refuse)
     private_paths.harden_at_startup()
     err = capsys.readouterr().err
     assert "could not make personal data owner-only" in err
@@ -151,3 +151,57 @@ def test_the_cache_root_follows_the_data_root_unless_told_otherwise(
     assert private_paths.cortex_cache_dir() == tmp_path / "xdg" / "cortex"
     monkeypatch.setenv("CORTEX_CACHE_DIR", str(tmp_path / "explicit"))
     assert private_paths.cortex_cache_dir() == tmp_path / "explicit"
+
+
+def _outside_tree(tmp_path: Path) -> tuple[Path, Path]:
+    """A directory and a file outside every data root, umask modes."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    secret = elsewhere / "notes.txt"
+    secret.write_text("not Cortex data")
+    elsewhere.chmod(0o755)
+    secret.chmod(0o644)
+    return elsewhere, secret
+
+
+@posix_only
+@pytest.mark.parametrize("root_name", ["methodology", ".capture-worker"])
+def test_a_symlinked_root_is_not_followed(tmp_path, monkeypatch, root_name):
+    """Review of #775, B3: a data root that is a symlink let the hardening
+    chmod (and walk) the tree it points to: measured 0755/0644 outside the
+    roots turned 0700/0600."""
+    monkeypatch.setenv("CORTEX_CLAUDE_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("CORTEX_CACHE_DIR", raising=False)
+    (tmp_path / "claude").mkdir()
+    if root_name != "methodology":
+        (tmp_path / "claude" / "methodology").mkdir()
+    elsewhere, secret = _outside_tree(tmp_path)
+    (tmp_path / "claude" / root_name).symlink_to(elsewhere)
+    private_paths.harden_private_storage()
+    assert (_mode(elsewhere), _mode(secret)) == (0o755, 0o644)
+
+
+@posix_only
+def test_a_symlinked_directory_level_is_not_chmodded(tmp_path, monkeypatch):
+    monkeypatch.setenv("CORTEX_CLAUDE_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("CORTEX_CACHE_DIR", raising=False)
+    methodology = tmp_path / "claude" / "methodology"
+    methodology.mkdir(parents=True)
+    elsewhere, _secret = _outside_tree(tmp_path)
+    (methodology / "wiki").symlink_to(elsewhere)
+    private_paths.ensure_private_dir(methodology / "wiki" / "adr")
+    assert _mode(elsewhere) == 0o755
+
+
+@posix_only
+def test_a_symlinked_root_is_reported_at_startup(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("CORTEX_CLAUDE_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("CORTEX_CACHE_DIR", raising=False)
+    (tmp_path / "claude").mkdir()
+    elsewhere, _secret = _outside_tree(tmp_path)
+    (tmp_path / "claude" / "methodology").symlink_to(elsewhere)
+    private_paths.harden_at_startup()
+    assert "is a symbolic link" in capsys.readouterr().err

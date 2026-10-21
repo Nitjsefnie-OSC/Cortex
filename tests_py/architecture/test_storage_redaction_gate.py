@@ -35,8 +35,9 @@ _AUDITED = {
     ),
     ("shared/gated_files.py", "os.open-write"): (1, "the gate's own temp file"),
     ("shared/private_paths.py", "os.open-write"): (
-        1,
-        "creates an empty 0600 file before SQLite or a log opens it",
+        2,
+        "creates an empty 0600 file before SQLite or a log opens it; opens an "
+        "entry O_RDONLY|O_NOFOLLOW to fchmod it (flags in a variable)",
     ),
     ("shared/log_rotation.py", "open-write"): (1, "yields only a RedactingStream"),
     ("infrastructure/log_relay.py", "child-stdio-file"): (
