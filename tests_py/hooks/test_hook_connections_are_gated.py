@@ -6,17 +6,23 @@ transcript path without redaction: the hook's connection was a plain
 ``psycopg.Connection``, outside the gate. Each hook connection below writes a
 receipt whose session id carries a real-format fake key, and the stored row is
 read back through an independent connection.
+
+These hooks open PostgreSQL connections, so the test needs the psycopg
+driver and a reachable server: on the SQLite leg (no [postgresql] extra) it
+is skipped by capability. That the connections are gated by construction on
+every install is pinned by ``tests_py/architecture/test_storage_redaction_gate.py``,
+which runs on every leg.
 """
 
 from __future__ import annotations
 
-import psycopg
 import pytest
 
 from mcp_server.handlers.injection_receipts import emit_hook_receipt
 from scripts.secret_corpus import sample
 from tests_py.conftest import _TEST_DB_URL, _USE_PG  # type: ignore  # noqa: E402
 
+psycopg = pytest.importorskip("psycopg", reason="the [postgresql] extra is absent")
 pytestmark = pytest.mark.skipif(not _USE_PG, reason="PostgreSQL not reachable")
 
 KEY = sample("github-pat").value

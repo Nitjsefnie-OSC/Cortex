@@ -39,14 +39,17 @@ def sqlite_connect(target: str, **kwargs: Any) -> GatedConnection:
 
 
 def pg_connect(url: str, **kwargs: Any) -> "psycopg.Connection[DictRow]":
-    """A psycopg connection whose cursors are gated and whose rows are dicts."""
+    """A psycopg connection whose cursors are gated and whose rows are dicts.
+
+    A caller-chosen factory is refused before the driver is imported, so the
+    refusal holds on an install without the [postgresql] extra too."""
+    _refuse_factory(kwargs, "cursor_factory")
+    _refuse_factory(kwargs, "row_factory")
     import psycopg  # noqa: PLC0415 — optional [postgresql] extra; SQLite installs never reach here
     from psycopg.rows import DictRow, dict_row  # noqa: PLC0415 — same
 
     from mcp_server.infrastructure.pg_gated_cursor import GatedCursor  # noqa: PLC0415 — imports psycopg
 
-    _refuse_factory(kwargs, "cursor_factory")
-    _refuse_factory(kwargs, "row_factory")
     return psycopg.Connection[DictRow].connect(
         url, cursor_factory=GatedCursor, row_factory=dict_row, **kwargs
     )
@@ -57,14 +60,14 @@ def pg_pool(
 ) -> "ConnectionPool[psycopg.Connection[DictRow]]":
     """A psycopg pool whose every connection hands out gated cursors and dict
     rows."""
+    _refuse_factory(kwargs, "cursor_factory")
+    _refuse_factory(kwargs, "row_factory")
     import psycopg  # noqa: PLC0415 — optional [postgresql] extra
     from psycopg.rows import DictRow, dict_row  # noqa: PLC0415 — same
     from psycopg_pool import ConnectionPool  # noqa: PLC0415 — same
 
     from mcp_server.infrastructure.pg_gated_cursor import GatedCursor  # noqa: PLC0415 — imports psycopg
 
-    _refuse_factory(kwargs, "cursor_factory")
-    _refuse_factory(kwargs, "row_factory")
     gated = {**kwargs, "cursor_factory": GatedCursor, "row_factory": dict_row}
     return ConnectionPool(
         conninfo=url,
