@@ -51,8 +51,9 @@ personal data are not redacted.
 
 You own this data. Deleting the database file (or the relevant rows) permanently
 removes it. The `forget` tool deletes individual memories: a hard delete
-(the default) removes the memory row, any wiki claims derived from it, and the
-raw-output artifact file its body pointed at — see *Your controls* below for the
+(the default) removes the memory and every stored copy of its text (archive,
+wiki claims, drafts and derived pages, mined reminders and rules, extracted
+entities, the raw-output artifact file). See *Your controls* below for the
 exact scope, including the one case where an artifact is deliberately kept.
 
 ## What leaves your machine
@@ -146,13 +147,27 @@ memories over time; this is a local maintenance operation, not a transfer.
   session-lifecycle transcript processing and explicit memory tools have their
   own paths. Previously stored memories and artifacts remain until deleted.
 - `forget` — delete a specific memory. A **hard** delete (the default) removes,
-  across every substrate that holds the content:
-  1. the memory row itself;
-  2. the wiki claim events derived from that memory;
-  3. the raw-output **artifact** file the memory body pointed at, under
-     `~/.claude/methodology/artifacts/` — an oversized auto-capture keeps only a
+  in one transaction that either completes or changes nothing (ADR-1111):
+  1. the memory row itself, with its full-text and vector index entries;
+  2. its compression archive (the original text kept when a memory is
+     summarised);
+  3. the wiki claims, drafts and citations derived from it, and a wiki page
+     compiled or promoted from it (row and file; the wiki index is rebuilt),
+     unless the memory is only a pointer at a page you wrote;
+  4. the reminders and rules mined from it, and the entities extracted from
+     its text that no other memory refers to;
+  5. the raw-output **artifact** file the memory body pointed at, under
+     `~/.claude/methodology/artifacts/`. An oversized auto-capture keeps only a
      short gist in the row and the full raw text in that file, so deleting the
      row alone would leave your content on disk.
+
+  On SQLite the deleted bytes are also overwritten in the database file and its
+  write-ahead log. On PostgreSQL the rows are unreachable at once, but the
+  server reclaims their disk space only at its next `VACUUM` (run
+  `VACUUM FULL` yourself if the bytes must go immediately). Copies that do
+  not reference the memory (a summary consolidated from several memories,
+  backups, other versions of an edited memory) are not removed by forgetting
+  this one.
 
   Two deliberate exceptions, both reported in the tool's result so you can see
   which applied:

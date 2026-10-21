@@ -3603,6 +3603,10 @@
     "ADR-1110": {
       "mirror": "ADR-1110-one-redaction-gate-on-every-write-into-storage.md",
       "path": "adr/cortex/1110-one-redaction-gate-on-every-write-into-storage.md"
+    },
+    "ADR-1111": {
+      "mirror": "ADR-1111-a-hard-forget-erases-every-stored-copy-of-the-memory.md",
+      "path": "adr/cortex/1111-a-hard-forget-erases-every-stored-copy-of-the-memory.md"
     }
   },
   "project": "cortex",

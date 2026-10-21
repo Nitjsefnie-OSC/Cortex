@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **A hard `forget` erases every stored copy of the memory (ADR-1111).** The
+  2026-10-21 audit (E15) found the full original text left in
+  `memory_archives` after a hard forget. `store.erase_memory` now deletes, in
+  one transaction on both backends, the row with its FTS and vector entries,
+  its archives, the wiki claims, drafts, citations and compiled page derived
+  from it, the reminders and rules mined from it, its receipts and stage
+  history, and the text entities only it referenced; page files compiled or
+  promoted from it are removed and the wiki index rebuilt. A failing step
+  rolls everything back and raises (the old handler logged a failed claim
+  deletion and deleted the row anyway). SQLite runs with `secure_delete`, FTS5
+  `secure-delete` and a WAL truncation, so the bytes leave the file too. The
+  result reports what was erased.
 - **One redaction gate on every write into storage (ADR-1110).** The 2026-10-21
   audit (E16) found the secret scrubber on the capture hook only, missing
   GitHub, Anthropic and OpenAI keys and JWTs, while `remember`, session import

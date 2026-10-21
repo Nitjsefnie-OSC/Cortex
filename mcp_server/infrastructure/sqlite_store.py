@@ -38,6 +38,7 @@ from mcp_server.infrastructure.sqlite_schema import (
 )
 from mcp_server.infrastructure.sqlite_store_auxiliary import SqliteAuxiliaryMixin
 from mcp_server.infrastructure.sqlite_store_entities import SqliteEntityMixin
+from mcp_server.infrastructure.sqlite_store_erasure import SqliteErasureMixin
 from mcp_server.infrastructure.sqlite_store_entity_merge import (
     SqliteEntityMergeMixin,
 )
@@ -102,6 +103,7 @@ _CHAIN_HEAD_MAX_DEPTH = 100_000
 
 class SqliteMemoryStore(
     SqliteEntityMixin,
+    SqliteErasureMixin,
     SqliteEntityMergeMixin,
     SqliteRelationshipMixin,
     SqliteQueryMixin,

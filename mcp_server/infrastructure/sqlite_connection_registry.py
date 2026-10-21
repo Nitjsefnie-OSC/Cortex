@@ -201,6 +201,8 @@ def _configure(
                 "SQLite requested WAL but retained journal_mode=%s", actual_mode
             )
     connection.execute("PRAGMA foreign_keys=ON")
+    # source: ADR-1111 — freed pages are zeroed, so a deleted row leaves no bytes
+    connection.execute("PRAGMA secure_delete=ON")
 
 
 def _load_extension(connection: sqlite3.Connection, loader: _VectorLoader) -> None:
