@@ -47,8 +47,11 @@ pytestmark = [
             os.environ.get("CORTEX_BROKER_MEASUREMENTS")
             or os.environ.get("CORTEX_REPRO_JSON")
         ),
-        reason="set CORTEX_BROKER_MEASUREMENTS=1 (measurement, about 2 min)",
+        reason="set CORTEX_BROKER_MEASUREMENTS=1 (measurement, about 5 min)",
     ),
+    # source: experiment log, 288 s on an idle machine against the suite's
+    # 300 s default (pyproject.toml); a timeout at load average 19 on 2026-10-21
+    pytest.mark.timeout(1200),
 ]
 
 # source: ADR-1112 A6 protocol (corpus size, query count, warm-up)

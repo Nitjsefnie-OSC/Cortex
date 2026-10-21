@@ -813,3 +813,31 @@ local time).
 ### 23. 2026-10-21T07:01Z: suites after entry 22
 
 - Suites after the changes of entry 22: default (store in process) 10343 passed, 29 skipped; broker mode 10342 passed, 30 skipped; as a role without SUPERUSER 10345 passed, 27 skipped (entry above). One test more than entry 21 in each: the migration connection's name.
+
+### 2026-10-21T07:15:23+00:00 census
+
+- head: `069403a475cbb734df4699582b0e07b5ae3a2230` (clean)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 0 (1 passed in 37.90s)
+- measured: `{"cold_hook": [2.76, 0], "consolidate": [6.29, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_outside_broker": 0, "idle_in_transaction_samples": 0, "max_idle_ms": 0, "max_idle_transaction_age_ms": 0, "migration_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["69303"], "peak_cortex_backends": 6, "remember": [15.47, 0], "samples": 543, "seeded_memories": 5000, "session_jobs_seen": ["mcp_server.hooks.store_broker"], "session_jobs_waited_seconds": 3.46, "shared_ddl_during_session": 0, "unexpected_samples": [], "warm_hooks": [[0.5, 0], [0.51, 0], [0.56, 0]]}`
+
+### 2026-10-21T07:16:11+00:00 saturation
+
+- head: `069403a475cbb734df4699582b0e07b5ae3a2230` (dirty)
+- command: `python scripts/repro_connection_broker.py saturation`
+- pytest exit code: 0 (1 passed in 46.55s)
+- measured: `{"64": {"backend_owner_pids": 1, "children": 64, "failed": 0, "failed_before_release": 0, "max_connections": 20, "outcomes": [], "peak_by_pool": {"direct": 1, "interactive": 8}, "peak_cortex_backends": 9, "peak_waiting_on_the_alter": 8}, "8": {"backend_owner_pids": 1, "children": 8, "failed": 0, "failed_before_release": 0, "max_connections": 20, "outcomes": [], "peak_by_pool": {"direct": 1, "interactive": 8}, "peak_cortex_backends": 9, "peak_waiting_on_the_alter": 8}}`
+
+### 2026-10-21T07:17:22+00:00 priority
+
+- head: `069403a475cbb734df4699582b0e07b5ae3a2230` (dirty)
+- command: `python scripts/repro_connection_broker.py priority`
+- pytest exit code: 0 (1 passed, 1 warning in 69.73s (0:01:09))
+- measured: `{"background": {"heavy_class": "background", "heavy_pages_served": 52, "max_ms": 238.0, "p50_ms": 1.5, "p95_ms": 88.0, "point_reads": 383}, "brokers": 1, "single_class": {"heavy_class": "interactive", "heavy_pages_served": 95, "max_ms": 27087.8, "p50_ms": 27087.8, "p95_ms": 27087.8, "point_reads": 1}}`
+
+### 2026-10-21T07:22:24+00:00 latency
+
+- head: `069403a475cbb734df4699582b0e07b5ae3a2230` (dirty)
+- command: `python scripts/repro_connection_broker.py latency`
+- pytest exit code: 1 (+++++++++++++++++++++++++++++++++++ Timeout ++++++++++++++++++++++++++++++++++++)
+- measured: `{}`
