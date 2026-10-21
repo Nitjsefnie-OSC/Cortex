@@ -585,7 +585,10 @@ jobs:
             $failure = $null
             try { Invoke-Expression $command } catch { $failure = $_ }
             if ($null -eq $failure) { throw "hook command ran without bash on PATH: $command" }
-            if ($failure.FullyQualifiedErrorId -ne 'CommandNotFoundException' -or $failure.Exception.Message -notmatch 'bash') {
+            # FullyQualifiedErrorId carries the reporting command after a comma
+            # ('CommandNotFoundException,...InvokeExpressionCommand' under
+            # Invoke-Expression), so the check is on the exception type.
+            if ($failure.Exception -isnot [System.Management.Automation.CommandNotFoundException] -or $failure.Exception.Message -notmatch 'bash') {
               throw "hook command failed the wrong way: $($failure.FullyQualifiedErrorId): $($failure.Exception.Message)"
             }
             Write-Host "refused: $($failure.Exception.Message)"
