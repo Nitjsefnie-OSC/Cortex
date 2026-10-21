@@ -16,8 +16,11 @@ source: ADR-1112 (broker and versioned schema)
 
 from __future__ import annotations
 
+import contextvars
+import functools
 import importlib
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine, Iterator
+from contextlib import contextmanager
 from typing import Any, Literal, TypeVar
 
 # source: ADR-1112 the only package whose functions may be resolved by name
@@ -26,7 +29,45 @@ ALLOWED_PACKAGE = "mcp_server.infrastructure."
 _MARK = "__cortex_store_operation__"
 
 Pool = Literal["interactive", "batch"]
+RequestClass = Literal["interactive", "background"]
 F = TypeVar("F", bound=Callable[..., Any])
+R = TypeVar("R")
+_request_class: contextvars.ContextVar[RequestClass] = contextvars.ContextVar(
+    "cortex_store_request_class", default="interactive"
+)
+
+
+def current_request_class() -> RequestClass:
+    """The class of the store work running in this context (ADR-1112
+    decision 4): background work (consolidation, backfill, ingest) runs on
+    the batch pool and, through the broker, in the background queue."""
+    return _request_class.get()
+
+
+@contextmanager
+def request_class(value: RequestClass) -> Iterator[None]:
+    token = _request_class.set(value)
+    try:
+        yield
+    finally:
+        _request_class.reset(token)
+
+
+def background_work(
+    handler: Callable[..., Coroutine[Any, Any, R]],
+) -> Callable[..., Coroutine[Any, Any, R]]:
+    """Run an async tool handler's store work as background requests."""
+
+    @functools.wraps(handler)
+    async def run(*args: Any, **kwargs: Any) -> R:
+        with request_class("background"):
+            return await handler(*args, **kwargs)
+
+    return run
+
+
+def default_pool() -> Pool:
+    return "batch" if current_request_class() == "background" else "interactive"
 
 
 class UnknownOperationError(LookupError):
@@ -74,15 +115,17 @@ class StoreOperationsMixin:
         fn: Callable[..., Any],
         /,
         *args: Any,
-        pool: Pool = "interactive",
+        pool: Pool | None = None,
         **kwargs: Any,
     ) -> Any:
         """Run one marked operation on one borrowed connection; return its
-        (fully materialised) result."""
+        (fully materialised) result. Without ``pool``, background work runs
+        on the batch pool and everything else on the interactive pool."""
         if not is_store_operation(fn):
             raise UnknownOperationError(f"{fn!r} is not a store operation")
+        chosen = pool or default_pool()
         acquire = getattr(
-            self, "acquire_batch" if pool == "batch" else "acquire_interactive"
+            self, "acquire_batch" if chosen == "batch" else "acquire_interactive"
         )
         with acquire() as conn:
             # One operation is one unit of work: PostgreSQL pool connections

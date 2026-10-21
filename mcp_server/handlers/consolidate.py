@@ -39,6 +39,7 @@ from mcp_server.infrastructure.memory_config import get_memory_settings
 from mcp_server.infrastructure.memory_store import MemoryStore, get_shared_store
 from mcp_server.handlers._tool_meta import IDEMPOTENT_WRITE
 from mcp_server.hooks.consolidate_background import _write_stamp
+from mcp_server.infrastructure.store_operations import background_work
 
 logger = logging.getLogger(__name__)
 
@@ -232,6 +233,7 @@ async def _atimed(fn, *args, **kwargs) -> dict[str, Any]:
     return result
 
 
+@background_work  # source: ADR-1112 decision 4 (background class)
 async def handler(args: dict[str, Any] | None = None) -> dict[str, Any]:
     """Run maintenance cycles on the memory system, one cycle at a time across
     every process: a second caller returns ``status: skipped`` (ADR-1112)."""

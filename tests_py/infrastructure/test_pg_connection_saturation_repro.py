@@ -72,7 +72,7 @@ except Exception as exc:
 
 
 def _spawn(url: str, index: int) -> subprocess.Popen[str]:
-    env = dict(os.environ, DATABASE_URL=url, PGAPPNAME=f"sat-child-{index}")
+    env = dict(os.environ, DATABASE_URL=url)
     return subprocess.Popen(
         [sys.executable, "-c", _CHILD],
         cwd=_REPO,
@@ -84,12 +84,16 @@ def _spawn(url: str, index: int) -> subprocess.Popen[str]:
 
 
 def _backends(monitor) -> dict[str, tuple[int, int]]:
-    """application_name -> (backends, backends waiting on a lock)."""
+    """Owner -> (backends, backends waiting on a lock). A store connection is
+    named ``cortex-store-<pool>-<pid>`` (pg_session_bounds); its owner is the
+    PID. Other backends keep their application_name."""
     rows = monitor.execute(
-        "SELECT application_name, count(*),"
+        "SELECT CASE WHEN application_name LIKE 'cortex-store-%%'"
+        " THEN 'pid-' || split_part(application_name, '-', 4)"
+        " ELSE application_name END AS owner, count(*),"
         " count(*) FILTER (WHERE wait_event_type = 'Lock')"
         " FROM pg_stat_activity WHERE backend_type = 'client backend'"
-        " GROUP BY application_name"
+        " GROUP BY owner"
     ).fetchall()
     return {name: (total, waiting) for name, total, waiting in rows}
 
@@ -102,7 +106,7 @@ def _settle(children, monitor) -> dict[str, tuple[int, int]]:
         pending = [
             i
             for i, child in enumerate(children)
-            if child.poll() is None and seen.get(f"sat-child-{i}", (0, 0))[1] == 0
+            if child.poll() is None and seen.get(f"pid-{child.pid}", (0, 0))[1] == 0
         ]
         if not pending or time.monotonic() > deadline:
             return seen
@@ -146,7 +150,8 @@ def _run_scenario(tmp_path: Path, children: int) -> dict:
             outcomes = [c.communicate(timeout=60)[0].strip() for c in procs]
             for conn in (reader, ddl, monitor):
                 conn.close()
-    held = {k: v for k, v in seen.items() if k.startswith("sat-child-")}
+    pids = {f"pid-{c.pid}" for c in procs}
+    held = {k: v for k, v in seen.items() if k in pids}
     return {
         "max_connections": _MAX_CONNECTIONS,
         "children": children,

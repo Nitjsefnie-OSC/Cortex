@@ -51,6 +51,7 @@ from mcp_server.infrastructure.staging_resolve_sink import (
     build_entity_sink,
 )
 from mcp_server.shared.progress import NullProgress, ProgressReporter
+from mcp_server.infrastructure.store_operations import background_work
 import shutil
 
 logger = logging.getLogger(__name__)
@@ -437,6 +438,7 @@ def _process_node_count(proc: dict[str, Any]) -> int:
         return 0
 
 
+@background_work  # source: ADR-1112 decision 4 (background class)
 async def handler(
     args: dict[str, Any] | None = None,
     *,

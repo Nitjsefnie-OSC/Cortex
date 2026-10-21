@@ -1125,6 +1125,12 @@ jobs:
           tests_py/infrastructure/test_pg_connection_saturation_repro.py
           tests_py/infrastructure/test_pg_role_probes.py
 
+      - name: Interactive capacity under a full background queue (A5)
+        env:
+          CORTEX_TEST_DATABASE_URL: postgresql://127.0.0.1:1/unused
+          CORTEX_BROKER_MEASUREMENTS: "1"
+        run: python scripts/repro_connection_broker.py priority
+
       - name: Lock-chain reproduction (pre-fix main against this tree)
         run: python scripts/repro_lock_chain.py --base-ref origin/main --other-tree ""
 

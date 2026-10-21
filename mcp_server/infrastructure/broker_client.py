@@ -17,12 +17,10 @@ source: ADR-1112 (broker and versioned schema)
 
 from __future__ import annotations
 
-import contextvars
 import functools
 import threading
 import time
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
 from typing import Any
 
 from mcp_server.infrastructure.broker_protocol import (
@@ -38,13 +36,13 @@ from mcp_server.infrastructure.schema_versions import (
     SchemaTooNewError,
     code_revision,
 )
-from mcp_server.infrastructure.store_operations import operation_name
+from mcp_server.infrastructure.store_operations import (
+    current_request_class,
+    operation_name,
+)
 
 # source: ADR-1108 (a hook's 30 s budget) and ADR-0534 (the 30 min batch bound)
 DEADLINES = {"interactive": 30.0, "background": 1800.0}
-_request_class: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "cortex_store_request_class", default="interactive"
-)
 
 Connect = Callable[[float], Any]  # monotonic deadline -> connected channel
 
@@ -60,16 +58,6 @@ class BrokerRemoteError(RuntimeError):
     def __init__(self, type_name: str, message: str) -> None:
         super().__init__(f"{type_name}: {message}")
         self.type_name = type_name
-
-
-@contextmanager
-def background_requests() -> Iterator[None]:
-    """Mark every store request in this context as background work."""
-    token = _request_class.set("background")
-    try:
-        yield
-    finally:
-        _request_class.reset(token)
 
 
 class BrokerClient:
@@ -201,17 +189,19 @@ class BrokerStore:
         return functools.partial(self._method, name)
 
     def _method(self, name: str, *args: Any, **kwargs: Any) -> Any:
-        return self._client.request("method", name, args, kwargs, _request_class.get())
+        return self._client.request(
+            "method", name, args, kwargs, current_request_class()
+        )
 
     def call(
         self,
         fn: Callable[..., Any],
         /,
         *args: Any,
-        pool: str = "interactive",
+        pool: str | None = None,
         **kwargs: Any,
     ) -> Any:
-        cls = "background" if pool == "batch" else _request_class.get()
+        cls = "background" if pool == "batch" else current_request_class()
         return self._client.request("op", operation_name(fn), args, kwargs, cls)
 
     def call_batch(self, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:

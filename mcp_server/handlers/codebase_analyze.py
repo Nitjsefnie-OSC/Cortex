@@ -57,6 +57,7 @@ from mcp_server.handlers.codebase_analyze_helpers import (
     persist_god_node_tags,
     persist_inheritance_edge,
 )
+from mcp_server.infrastructure.store_operations import background_work
 
 # ── Schema ────────────────────────────────────────────────────────────────
 
@@ -345,6 +346,7 @@ def _selected_file_jobs(source_files: list[Path], context: dict):
     return prepare_file_jobs(source_files, context, operations)
 
 
+@background_work  # source: ADR-1112 decision 4 (background class)
 async def handler(args: dict[str, Any] | None = None) -> dict[str, Any]:
     """Analyze a codebase and store its structure as Cortex memories."""
     root, languages, max_files, max_bytes, incremental, dry_run, domain = _parse_args(

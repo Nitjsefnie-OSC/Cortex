@@ -7,7 +7,7 @@ sequence of stateless page requests, see ``PAGE_METHODS``), plus the keyset
 page readers those streams use. Operations are resolved by name through
 ``store_operations.resolve_operation`` (marked functions of
 ``mcp_server.infrastructure`` only). A request of the background class runs
-its operation on the batch pool.
+its store work on the batch pool (``store_operations.request_class``).
 
 source: ADR-1112 decision 3
 """
@@ -20,6 +20,9 @@ from typing import Any
 from mcp_server.infrastructure.store_operations import (
     UnknownOperationError,
     resolve_operation,
+)
+from mcp_server.infrastructure.store_operations import (
+    request_class as store_request_class,
 )
 
 # source: ADR-1112 in-process only: connection lending, lifecycle, generators
@@ -52,10 +55,11 @@ class StoreExecutor:
     def __call__(
         self, kind: str, name: str, args: list, kwargs: dict, request_class: str
     ) -> Any:
-        if kind == "method":
-            if name not in self.methods:
-                raise UnknownOperationError(f"not a broker method: {name!r}")
-            return getattr(self.store, name)(*args, **kwargs)
-        operation = resolve_operation(name)
-        pool = "batch" if request_class == "background" else "interactive"
-        return self.store.call(operation, *args, pool=pool, **kwargs)
+        with store_request_class(
+            "background" if request_class == "background" else "interactive"
+        ):
+            if kind == "method":
+                if name not in self.methods:
+                    raise UnknownOperationError(f"not a broker method: {name!r}")
+                return getattr(self.store, name)(*args, **kwargs)
+            return self.store.call(resolve_operation(name), *args, **kwargs)

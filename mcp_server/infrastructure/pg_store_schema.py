@@ -13,6 +13,7 @@ from pgvector.psycopg import register_vector
 from psycopg_pool import ConnectionPool
 
 from mcp_server.infrastructure.pg_iterative_scan import enable_iterative_scan
+from mcp_server.infrastructure.pg_session_bounds import session_options
 from mcp_server.infrastructure.pg_store_host import PgStoreHost
 from mcp_server.infrastructure.memory_config import get_memory_settings
 
@@ -29,8 +30,13 @@ class PgSchemaMixin(PgStoreHost):
 
     def _create_connection(self) -> psycopg.Connection[DictRow]:
         """Create a new database connection."""
+        bounds = session_options("direct")
         return psycopg.Connection[DictRow].connect(
-            self._url, row_factory=dict_row, autocommit=True
+            self._url,
+            row_factory=dict_row,
+            autocommit=True,
+            application_name=bounds["application_name"],
+            options=bounds["options"],
         )
 
     # source: ADR-0565
@@ -60,7 +66,11 @@ class PgSchemaMixin(PgStoreHost):
             max_size=settings.POOL_INTERACTIVE_MAX,
             timeout=settings.POOL_INTERACTIVE_TIMEOUT_S,
             configure=self._configure_pool_connection,
-            kwargs={"row_factory": dict_row, "autocommit": True},
+            kwargs={
+                "row_factory": dict_row,
+                "autocommit": True,
+                **session_options("interactive"),
+            },
             open=True,
         )
         return pool
@@ -75,7 +85,11 @@ class PgSchemaMixin(PgStoreHost):
             max_size=settings.POOL_BATCH_MAX,
             timeout=settings.POOL_BATCH_TIMEOUT_S,
             configure=self._configure_pool_connection,
-            kwargs={"row_factory": dict_row, "autocommit": True},
+            kwargs={
+                "row_factory": dict_row,
+                "autocommit": True,
+                **session_options("batch"),
+            },
             open=True,
         )
         return pool

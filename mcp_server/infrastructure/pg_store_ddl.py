@@ -20,6 +20,7 @@ from psycopg.rows import DictRow
 from mcp_server.infrastructure.memory_config import get_memory_settings
 from mcp_server.infrastructure.pg_migrations import migrate_locked, read_state
 from mcp_server.infrastructure.schema_versions import check_runtime
+from mcp_server.infrastructure.store_operations import current_request_class
 from mcp_server.infrastructure.pg_store_host import MaterializedCursor, PgStoreHost
 
 if TYPE_CHECKING:
@@ -69,7 +70,12 @@ class PgDdlMixin(PgStoreHost):
         if get_memory_settings().POOL_DISABLED:
             return self._execute_on_conn(self._conn, query, params, **kwargs)
 
-        with self.interactive_pool.connection() as conn:
+        pool = (
+            self.batch_pool
+            if current_request_class() == "background"
+            else self.interactive_pool
+        )
+        with pool.connection() as conn:
             return self._execute_on_conn(conn, query, params, **kwargs)
 
     def _execute_on_conn(

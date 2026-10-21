@@ -19,19 +19,20 @@ import time
 import pytest
 
 broker_pipe = pytest.importorskip("mcp_server.infrastructure.broker_pipe")
+broker_win32 = pytest.importorskip("mcp_server.infrastructure.broker_win32")
 
 windows = pytest.mark.skipif(sys.platform != "win32", reason="Windows named pipes")
 
 
 def test_the_dacl_grants_one_sid_and_inherits_nothing():
     sid = "S-1-5-21-1004336348-1177238915-682003330-1001"
-    assert broker_pipe.owner_only_sddl(sid) == f"D:P(A;;GA;;;{sid})"
+    assert broker_win32.owner_only_sddl(sid) == f"D:P(A;;GA;;;{sid})"
 
 
 @pytest.mark.parametrize("bad", ["", "Everyone", "S-1-1-0)(A;;GA;;;WD", "WD"])
 def test_anything_but_a_sid_string_is_refused(bad):
     with pytest.raises(ValueError):
-        broker_pipe.owner_only_sddl(bad)
+        broker_win32.owner_only_sddl(bad)
 
 
 def test_the_pipe_name_is_per_user_and_per_store(monkeypatch):

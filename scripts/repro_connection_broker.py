@@ -16,6 +16,11 @@ recorded like a passing one.
   (tests_py/infrastructure/test_pg_connection_saturation_repro.py).
 * ``increment0``: the increment-0 guarantees on the throwaway test database
   (tests_py/infrastructure/test_pg_no_runtime_ddl_no_idle_tx.py).
+* ``priority``: acceptance A5, a real broker on a private cluster with the
+  heavy load sent as background, then as interactive
+  (tests_py/infrastructure/test_broker_priority_repro.py).
+* ``bounds``: the audit's probe A on the store's connections: name and
+  session bounds per pool (tests_py/infrastructure/test_pg_session_bounds.py).
 
 The broker's acceptance measurements (ADR-1112 section Acceptance) are
 added here by the increments that implement them, never before.
@@ -42,6 +47,8 @@ LOG = ROOT / "docs" / "verification" / "connection-broker" / "experiment-log.md"
 TARGETS = {
     "baseline": "tests_py/infrastructure/test_pg_connection_saturation_repro.py",
     "increment0": "tests_py/infrastructure/test_pg_no_runtime_ddl_no_idle_tx.py",
+    "priority": "tests_py/infrastructure/test_broker_priority_repro.py",
+    "bounds": "tests_py/infrastructure/test_pg_session_bounds.py",
 }
 
 

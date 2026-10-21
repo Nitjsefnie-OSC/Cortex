@@ -42,6 +42,7 @@ from mcp_server.handlers.backfill_helpers import gist_oversized_content
 from mcp_server.handlers.remember import handler as remember_handler
 from mcp_server.handlers.wiki_pipeline import handler as _pipeline
 from mcp_server.handlers.consolidation.cascade import run_cascade_advancement
+from mcp_server.infrastructure.store_operations import background_work
 
 logger = logging.getLogger(__name__)
 
@@ -391,6 +392,7 @@ def _advance_cascade(store: MemoryStore, result: dict[str, Any]) -> None:
         silent_failure.note("backfill.cascade_advancement", exc)
 
 
+@background_work  # source: ADR-1112 decision 4 (background class)
 async def handler(args: dict[str, Any] | None = None) -> dict[str, Any]:
     """Backfill prior conversations into the memory store."""
     parsed = _parse_args(args)

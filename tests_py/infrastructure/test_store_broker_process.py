@@ -127,3 +127,59 @@ def test_the_database_url_is_not_on_the_command_line(broker_env):
         check=True,
     ).stdout
     assert "postgresql://" not in command and "--listener-fd" in command
+
+
+def _raw(path: Path):
+    import socket  # noqa: PLC0415
+
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(10)
+    sock.connect(str(path))
+    return sock
+
+
+def _drained(sock) -> bool:
+    """True once the broker closed the connection (EOF or reset)."""
+    try:
+        while sock.recv(65536):
+            pass
+    except OSError:
+        return True
+    return True
+
+
+def _flood(path: Path, count: int) -> tuple[list, int]:
+    opened, refused = [], 0
+    for _ in range(count):
+        try:
+            opened.append(_raw(path))
+        except ConnectionRefusedError:
+            refused += 1  # the kernel's listen backlog is full: backpressure
+    return opened, refused
+
+
+def test_abusive_peers_are_dropped_and_the_broker_keeps_serving(broker_env):
+    """Sandboxed protocol abuse on a live broker: garbage, an oversized header,
+    a wrong protocol and a connection flood beyond the cap. Each abusive
+    connection is closed; the same broker then serves a normal request."""
+    from mcp_server.infrastructure import broker_protocol as protocol  # noqa: PLC0415
+
+    root, children = broker_env
+    store = _store(root)
+    store.get_memory(-1)
+    key = broker_endpoint.store_key(os.environ["DATABASE_URL"])
+    path = runtime_directory(root, key) / SOCKET_NAME
+    abusive = [_raw(path) for _ in range(3)]
+    abusive[0].sendall(b"\x00\x00\x00\x05hello")
+    abusive[1].sendall((protocol.MAX_REQUEST_BYTES + 1).to_bytes(4, "big"))
+    hello = protocol.dumps({"t": "hello", "protocol": 999})
+    abusive[2].sendall(protocol.frame(hello, 1 << 20))
+    for sock in abusive:
+        assert _drained(sock)
+        sock.close()
+    flood, refused = _flood(path, 200)  # above the default cap of 128 clients
+    assert store.get_memory(-1) is None  # the established client is still served
+    for sock in flood:
+        sock.close()
+    assert len(flood) + refused == 200
+    assert len(children) == 1 and store.broker_pid() == children[0].pid

@@ -35,6 +35,19 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Background work stays on its own connections; every store connection
+  is named and bounded (ADR-1112 increment 4).** Tool handlers that run
+  batch work (consolidate, backfill, ingest, import, seed, rebuild profiles)
+  run their store statements on the batch pool, so interactive work keeps
+  `POOL_INTERACTIVE_MAX` connections during consolidation. Store connections
+  are named `cortex-store-<pool>` and carry `statement_timeout` and
+  `lock_timeout` of their class deadline (30 s interactive, 30 min batch)
+  and `idle_in_transaction_session_timeout` of 30 s, as backstops (the fix
+  is that no transaction spans a request). Measured on a real broker
+  (`python scripts/repro_connection_broker.py priority`): point reads p95
+  108 ms while 32 clients saturate the background queue, against 9.2 s when
+  the same load shares one queue.
+
 - **The store broker process (ADR-1112 increment 3), not yet used by
   clients.** `mcp_server/hooks/store_broker.py` is one resident process per
   store that will own every PostgreSQL connection: started on demand through

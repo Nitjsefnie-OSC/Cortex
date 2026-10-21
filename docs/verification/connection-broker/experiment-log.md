@@ -360,3 +360,31 @@ local time).
 
 - Broker tests: 67 unit (codec, frames, queues, server and client over sockets) plus 4 endpoint and 5 real-process tests on the test database, all passing; the pipe tests run in the `test-windows` job only (3 skipped here, on macOS).
 - Full suite: 10326 passed, 25 skipped (`pytest tests_py`, 517 s).
+
+### 2026-10-21T01:48:28+00:00 bounds
+
+- head: `fa8165b06ce6c14d8d77558b32d5081be93caf02` (dirty)
+- command: `python scripts/repro_connection_broker.py bounds`
+- pytest exit code: 0 (2 passed in 0.68s)
+- measured: `{"batch": {"application_name": "cortex-store-batch", "idle_in_transaction_session_timeout": "30s", "lock_timeout": "30min", "statement_timeout": "30min"}, "direct": {"application_name": "cortex-store-direct", "idle_in_transaction_session_timeout": "30s", "lock_timeout": "30s", "statement_timeout": "30s"}, "interactive": {"application_name": "cortex-store-interactive", "idle_in_transaction_session_timeout": "30s", "lock_timeout": "30s", "statement_timeout": "30s"}}`
+
+### 2026-10-21T01:49:34+00:00 priority
+
+- head: `fa8165b06ce6c14d8d77558b32d5081be93caf02` (dirty)
+- command: `python scripts/repro_connection_broker.py priority`
+- pytest exit code: 0 (1 passed in 65.05s (0:01:05))
+- measured: `{"background": {"heavy_class": "background", "heavy_pages_served": 54, "max_ms": 357.3, "p50_ms": 1.5, "p95_ms": 91.2, "point_reads": 443}, "brokers": 1, "single_class": {"heavy_class": "interactive", "heavy_pages_served": 66, "max_ms": 7024.7, "p50_ms": 5968.4, "p95_ms": 4912.1, "point_reads": 2}}`
+
+- Note on the entry above: its `single_class.p95_ms` (4912.1, below the p50) came from a wrong percentile index on 2 samples (`int(0.95 * (n - 1))` picks the first). Fixed to the nearest-rank index; the next entry is the corrected run.
+
+### 2026-10-21T01:50:57+00:00 priority
+
+- head: `fa8165b06ce6c14d8d77558b32d5081be93caf02` (dirty)
+- command: `python scripts/repro_connection_broker.py priority`
+- pytest exit code: 0 (1 passed in 70.58s (0:01:10))
+- measured: `{"background": {"heavy_class": "background", "heavy_pages_served": 54, "max_ms": 225.4, "p50_ms": 1.6, "p95_ms": 107.6, "point_reads": 329}, "brokers": 1, "single_class": {"heavy_class": "interactive", "heavy_pages_served": 82, "max_ms": 9165.0, "p50_ms": 8452.2, "p95_ms": 9165.0, "point_reads": 2}}`
+
+### 15. 2026-10-21T03:30Z: increment 4 closed (request classes, session bounds, A5)
+
+- A5 and probe A: the `priority` and `bounds` entries above. The first full-suite run after naming store connections failed one test: the saturation baseline identified its children by `PGAPPNAME`, which the store now overrides. Store connections are named `cortex-store-<pool>-<pid>` and the baseline maps backends to children by PID; it reproduces as before (4 of 8 refused or timed out, blocked children holding 3 to 4 connections).
+- Full suite: 10329 passed, 26 skipped (`pytest tests_py`, 524 s).
