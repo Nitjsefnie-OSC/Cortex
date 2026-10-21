@@ -11,8 +11,9 @@ import json
 import re
 import subprocess
 import collections
+from pathlib import Path
 
-ROOT = "/home/user/Cortex"
+ROOT = str(Path(__file__).resolve().parents[2])
 G = ROOT + "/.ua/knowledge-graph.json"
 IDENT = r'(?:"?[A-Za-z_][A-Za-z0-9_]*"?\.)?"?([A-Za-z_][A-Za-z0-9_]*)"?'
 CREATE = re.compile(
