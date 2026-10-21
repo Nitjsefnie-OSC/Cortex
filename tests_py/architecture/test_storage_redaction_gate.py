@@ -54,6 +54,34 @@ _AUDITED = {
         "RedactingFilter attached (checked below)",
     ),
     ("infrastructure/pipeline_graph_ttl.py", "os.open-write"): (1, "empty lock file"),
+    ("infrastructure/managed_pg.py", "os.open-write"): (
+        3,
+        "ADR-1114 cluster state: an empty lock file, the 0600 temp file of "
+        "write_json (port, pid, state) and the supervisor log fd; no memory content",
+    ),
+    ("infrastructure/managed_pg.py", "open-write"): (
+        1,
+        "ADR-1114 write_json fills its 0600 temp file with cluster state "
+        "(port, pid, state); no memory content",
+    ),
+    ("infrastructure/managed_pg.py", "child-stdio-file"): (
+        1,
+        "ADR-1114 supervisor stdout/stderr to its own 0600 log; supervisor "
+        "lines carry no memory content",
+    ),
+    ("infrastructure/managed_pg_process.py", "os.open-write"): (
+        1,
+        "ADR-1114 empty lock file",
+    ),
+    ("infrastructure/managed_pg_server.py", "os.open-write"): (
+        1,
+        "ADR-1114 postgres server log fd, 0600 under the 0700 cluster root",
+    ),
+    ("infrastructure/managed_pg_server.py", "child-stdio-file"): (
+        1,
+        "ADR-1114 postgres server stdout/stderr to its 0600 log; follow-up: "
+        "route through log_relay so statement text in errors is redacted",
+    ),
     ("infrastructure/capture_socket.py", "os.open-write"): (1, "lease lock file"),
     ("infrastructure/pipeline_install_release.py", "write_bytes"): (
         1,

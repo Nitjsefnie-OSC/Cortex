@@ -16,10 +16,15 @@ import signal
 import sys
 
 from mcp_server.infrastructure.backend_marker import apply_backend_resolution
+from mcp_server.infrastructure.managed_pg import ManagedPgError, exit_unless_runnable
 
 # source: ADR-0505 — direct console/module launches must resolve the saved
 # backend before registry imports instantiate MemorySettings, just as launcher.py.
-apply_backend_resolution(os.environ)
+# source: ADR-1114 — a managed server that cannot run ends the launch in one line.
+try:
+    apply_backend_resolution(os.environ)
+except ManagedPgError as _not_runnable:
+    exit_unless_runnable(_not_runnable, "cortex-mcp")
 
 
 try:  # pragma: no cover — defensive; sentence-transformers is mandatory

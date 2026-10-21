@@ -3615,6 +3615,10 @@
     "ADR-1113": {
       "mirror": "ADR-1113-a-project-s-memories-can-be-exported-and-imported.md",
       "path": "adr/cortex/1113-a-project-s-memories-can-be-exported-and-imported.md"
+    },
+    "ADR-1114": {
+      "mirror": "ADR-1114-the-plugin-runs-its-own-postgresql-from-pinned-theseus-binaries.md",
+      "path": "adr/cortex/1114-the-plugin-runs-its-own-postgresql-from-pinned-theseus-binaries.md"
     }
   },
   "project": "cortex",
