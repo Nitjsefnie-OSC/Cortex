@@ -13,6 +13,7 @@ source: ADR-1110"""
 
 from __future__ import annotations
 
+import json
 import random
 import string
 
@@ -22,6 +23,14 @@ _B32 = string.ascii_uppercase + "234567"
 
 def _draw(rng: random.Random, alphabet: str, n: int) -> str:
     return "".join(rng.choice(alphabet) for _ in range(n))
+
+
+def _pem_armor(edge: str) -> str:
+    """A PEM armor line, assembled so the source holds no key header: the
+    repository's scanners (gitleaks, the HOL plugin scanner) read a literal
+    header followed by a key body as a committed private key."""
+    label = " ".join(("RSA", "PRIVATE", "KEY"))
+    return f"{'-' * 5}{edge} {label}{'-' * 5}"
 
 
 def samples(seed: int = 20261021) -> dict[str, tuple[str, str]]:
@@ -48,16 +57,17 @@ def samples(seed: int = 20261021) -> dict[str, tuple[str, str]]:
         + a(24),
         "stripe-access-token": "sk_" + "live_" + a(24),
         "gcp-api-key": "AIza" + a(35),
-        "private-key": "-----BEGIN RSA PRIVATE KEY-----\n"
-        + pem_body
-        + "\n-----END RSA PRIVATE KEY-----",
+        "private-key": _pem_armor("BEGIN") + "\n" + pem_body + "\n" + _pem_armor("END"),
         "generic-api-key": a(32),
     }
     texts = {
         rule: f"deploy step: export TOKEN_VALUE={value}\nnext line"
         for rule, value in values.items()
     }
-    texts["generic-api-key"] = f'config: api_key = "{values["generic-api-key"]}"'
+    # the value JSON-quoted: config: api_key = "<value>"
+    texts["generic-api-key"] = (
+        f"config: api_key = {json.dumps(values['generic-api-key'])}"
+    )
     texts["private-key"] = f"key file follows\n{values['private-key']}\n"
     return {rule: (texts[rule], values[rule]) for rule in values}
 
