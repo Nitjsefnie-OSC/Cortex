@@ -10,6 +10,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from mcp_server.shared.private_paths import cortex_cache_dir
 from mcp_server.infrastructure.groomer_coordinator_io import (
     atomic_write_json,
     atomic_write_text,
@@ -17,7 +18,6 @@ from mcp_server.infrastructure.groomer_coordinator_io import (
     parse_iso,
     pid_alive,
 )
-from mcp_server.shared.platform import cache_dir
 from mcp_server.observability import silent_failure
 import hashlib
 import os
@@ -67,7 +67,8 @@ class GroomerCoordinator:
 
     def __init__(self, store_key: str, *, root: Path | None = None) -> None:
         base_root = (
-            root if root is not None else cache_dir() / "cortex" / "groomer-coordinator"
+            # source: ADR-1112 — relocatable with the rest of the cache root
+            root if root is not None else cortex_cache_dir() / "groomer-coordinator"
         )
         self.base_dir = base_root / store_key
         self.sessions_dir = self.base_dir / "sessions"

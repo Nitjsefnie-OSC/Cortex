@@ -14,6 +14,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from mcp_server.shared.private_paths import cortex_cache_dir
 from mcp_server.infrastructure import process_ancestry
 from mcp_server.infrastructure.file_io import read_json
 from mcp_server.shared import platform as host_platform
@@ -37,7 +38,7 @@ def registry_dir() -> Path:
     """Return the session registry directory.
 
     source: ADR-0597"""
-    return Path.home() / ".cache" / "cortex" / "session-registry"
+    return cortex_cache_dir() / "session-registry"  # source: ADR-1112
 
 
 def registry_path(claude_pid: int) -> Path:

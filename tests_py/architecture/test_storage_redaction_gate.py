@@ -31,6 +31,11 @@ _AUDITED = {
         1,
         "write_json calls the gated write_text",
     ),
+    ("shared/gated_files.py", "os.open-write"): (1, "the gate's own temp file"),
+    ("shared/private_paths.py", "os.open-write"): (
+        1,
+        "creates an empty 0600 file before SQLite or a log opens it",
+    ),
     ("shared/log_rotation.py", "open-write"): (1, "yields only a RedactingStream"),
     ("infrastructure/log_relay.py", "child-stdio-file"): (
         1,
@@ -164,6 +169,7 @@ def test_scanner_detects_each_primitive_kind():
         "p.write_text(x)": "write_text",
         "open(p, 'a')": "open-write",
         "os.open(p, os.O_CREAT | os.O_WRONLY)": "os.open-write",
+        "os.open(p, flags, 0o600)": "os.open-write",
         "logging.FileHandler(p)": "log-file-handler",
         "tempfile.mkstemp()": "tempfile",
         "sqlite3.connect(p)": "db-connect",

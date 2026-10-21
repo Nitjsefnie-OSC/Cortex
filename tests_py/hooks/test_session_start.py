@@ -1207,6 +1207,8 @@ def _patched_main(**overrides):
         "_auto_wire_pipeline": MagicMock(),
         "_maybe_background_reanalyze": MagicMock(),
         "_maybe_background_consolidate": MagicMock(),
+        # ADR-1112: never touch the real ~/.cache/cortex from a test
+        "harden_at_startup": MagicMock(),
     }
     defaults.update(overrides)
     return [patch.object(hook, name, m) for name, m in defaults.items()]

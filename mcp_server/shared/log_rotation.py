@@ -14,6 +14,11 @@ from typing import TextIO
 
 from mcp_server.shared.gated_files import RedactingStream
 from mcp_server.shared.log_file_lock import log_file_lock
+from mcp_server.shared.private_paths import (
+    PRIVATE_FILE_MODE,
+    ensure_private_dir,
+    is_private,
+)
 
 # source: ADR-0655
 
@@ -55,7 +60,9 @@ def open_rotating_log(
     The caller must keep its write or Popen inside this context. Any filesystem
     or locking error propagates to the writer's existing logged failure boundary.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
+    if mode is None and is_private(path):
+        mode = PRIVATE_FILE_MODE  # source: ADR-1112
+    ensure_private_dir(path.parent)
     with log_file_lock(path):
         _rotate_if_needed(path, incoming_bytes)
         with open(path, "a", encoding="utf-8", newline="\n") as stream:

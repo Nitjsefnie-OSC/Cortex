@@ -3607,6 +3607,10 @@
     "ADR-1111": {
       "mirror": "ADR-1111-a-hard-forget-erases-every-stored-copy-of-the-memory.md",
       "path": "adr/cortex/1111-a-hard-forget-erases-every-stored-copy-of-the-memory.md"
+    },
+    "ADR-1112": {
+      "mirror": "ADR-1112-personal-data-is-stored-owner-only.md",
+      "path": "adr/cortex/1112-personal-data-is-stored-owner-only.md"
     }
   },
   "project": "cortex",

@@ -49,6 +49,16 @@ personal data are not redacted.
   detected and kept across plugin updates. Cortex never provisions or
   connects to any database you did not configure.
 
+Only your account can read it (ADR-1112). On macOS and Linux the database
+(with its `-wal` and `-shm` files), logs, telemetry, wiki pages, artifacts and
+profiles under `~/.claude/methodology`, the capture worker's directory,
+`~/.claude/brain-index.json` and `~/.cache/cortex` are created with mode `0600`
+in `0700` directories; an install made by an earlier version is tightened the
+first time the server or a session starts. On Windows those directories get an
+access list granting only your user, inherited by everything inside. Files
+Cortex writes into your own repositories (a `CLAUDE.md` section, `docs/adr`)
+keep your usual permissions.
+
 You own this data. Deleting the database file (or the relevant rows) permanently
 removes it. The `forget` tool deletes individual memories: a hard delete
 (the default) removes the memory and every stored copy of its text (archive,

@@ -14,6 +14,7 @@ import time
 
 from mcp_server.infrastructure.upstream_identity import ALLOWED_UPSTREAM_COMMANDS
 from mcp_server.shared import gated_files
+from mcp_server.shared.private_paths import cortex_cache_dir
 from mcp_server.shared.redaction_gate import redact_text
 from typing import Any, NoReturn
 
@@ -21,7 +22,6 @@ from mcp_server.errors import McpConnectionError
 from mcp_server.infrastructure.mcp_call_timeout import default_call_timeout_s
 import os
 import shutil
-import pathlib
 
 logger = logging.getLogger(__name__)
 
@@ -552,7 +552,7 @@ class MCPClient:
         source: ADR-0532"""
 
         try:
-            base = pathlib.Path.home() / ".cache" / "cortex" / "mcp-logs"
+            base = cortex_cache_dir() / "mcp-logs"  # source: ADR-1112
             base.mkdir(parents=True, exist_ok=True)
             raw = self._config.get("command") or "unknown"
             stem = raw.split("/")[-1] or "unknown"

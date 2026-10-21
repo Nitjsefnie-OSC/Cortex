@@ -181,5 +181,6 @@ def _atomic_write_bytes_str(safe_path: str, content: str) -> int:
 
     source: ADR-0630"""
 
-    # source: ADR-0056 (atomic), ADR-1110 (redacted); 0600 as mkstemp gave
-    return len(gated_files.write_text(safe_path, content, mode=0o600))
+    # source: ADR-0056 (atomic), ADR-1110 (redacted), ADR-1112 (0600 under
+    # the data roots; a project wiki page keeps the repository's umask)
+    return len(gated_files.write_text(safe_path, content))

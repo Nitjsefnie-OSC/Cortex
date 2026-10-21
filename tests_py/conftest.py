@@ -52,6 +52,9 @@ def _redirect_real_data_roots() -> str:
     choice, the physical location the suite writes to is not.
     """
     os.environ["CORTEX_CLAUDE_DIR"] = _TEST_CLAUDE_DIR
+    # ADR-1112: the cache root is personal data too (MCP logs) and startup
+    # tightens its modes; no test process may reach the developer's own.
+    os.environ["CORTEX_CACHE_DIR"] = os.path.join(_TEST_CLAUDE_DIR, "cortex-cache")
     methodology = os.path.join(_TEST_CLAUDE_DIR, "methodology")
     os.makedirs(methodology, exist_ok=True)
     sqlite_path = os.path.join(methodology, "memory.db")

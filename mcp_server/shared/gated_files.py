@@ -21,6 +21,12 @@ import uuid
 from pathlib import Path
 from typing import Any, TextIO
 
+from mcp_server.shared.private_paths import (
+    PRIVATE_FILE_MODE,
+    create_private_file,
+    ensure_private_dir,
+    is_private,
+)
 from mcp_server.shared.redaction_gate import redact_text, redact_value
 
 
@@ -32,10 +38,13 @@ def _atomic_write(
 ) -> bytes:
     """Write ``data`` to ``path`` through a temporary file in the same directory.
 
-    ``mode`` None: a new file gets ``0o666`` minus the process umask (what
-    ``open`` gives it) and a replaced file keeps its mode. ``exclusive``
+    ``mode`` None: under Cortex's personal-data roots the file is ``0600``
+    (ADR-1112); elsewhere a new file gets ``0o666`` minus the process umask
+    (what ``open`` gives it) and a replaced file keeps its mode. ``exclusive``
     publishes with ``os.link``, which fails if ``path`` exists (``open("x")``)."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    if mode is None and is_private(path):
+        mode = PRIVATE_FILE_MODE  # source: ADR-1112
+    ensure_private_dir(path.parent)
     try:
         keep_mode: int | None = stat.S_IMODE(os.stat(path).st_mode)
     except FileNotFoundError:
@@ -104,7 +113,10 @@ def append_text(path: str | Path, text: str, *, mode: int | None = None) -> None
 
 def open_text_log(path: str | Path) -> "RedactingStream":
     """Open ``path`` for appending; every write goes through the gate."""
-    return RedactingStream(open(path, "a", encoding="utf-8"))  # noqa: SIM115 — the caller owns and closes the stream
+    target = Path(path)
+    if is_private(target):
+        create_private_file(target)  # source: ADR-1112
+    return RedactingStream(open(target, "a", encoding="utf-8"))  # noqa: SIM115 — the caller owns and closes the stream
 
 
 class RedactingStream:

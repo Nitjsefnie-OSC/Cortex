@@ -61,8 +61,11 @@ def _open_kind(node: ast.Call) -> str | None:
     if func_name not in {"open", "fdopen"}:
         return None
     if _owner(node) == "os" and func_name == "open":
+        # read-only only when the flags are spelled out and none can write;
+        # flags held in a variable count as writing
         flags = {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)}
-        return "os.open-write" if flags & _OS_WRITE_FLAGS else None
+        read_only = "O_RDONLY" in flags and not flags & _OS_WRITE_FLAGS
+        return None if read_only else "os.open-write"
     is_method = isinstance(node.func, ast.Attribute) and _owner(node) != "os"
     mode = _mode(node, 0 if is_method else 1)
     if mode is not None and set(mode) & _WRITE_MODE_CHARS:
