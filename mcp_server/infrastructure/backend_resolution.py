@@ -133,14 +133,16 @@ def persist_first_decision(
 def settle_backend(
     environ: MutableMapping[str, str], marker_path: Path | None = None
 ) -> str:
-    """Resolve the backend for this process; return ``sqlite`` or ``postgresql``.
+    """Resolve the backend for this process; return the settled backend name.
 
     Pre:  ``environ`` is mutable (normally ``os.environ``).
     Post: ``CORTEX_MEMORY_STORE_BACKEND`` is ``sqlite`` or ``postgresql``
           unless the operator set it explicitly or configured only a
-          database URL (then it stays unset and the engine, which owns that
-          path, decides); ``DATABASE_URL`` is set only for PostgreSQL. Raises ``BackendMarkerError`` on an
-          unreadable marker (never guess a backend).
+          database URL (then it stays unset, the return value is ``""``
+          and the engine, which owns that path, decides);
+          ``DATABASE_URL`` is set only for PostgreSQL. Raises
+          ``BackendMarkerError`` on an unreadable marker (never guess a
+          backend).
 
     source: ADR-1110
     """

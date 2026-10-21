@@ -27,7 +27,7 @@ Cause: three resolutions. `scripts/launcher_backend.py` called `apply_backend_re
 
 ## Decision
 
-1. `mcp_server/infrastructure/backend_resolution.py` holds the ADR-1104 first-launch decision (moved verbatim from `scripts/launcher_backend.py`) and `settle_backend(environ, marker_path=None)`, the only resolution: explicit environment, then marker, then a first decision recorded as the marker, then `CORTEX_MEMORY_STORE_BACKEND` is `sqlite` or `postgresql` — never `auto`. `DATABASE_URL` is set only for PostgreSQL (the namespaced URL, else the ADR-1104 legacy local URL when PostgreSQL was chosen).
+1. `mcp_server/infrastructure/backend_resolution.py` holds the ADR-1104 first-launch decision (moved verbatim from `scripts/launcher_backend.py`) and `settle_backend(environ, marker_path=None)`, the only resolution: explicit environment, then marker, then a first decision recorded as the marker, then `CORTEX_MEMORY_STORE_BACKEND` is `sqlite` or `postgresql` — never `auto` — except when the operator set it explicitly or configured only a database URL (`DATABASE_URL` / `CORTEX_MEMORY_DATABASE_URL`): it then stays unset and the engine, which owns that path (ADR-0535), decides. `DATABASE_URL` is set only for PostgreSQL (the namespaced URL, else the ADR-1104 legacy local URL when PostgreSQL was chosen).
 2. The launcher (`scripts/launcher_backend.apply`), the hook entry (`hooks/entry.prepare_environment`) and the server (`mcp_server/__main__.py`) call `settle_backend`. An unreadable marker stops the process with "Cortex not ready" (no guessed backend).
 3. `hooks/entry.resolve_auto_backend` is removed: an entry point can no longer reach `auto`.
 4. The hook modules have no default URL; their PostgreSQL helpers return `None` when `DATABASE_URL` is unset.
