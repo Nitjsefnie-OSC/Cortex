@@ -66,24 +66,23 @@ def _normalise_root(project_root: str) -> str:
     return canonical_root(project_root)
 
 
-def _like_prefix(root: str) -> str:
-    escaped = root.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return escaped + "/%"
-
-
 def select_project_memories(
     store: Any, project_root: str, include_global: bool
 ) -> list[dict[str, Any]]:
     """Current memories of ``project_root`` (and below), oldest first."""
     root = _normalise_root(project_root)
+    below = root.rstrip("/") + "/"
     columns = ", ".join(EXPORT_FIELDS)
-    scope = "directory_context = %s OR directory_context LIKE %s ESCAPE '\\'"
+    # An exact, case-sensitive prefix on both backends: SQLite's LIKE folds
+    # ASCII case, so a sibling differing by case only would match.
+    # source: ADR-1113 (review of PR #775, N7)
+    scope = "directory_context = %s OR substr(directory_context, 1, %s) = %s"
     if include_global:
         scope += " OR is_global"
     rows = store._conn.execute(
         f"SELECT {columns} FROM memories "  # noqa: S608 — fixed column list
         f"WHERE superseded_by_id IS NULL AND ({scope}) ORDER BY created_at, id",
-        (root, _like_prefix(root)),
+        (root, len(below), below),
     ).fetchall()
     return [_portable(dict(row)) for row in rows]
 

@@ -282,3 +282,19 @@ def test_import_type_checks_every_field(store, tmp_path, bad):
     with pytest.raises(ValueError):
         portability.import_export(store, _crafted(tmp_path, root, [record]))
 
+
+def test_export_prefix_is_case_sensitive(store, tmp_path):
+    """Review of #775, N7: SQLite LIKE ignores ASCII case, so a sibling that
+    differs by case only was exported."""
+    for directory in (PROJECT, PROJECT.replace("/app", "/APP") + "/x"):
+        store.insert_memory(
+            {
+                "content": f"case {RUN} {directory}",
+                "tags": [],
+                "domain": "d",
+                "directory_context": directory,
+            }
+        )
+    out = tmp_path / "export.jsonl"
+    portability.export_project(store, PROJECT, out)
+    assert _contents(out) == [f"case {RUN} {PROJECT}"]
