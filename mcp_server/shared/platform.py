@@ -15,7 +15,7 @@ IS_WINDOWS = sys.platform == "win32"
 # source: issue #689 (windows-latest run 38008915302); ADR-1101
 _WSL_STUB_DIRS = frozenset({"system32", "sysnative", "syswow64", "windowsapps"})
 # Git for Windows keeps git.exe in cmd\, bin\ or mingw64\bin\ and bash.exe in
-# bin\: up to two parents separate them.
+# bin\: the root is one to three parents above git.exe.
 # source: ADR-1101 (Git for Windows install layout).
 _GIT_ROOT_DEPTH = 3
 _NO_BASH = (
