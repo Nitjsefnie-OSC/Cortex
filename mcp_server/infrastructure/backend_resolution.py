@@ -10,7 +10,8 @@ requires PostgreSQL in CLI mode"; issues #703, #704).
 
 ``settle_backend`` is now the only entry: an explicit setting wins, then the
 marker; a HOME nothing decides gets its marker once (below), and the result
-is always an explicit ``sqlite`` or ``postgresql`` — never ``auto``.
+is an explicit ``sqlite`` or ``postgresql`` — never ``auto`` — except when the
+operator configured only a database URL, which the engine then owns.
 
 First-launch decision, once, when neither the environment nor a marker
 decides:
@@ -35,7 +36,7 @@ import os
 import socket
 import sys
 from pathlib import Path
-from typing import MutableMapping
+from typing import Mapping, MutableMapping
 
 from mcp_server.infrastructure import backend_marker
 from mcp_server.infrastructure.backend_marker import (
@@ -102,12 +103,16 @@ def _connect_error(address: tuple):
     return None
 
 
-def decide(methodology_dir: Path, marker_name: str) -> tuple[str, str]:
-    """(backend, why) for a HOME with no marker and no explicit setting."""
+def decide(
+    methodology_dir: Path, marker_name: str, environ: Mapping[str, str] | None = None
+) -> tuple[str, str]:
+    """(backend, why) for a HOME with no marker and no explicit setting.
+
+    ``environ`` is the environment being settled (``os.environ`` when omitted)."""
     if not has_earlier_state(methodology_dir, marker_name):
         return "sqlite", "fresh install"
     target = f"{LEGACY_HOST}:{LEGACY_PORT}"
-    failed, why = legacy_store_answer(dict(os.environ))
+    failed, why = legacy_store_answer(dict(os.environ if environ is None else environ))
     if not failed:
         return "postgresql", f"earlier Cortex state; {target}: {why}"
     return "sqlite", (
@@ -115,10 +120,12 @@ def decide(methodology_dir: Path, marker_name: str) -> tuple[str, str]:
     )
 
 
-def persist_first_decision(marker_path: Path | None = None) -> None:
+def persist_first_decision(
+    marker_path: Path | None = None, environ: Mapping[str, str] | None = None
+) -> None:
     """Write the marker when the environment and no marker decide. Loud."""
     marker_path = marker_path or backend_marker.BACKEND_MARKER_PATH
-    backend, why = decide(marker_path.parent, marker_path.name)
+    backend, why = decide(marker_path.parent, marker_path.name, environ)
     path = write_backend_marker(backend, _WRITTEN_BY, marker_path)
     print(f"[cortex] storage: {backend} ({why}); recorded in {path}", file=sys.stderr)
 
@@ -130,14 +137,15 @@ def settle_backend(
 
     Pre:  ``environ`` is mutable (normally ``os.environ``).
     Post: ``CORTEX_MEMORY_STORE_BACKEND`` is ``sqlite`` or ``postgresql``
-          unless the operator set it explicitly; ``DATABASE_URL`` is set
-          only for PostgreSQL. Raises ``BackendMarkerError`` on an
+          unless the operator set it explicitly or configured only a
+          database URL (then it stays unset and the engine, which owns that
+          path, decides); ``DATABASE_URL`` is set only for PostgreSQL. Raises ``BackendMarkerError`` on an
           unreadable marker (never guess a backend).
 
     source: ADR-1110
     """
     if not environment_decides(environ) and read_backend_marker(marker_path) is None:
-        persist_first_decision(marker_path)
+        persist_first_decision(marker_path, environ)
     apply_backend_resolution(environ, marker_path, default="sqlite")
     backend = environ.get("CORTEX_MEMORY_STORE_BACKEND", "")
     named_url = environ.get("CORTEX_MEMORY_DATABASE_URL", "").strip()
