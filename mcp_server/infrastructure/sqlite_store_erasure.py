@@ -63,7 +63,8 @@ class SqliteErasureMixin:
             self._conn.rollback()
             raise
         self._conn.commit()
-        report.fts_method = self._purge_fts_and_wal(secure)
+        report.fts_method = self._purge_fts(secure)
+        report.wal_truncated = self._truncate_wal()
         return report
 
     def _erase_rows(self, memory_id: int, source: str, report: ErasureReport) -> None:
@@ -80,7 +81,7 @@ class SqliteErasureMixin:
         cur = self._conn.execute("DELETE FROM memories WHERE id = %s", (memory_id,))
         report.deleted = cur.rowcount > 0
 
-    def _purge_fts_and_wal(self, secure: bool) -> str:
+    def _purge_fts(self, secure: bool) -> str:
         method = "secure-delete"
         if not secure:
             self._conn.execute(
@@ -88,5 +89,9 @@ class SqliteErasureMixin:
             )
             self._conn.commit()
             method = "optimize"
-        self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         return method
+
+    def _truncate_wal(self) -> bool:
+        """``wal_checkpoint(TRUNCATE)``; True when no reader blocked it."""
+        row = self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        return row is not None and not list(dict(row).values())[0]

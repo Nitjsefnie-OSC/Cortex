@@ -137,7 +137,10 @@ class TestHookOnUnsupportedPlatform(unittest.TestCase):
         spool = capture_spool.spool_directory(self.root)
         files = capture_spool.pending(spool)
         self.assertEqual([capture_spool.read(f) for f in files], [EXPECTED])
-        # source: ADR-1110 — two processes: the redaction relay, then the drainer
+        self._assert_drainer_spawned_through_the_relay(popen)
+
+    def _assert_drainer_spawned_through_the_relay(self, popen):
+        """Two processes: the redaction relay, then the drainer (ADR-1110)."""
         self.assertEqual(popen.call_count, 2)
         relay_call, child_call = popen.call_args_list
         log = self.root / ".capture-worker" / "drain.log"
@@ -145,25 +148,18 @@ class TestHookOnUnsupportedPlatform(unittest.TestCase):
             relay_call.args[0][-3:],
             ["mcp_server.infrastructure.log_relay", str(log), oct(0o600)],
         )
-        command = child_call.args[0]
         # issue #667: through the launcher (deps isolation), never a bare -m
         self.assertEqual(
-            command,
+            child_call.args[0],
             [sys.executable, str(launcher_path()), "mcp_server.hooks.capture_drain"],
         )
         expected = capture_dispatch.popen_options(
             detached_spawn.platform_options("win32", None)
         )
         relay_stdin = popen.return_value.stdin
-        self.assertEqual(
-            child_call.kwargs,
-            {
-                "stdin": subprocess.DEVNULL,
-                "stdout": relay_stdin,
-                "stderr": subprocess.STDOUT,
-                **expected,
-            },
-        )
+        stdio = {"stdin": subprocess.DEVNULL, "stdout": relay_stdin}
+        stdio["stderr"] = subprocess.STDOUT
+        self.assertEqual(child_call.kwargs, {**stdio, **expected})
         relay_stdin.close.assert_called_once()  # the hook keeps no copy
         self.assertFalse(log.exists())  # only the relay writes the log
 

@@ -34,8 +34,8 @@ from mcp_server.shared.platform import python_executable
 
 # source: ADR-1110 — output pause that closes a block (seconds) and the
 # block size cap (lines); a PEM key is ~30 lines, so 400 holds any one key.
-_BLOCK_PAUSE_S = 0.2
-_BLOCK_MAX_LINES = 400
+_BLOCK_PAUSE_S = 0.2  # source: ADR-1110
+_BLOCK_MAX_LINES = 400  # source: ADR-1110 (a PEM key is about 30 lines)
 _PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 
 

@@ -53,11 +53,7 @@ def store(request, tmp_path, monkeypatch):
 
 
 def _seed(store, wiki_root: Path) -> int:
-    from mcp_server.infrastructure.pg_store_wiki_claims import insert_claim_events
-    from mcp_server.infrastructure.pg_store_wiki_drafts import insert_draft
-    from mcp_server.infrastructure.pg_store_wiki_notes import insert_citation
-    from mcp_server.infrastructure.pg_store_wiki_pages import upsert_page
-
+    """Write MARKER through every path that copies a memory's text."""
     mid = store.insert_memory({"content": MARKER, "tags": ["t"], "domain": DOMAIN})
     keep = store.insert_memory({"content": KEEP, "tags": ["t"], "domain": DOMAIN})
     # compression: the original goes to the archive, the row keeps a summary
@@ -70,24 +66,27 @@ def _seed(store, wiki_root: Path) -> int:
         }
     )
     store.update_memory_compression(mid, "summary", None, 1, original_content=MARKER)
-    entity = store.insert_entity(
-        {"name": f"Jane Placeholder{RUN}", "type": "person", "domain": DOMAIN}
-    )
-    store.insert_memory_entity(mid, entity)
-    shared = store.insert_entity(
-        {"name": f"SharedConcept{RUN}", "type": "concept", "domain": DOMAIN}
-    )
+    _seed_entities(store, mid, keep)
+    _seed_mined(store, mid)
+    _seed_wiki(store, mid, wiki_root)
+    return mid
+
+
+def _seed_entities(store, mid: int, keep: int) -> None:
+    def entity(name: str, kind: str, **extra) -> int:
+        return store.insert_entity(
+            {"name": name, "type": kind, "domain": DOMAIN, **extra}
+        )
+
+    store.insert_memory_entity(mid, entity(f"Jane Placeholder{RUN}", "person"))
+    shared = entity(f"SharedConcept{RUN}", "concept")
     store.insert_memory_entity(mid, shared)
     store.insert_memory_entity(keep, shared)
-    symbol = store.insert_entity(
-        {
-            "name": f"parse_config{RUN}",
-            "type": "function",
-            "domain": DOMAIN,
-            "origin": "ast_symbol",
-        }
-    )
+    symbol = entity(f"parse_config{RUN}", "function", origin="ast_symbol")
     store.insert_memory_entity(mid, symbol)
+
+
+def _seed_mined(store, mid: int) -> None:
     store.insert_prospective_memory(
         {
             "content": f"remind: {MARKER}",
@@ -103,6 +102,14 @@ def _seed(store, wiki_root: Path) -> int:
             "source_memory_id": mid,
         }
     )
+
+
+def _seed_wiki(store, mid: int, wiki_root: Path) -> None:
+    from mcp_server.infrastructure.pg_store_wiki_claims import insert_claim_events
+    from mcp_server.infrastructure.pg_store_wiki_drafts import insert_draft
+    from mcp_server.infrastructure.pg_store_wiki_notes import insert_citation
+    from mcp_server.infrastructure.pg_store_wiki_pages import upsert_page
+
     conn = store._conn
     insert_claim_events(conn, [{"memory_id": mid, "text": f"claim: {MARKER}"}])
     insert_draft(
@@ -110,26 +117,23 @@ def _seed(store, wiki_root: Path) -> int:
         {"memory_id": mid, "title": f"draft {MARKER}", "kind": "note", "lead": MARKER},
     )
     rel = f"notes/{DOMAIN}/{mid}-erase-me.md"
-    page_id, _ = upsert_page(
-        conn,
-        {
-            "rel_path": rel,
-            "slug": "erase-me",
-            "kind": "note",
-            "title": f"page {MARKER}",
-            "body": MARKER,
-            "memory_id": mid,
-            "domain": DOMAIN,
-        },
-    )
+    page = {
+        "rel_path": rel,
+        "slug": "erase-me",
+        "kind": "note",
+        "body": MARKER,
+        "title": f"page {MARKER}",
+        "memory_id": mid,
+        "domain": DOMAIN,
+    }
+    page_id, _ = upsert_page(conn, page)
     insert_citation(conn, page_id, domain=DOMAIN, memory_id=mid)
     conn.commit()
-    page = wiki_root / rel
-    page.parent.mkdir(parents=True, exist_ok=True)
-    page.write_text(
+    path = wiki_root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
         f"---\nmemory_id: {mid}\n---\n# page\n\n{MARKER}\n", encoding="utf-8"
     )
-    return mid
 
 
 def _forget(mid: int) -> dict:
@@ -183,7 +187,7 @@ def test_sqlite_file_and_wal_hold_no_byte_of_the_text(tmp_path, monkeypatch):
             if (tmp_path / n).exists()
         )
         assert f"ERASE-ME-{RUN}".encode() in on_disk  # the fixture really wrote bytes
-        _forget(mid)
+        assert _forget(mid)["wal_truncated"] is True
         for name in ("memory.db", "memory.db-wal"):
             path = tmp_path / name
             if path.exists():
@@ -220,3 +224,26 @@ def test_a_failing_step_erases_nothing_and_raises(store, tmp_path, monkeypatch):
     assert ("memory_archives", "content") in [
         (t.split(".")[-1], c) for t, c in locations(store, MARKER)
     ]
+
+
+def test_a_reader_blocking_the_wal_truncation_is_reported(tmp_path, monkeypatch):
+    """Another connection's open snapshot keeps old WAL frames; the result says
+    so instead of claiming the bytes are gone."""
+    import sqlite3
+
+    from mcp_server.handlers import forget
+
+    store = SqliteMemoryStore(str(tmp_path / "memory.db"))
+    monkeypatch.setattr(forget, "_store", store)
+    monkeypatch.setattr(forget, "WIKI_ROOT", tmp_path / "wiki", raising=False)
+    reader = sqlite3.connect(str(tmp_path / "memory.db"))
+    try:
+        mid = _seed(store, tmp_path / "wiki")
+        reader.execute("BEGIN")
+        reader.execute("SELECT count(*) FROM memories").fetchone()
+        result = _forget(mid)
+        assert result["deleted"] is True
+        assert result["wal_truncated"] is False
+    finally:
+        reader.close()
+        store.close()

@@ -148,6 +148,7 @@ async def _handler_impl(args: dict[str, Any] | None = None) -> dict[str, Any]:
         "erased": report.counts,
         "pages_removed": pages_removed,
         "fts_method": report.fts_method,
+        "wal_truncated": report.wal_truncated,
     }
 
 

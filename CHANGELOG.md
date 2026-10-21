@@ -11,7 +11,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 - **Personal data is stored owner-only (ADR-1112).** The 2026-10-21 audit
   (E18) measured `memory.db`, logs and telemetry at 0644/0664 in 0755/0775
   directories. Under `~/.claude/methodology`, the capture worker directory,
-  `brain-index.json` and `~/.cache/cortex`, files are now created 0600 and
+  `brain-index.json` and the cache root (`~/.cache/cortex`, which now follows a
+  relocated `CORTEX_CLAUDE_DIR` like the rest of Cortex's data), files are now created 0600 and
   directories 0700 (the SQLite database before SQLite opens it, so its WAL and
   shared-memory files follow); existing installs are tightened once at server
   or session start (directories 0700, files lose group/other bits, symlinks

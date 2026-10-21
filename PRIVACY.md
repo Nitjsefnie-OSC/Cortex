@@ -1,6 +1,6 @@
 # Privacy Policy — Cortex (hypermnesia-mcp)
 
-_Last updated: 2026-09-06_
+_Last updated: 2026-10-21_
 
 Cortex is a **local-first** memory server for Claude. It is designed so that your
 data stays on your machine. This policy describes exactly what data Cortex
@@ -52,7 +52,8 @@ personal data are not redacted.
 Only your account can read it (ADR-1112). On macOS and Linux the database
 (with its `-wal` and `-shm` files), logs, telemetry, wiki pages, artifacts and
 profiles under `~/.claude/methodology`, the capture worker's directory,
-`~/.claude/brain-index.json` and `~/.cache/cortex` are created with mode `0600`
+`~/.claude/brain-index.json` and Cortex's cache directory (`~/.cache/cortex`;
+inside the relocated root when `CORTEX_CLAUDE_DIR` is set) are created with mode `0600`
 in `0700` directories; an install made by an earlier version is tightened the
 first time the server or a session starts. On Windows those directories get an
 access list granting only your user, inherited by everything inside. Files

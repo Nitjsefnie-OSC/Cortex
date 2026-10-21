@@ -155,12 +155,8 @@ def test_a_file_that_is_not_an_export_is_refused(tmp_path):
         portability.read_export(truncated)
 
 
-def test_the_command_line_exports_and_imports(tmp_path):
-    """End to end through ``python -m mcp_server.portability`` on SQLite."""
-    db = tmp_path / "cli.db"
-    store = SqliteMemoryStore(str(db))
-    _seed(store)
-    store.close()
+def _cli(db: Path, *args: str) -> subprocess.CompletedProcess:
+    """Run ``python -m mcp_server.portability`` against the SQLite file ``db``."""
     env = {
         **os.environ,
         "CORTEX_MEMORY_STORE_BACKEND": "sqlite",
@@ -170,36 +166,29 @@ def test_the_command_line_exports_and_imports(tmp_path):
         "HF_HUB_OFFLINE": "1",
         "TRANSFORMERS_OFFLINE": "1",
     }
-    repo = Path(__file__).resolve().parents[2]
-    out = tmp_path / "cli.jsonl"
-    run = [sys.executable, "-m", "mcp_server.portability"]
-    exported = subprocess.run(
-        [*run, "export", PROJECT, str(out)],
+    return subprocess.run(
+        [sys.executable, "-m", "mcp_server.portability", *args],
         env=env,
-        cwd=repo,
+        cwd=Path(__file__).resolve().parents[2],
         capture_output=True,
         text=True,
-        timeout=300,
+        timeout=300,  # source: ADR-1113 — bound for a cold model load
     )
+
+
+def test_the_command_line_exports_and_imports(tmp_path):
+    """End to end through ``python -m mcp_server.portability`` on SQLite."""
+    db = tmp_path / "cli.db"
+    store = SqliteMemoryStore(str(db))
+    _seed(store)
+    store.close()
+    out = tmp_path / "cli.jsonl"
+    exported = _cli(db, "export", PROJECT, str(out))
     assert exported.returncode == 0, exported.stderr
     assert json.loads(exported.stdout)["count"] == 2
-    imported = subprocess.run(
-        [*run, "import", str(out), "--into", f"/copy/{RUN}"],
-        env=env,
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
+    imported = _cli(db, "import", str(out), "--into", f"/copy/{RUN}")
     assert imported.returncode == 0, imported.stderr
     assert json.loads(imported.stdout) == {"imported": 2, "skipped": 0}
-    refused = subprocess.run(
-        [*run, "import", str(tmp_path / "missing.jsonl")],
-        env=env,
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
+    refused = _cli(db, "import", str(tmp_path / "missing.jsonl"))
     assert refused.returncode == 1
     assert "cortex portability:" in refused.stderr

@@ -34,8 +34,6 @@ def _server(root, profile):
     env.pop("DATABASE_URL", None)
     env.update(
         CORTEX_CLAUDE_DIR=str(root),
-        # ADR-1112: the server tightens its cache root at start; keep it here
-        CORTEX_CACHE_DIR=str(Path(root) / "cortex-cache"),
         CORTEX_RUNTIME="cowork",
         CORTEX_MEMORY_STORE_BACKEND="sqlite",
         CORTEX_MEMORY_AP_ENABLED="0",

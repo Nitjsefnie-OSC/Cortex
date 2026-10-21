@@ -38,10 +38,16 @@ def claude_root() -> Path:
 
 
 def cortex_cache_dir() -> Path:
-    """``CORTEX_CACHE_DIR``, else ``<XDG cache or ~/.cache>/cortex``: session
-    registry, groomer coordination, upstream MCP logs."""
+    """Cortex's cache root: session registry, groomer coordination, upstream
+    MCP logs. ``CORTEX_CACHE_DIR`` wins; then ``XDG_CACHE_HOME``; then, when
+    ``CORTEX_CLAUDE_DIR`` relocates Cortex's data, a ``cache`` directory inside
+    it (everything derived from that root follows it); else ``~/.cache``."""
     override = os.environ.get("CORTEX_CACHE_DIR", "").strip()
-    return Path(override).expanduser() if override else cache_dir() / "cortex"
+    if override:
+        return Path(override).expanduser()
+    if os.environ.get("XDG_CACHE_HOME") or not os.environ.get("CORTEX_CLAUDE_DIR"):
+        return cache_dir() / "cortex"
+    return claude_root() / "cache" / "cortex"
 
 
 def private_roots() -> tuple[Path, ...]:

@@ -138,10 +138,16 @@ def test_a_path_that_cannot_be_tightened_is_reported_not_hidden(
     assert "methodology" in err
 
 
-def test_the_cache_root_follows_its_override(tmp_path, monkeypatch):
-    monkeypatch.setenv("CORTEX_CACHE_DIR", str(tmp_path / "cache"))
-    assert private_paths.cortex_cache_dir() == tmp_path / "cache"
-    monkeypatch.delenv("CORTEX_CACHE_DIR")
-    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+def test_the_cache_root_follows_the_data_root_unless_told_otherwise(
+    tmp_path, monkeypatch
+):
+    for name in ("CORTEX_CACHE_DIR", "XDG_CACHE_HOME", "CORTEX_CLAUDE_DIR"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     assert private_paths.cortex_cache_dir() == tmp_path / "home" / ".cache" / "cortex"
+    monkeypatch.setenv("CORTEX_CLAUDE_DIR", str(tmp_path / "claude"))
+    assert private_paths.cortex_cache_dir() == tmp_path / "claude" / "cache" / "cortex"
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+    assert private_paths.cortex_cache_dir() == tmp_path / "xdg" / "cortex"
+    monkeypatch.setenv("CORTEX_CACHE_DIR", str(tmp_path / "explicit"))
+    assert private_paths.cortex_cache_dir() == tmp_path / "explicit"

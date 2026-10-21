@@ -38,7 +38,6 @@ def coordinated(monkeypatch, tmp_path):
     from mcp_server.hooks import session_start_consolidate as consolidate
 
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    monkeypatch.delenv("CORTEX_CACHE_DIR", raising=False)
     monkeypatch.setattr(session_registry, "find_claude_ancestor", os.getpid)
     calls = {"options": [], "legacy": 0, "log": []}
 

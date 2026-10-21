@@ -53,6 +53,9 @@ class ErasureReport:
     counts: dict[str, int] = field(default_factory=dict)
     page_paths: list[str] = field(default_factory=list)
     fts_method: str = ""
+    # SQLite only: False when another connection's snapshot kept the WAL from
+    # being truncated (its old frames go at the next checkpoint); None on PG
+    wal_truncated: bool | None = None
 
 
 def _count(cursor: Any) -> int:

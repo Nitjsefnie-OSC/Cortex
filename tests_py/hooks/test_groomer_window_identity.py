@@ -60,11 +60,7 @@ def _run_hook(mode: str, cache: Path, claude_pid: int, groomer_pid: int) -> None
     """Run one hook in its own process; it has exited when this returns."""
     subprocess.run(
         [sys.executable, "-c", _HOOK_DRIVER, mode, str(claude_pid), str(groomer_pid)],
-        # the cache root resolves from XDG here: drop the suite's override
-        env={
-            **{k: v for k, v in os.environ.items() if k != "CORTEX_CACHE_DIR"},
-            "XDG_CACHE_HOME": str(cache),
-        },
+        env={**os.environ, "XDG_CACHE_HOME": str(cache)},
         check=True,
     )
 
@@ -90,7 +86,6 @@ def live_pids():
 @pytest.fixture
 def cache(tmp_path, monkeypatch) -> Path:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    monkeypatch.delenv("CORTEX_CACHE_DIR", raising=False)
     return tmp_path
 
 
