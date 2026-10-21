@@ -39,6 +39,14 @@ HOST = "127.0.0.1"  # source: ADR-1110 (TCP on loopback only; unix sockets off)
 ROOT_ENV = "CORTEX_MANAGED_PG_ROOT"  # source: ADR-1110 (inherited by children)
 ROOT_NAME = "managed-pg"  # source: ADR-1110 (the root's name under methodology/)
 _SUPERVISOR = "mcp_server.infrastructure.managed_pg_supervisor"  # source: ADR-1110
+# source: ADR-1110 (review F1 of #748) — the supervisor holds the cluster's
+# password and lock fds, so it runs isolated (-I: no cwd, PYTHONPATH or user
+# site on sys.path) with only this package's parent added, passed as argv[1].
+# `-P` would do the same but needs Python 3.11; the matrix has 3.10.
+_SUPERVISOR_BOOT = (
+    "import runpy, sys; sys.path.insert(0, sys.argv.pop(1));"
+    f" runpy.run_module({_SUPERVISOR!r}, run_name='__main__', alter_sys=True)"
+)
 _HELD: list[int] = []  # client locks, kept open until the process exits
 _ATTACHED: dict[str, str] = {}  # root -> URL, valid while the client lock is held
 
@@ -154,23 +162,26 @@ def serves(environ: MutableMapping[str, str]) -> PgPaths | None:
 
 
 def _spawn_supervisor(paths: PgPaths, fds: tuple[int, int]) -> None:
-    """Start the detached supervisor; it inherits the two locks in ``fds``."""
+    """Start the detached supervisor; it inherits the two locks in ``fds``.
+
+    Isolated from the caller: ``-I`` and ``cwd`` = the 0700 root, so neither
+    the caller's working directory (a project holding its own ``mcp_server``
+    package) nor ``PYTHONPATH`` can supply the module that runs with the
+    cluster's password; the package is this file's own (review F1, #748).
+    """
     package_parent = str(Path(__file__).resolve().parents[2])
-    env = dict(os.environ)
-    env["PYTHONPATH"] = os.pathsep.join(
-        p for p in (package_parent, env.get("PYTHONPATH", "")) if p
-    )
-    argv = [sys.executable, "-m", _SUPERVISOR, str(paths.root), *map(str, fds)]
+    argv = [sys.executable, "-I", "-c", _SUPERVISOR_BOOT, package_parent]
+    argv += [str(paths.root), *map(str, fds)]
     log = os.open(paths.log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     try:
         subprocess.Popen(
             argv,
+            cwd=paths.root,
             stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=log,
             pass_fds=fds,
             start_new_session=True,
-            env=env,
         )
     finally:
         os.close(log)

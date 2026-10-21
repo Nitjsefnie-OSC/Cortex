@@ -13,8 +13,11 @@ is free and rewrites ``status.json``; if that fails it records the cause and
 exits, and the next client starts a new supervisor). Its stdout/stderr are
 ``supervisor.log``; the postmaster's are ``postgres.log``.
 
-    python3 -m mcp_server.infrastructure.managed_pg_supervisor \
+    python3 -I -c <managed_pg._SUPERVISOR_BOOT> <package parent> \
         <root> <supervisor_fd> <start_fd>
+
+run with ``cwd`` = <root> by ``managed_pg._spawn_supervisor``: the caller's
+working directory and ``PYTHONPATH`` never supply this module (review F1).
 
 source: ADR-1110
 """
