@@ -12,7 +12,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from mcp_server.infrastructure.sqlite_gated_connection import GatedConnection
+from mcp_server.infrastructure.db_connect import sqlite_connect
 from mcp_server.shared.private_paths import create_private_file
 from mcp_server.infrastructure.sqlite_request_scope import (
     register_request_connection,
@@ -123,13 +123,12 @@ class SqliteConnectionRegistry:
             # source: ADR-1112 — created 0600 before SQLite opens it; the WAL
             # and shared-memory files take the database file's mode
             create_private_file(self._target)
-        # source: ADR-1110 — every store connection is gated
-        connection = sqlite3.connect(
+        # source: ADR-1110 — every connection comes gated from db_connect
+        connection = sqlite_connect(
             self._target,
             uri=self._uri,
             check_same_thread=False,
             detect_types=sqlite3.PARSE_DECLTYPES,
-            factory=GatedConnection,
         )
         try:
             expected_journal_mode = "memory" if self._uri else "wal"

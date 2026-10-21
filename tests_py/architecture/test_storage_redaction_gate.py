@@ -6,10 +6,10 @@ Mechanical proof, by AST over every module of ``mcp_server/``:
    temporary file, database connection, child process handed a file as
    stdout/stderr) sits in an audited site below, with the reason it cannot
    carry an unredacted secret; a new primitive anywhere fails the test;
-2. database connections that can write are gated by construction
-   (``factory=GatedConnection`` / ``cursor_factory=GatedCursor``); those
-   listed as read-only or schema-only are checked to contain no SQL write
-   verb in any string literal;
+2. database connections are constructed in one place,
+   ``infrastructure/db_connect.py``, which only builds gated classes and
+   refuses another factory; no module swaps a connection's cursor class, so a
+   connection handed across a module boundary is gated wherever it goes;
 3. every log file handler gets a ``RedactingFilter`` in the same function.
 
 Runtime behaviour of each gate is pinned in
@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import ast
 import collections
-import re
+import sqlite3
+
+import pytest
 
 from tests_py.architecture._storage_primitives import MCP_SERVER_ROOT, scan_tree
 
@@ -64,33 +66,19 @@ _AUDITED = {
         1,
         "download staging for a pinned toolchain, no user content",
     ),
-    ("infrastructure/sqlite_connection_registry.py", "db-connect"): (
-        1,
-        "factory=GatedConnection",
-    ),
-    ("infrastructure/pg_store_schema.py", "db-connect"): (
+    ("infrastructure/db_connect.py", "db-connect"): (
         3,
-        "cursor_factory=GatedCursor at connect and in both pools",
+        "the one connection factory: sqlite3, psycopg and the pool, all gated",
     ),
-    ("doctor.py", "db-connect"): (2, "read-only probe"),
-    ("doctor_mcp.py", "db-connect"): (2, "read-only probe"),
-    ("doctor_pgvector.py", "db-connect"): (1, "read-only probe"),
-    ("hooks/agent_briefing_query.py", "db-connect"): (1, "read-only query"),
-    ("hooks/auto_recall.py", "db-connect"): (1, "read-only query"),
-    ("hooks/session_start_db.py", "db-connect"): (1, "read-only query"),
-    ("hooks/session_start_sources.py", "db-connect"): (
-        1,
-        "reads a foreign claude-mem database",
-    ),
-    ("migrate.py", "db-connect"): (1, "schema probe; DDL only, binds no content"),
 }
 
-_GATED_DB_MODULES = {
-    "infrastructure/sqlite_connection_registry.py": ("factory", "GatedConnection"),
-    "infrastructure/pg_store_schema.py": ("cursor_factory", "GatedCursor"),
-}
 
-_SQL_WRITE = re.compile(r"\b(INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM|COPY\s)")
+_CURSOR_CLASS_ATTRS = {"cursor_factory", "server_cursor_factory"}
+_CURSOR_CLASSES = {"Cursor", "ClientCursor", "ServerCursor", "RawCursor"}
+
+
+def _name_of(node: ast.AST) -> str:
+    return node.attr if isinstance(node, ast.Attribute) else getattr(node, "id", "")
 
 
 def test_every_storage_primitive_is_an_audited_site():
@@ -106,46 +94,43 @@ def test_every_storage_primitive_is_an_audited_site():
     )
 
 
-def _db_calls(path: str) -> list[ast.Call]:
-    tree = ast.parse((MCP_SERVER_ROOT / path).read_text(encoding="utf-8"))
-    hits = {line for p, line, kind in scan_tree() if p == path and kind == "db-connect"}
-    return [n for n in ast.walk(tree) if isinstance(n, ast.Call) and n.lineno in hits]
+def test_connections_come_only_from_the_gated_factory():
+    """B1 of the PR #775 review: a hook opened its own psycopg connection,
+    allowlisted as read-only, and passed it to a receipt writer. There is no
+    ungated connection type left: db_connect is the only constructor, and it
+    cannot be asked for another class."""
+    from mcp_server.infrastructure import db_connect
+    from mcp_server.infrastructure.sqlite_gated_connection import GatedConnection
+
+    conn = db_connect.sqlite_connect(":memory:")
+    try:
+        assert isinstance(conn, GatedConnection)
+    finally:
+        conn.close()
+    with pytest.raises(TypeError, match="always gated"):
+        db_connect.sqlite_connect(":memory:", factory=sqlite3.Connection)
+    with pytest.raises(TypeError, match="always gated"):
+        db_connect.pg_connect("postgresql://unused", cursor_factory=object)
 
 
-def _passes_gate(call: ast.Call, keyword: str, gate: str) -> bool:
-    for kw in call.keywords:
-        if kw.arg == keyword and isinstance(kw.value, ast.Name):
-            return kw.value.id == gate
-        if kw.arg == "kwargs" and isinstance(kw.value, ast.Dict):
-            for key, value in zip(kw.value.keys, kw.value.values, strict=True):
-                if (
-                    isinstance(key, ast.Constant)
-                    and key.value == keyword
-                    and isinstance(value, ast.Name)
-                ):
-                    return value.id == gate
-    return False
-
-
-def test_writable_database_connections_are_gated_by_construction():
-    for path, (keyword, gate) in _GATED_DB_MODULES.items():
-        calls = _db_calls(path)
-        assert calls, path
-        for call in calls:
-            assert _passes_gate(call, keyword, gate), f"{path}:{call.lineno}"
-
-
-def test_ungated_database_connections_bind_no_write_statement():
-    ungated = {p for (p, k) in _AUDITED if k == "db-connect"} - set(_GATED_DB_MODULES)
-    for path in sorted(ungated):
-        tree = ast.parse((MCP_SERVER_ROOT / path).read_text(encoding="utf-8"))
-        literals = [
-            n.value
-            for n in ast.walk(tree)
-            if isinstance(n, ast.Constant) and isinstance(n.value, str)
-        ]
-        writes = [s for s in literals if _SQL_WRITE.search(s.upper())]
-        assert not writes, f"{path} is audited read-only but writes: {writes}"
+def test_no_module_swaps_the_cursor_class_of_a_connection():
+    allowed = {"infrastructure/pg_gated_cursor.py", "infrastructure/db_connect.py"}
+    offenders = []
+    for path in sorted(MCP_SERVER_ROOT.rglob("*.py")):
+        rel = path.relative_to(MCP_SERVER_ROOT).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            targets = node.targets if isinstance(node, ast.Assign) else []
+            swaps = any(
+                isinstance(t, ast.Attribute) and t.attr in _CURSOR_CLASS_ATTRS
+                for t in targets
+            )
+            builds = (
+                isinstance(node, ast.Call) and _name_of(node.func) in _CURSOR_CLASSES
+            )
+            if (swaps or builds) and rel not in allowed:
+                offenders.append(f"{rel}:{node.lineno}")
+    assert not offenders, offenders
 
 
 def test_every_log_file_handler_is_filtered_in_the_same_function():

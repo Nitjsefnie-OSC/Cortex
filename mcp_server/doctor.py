@@ -132,16 +132,18 @@ def _database_url() -> Check:
 
 def _pg_connection() -> Check:
     try:
-        import psycopg  # noqa: PLC0415 — source: ADR-0322
+        import psycopg  # noqa: PLC0415, F401 — source: ADR-0322 (availability probe)
+
+        from mcp_server.infrastructure.db_connect import pg_connect  # noqa: PLC0415 — source: ADR-1110
     except ImportError:
         return Check("PG connection", False, "psycopg not installed", "")
     url = os.environ.get("DATABASE_URL", "")
     if not url:
         return Check("PG connection", False, "DATABASE_URL not set", "")
     try:
-        with psycopg.connect(url, connect_timeout=5) as conn:
-            row = conn.execute("SELECT version()").fetchone()
-            return Check("PG connection", True, row[0] if row else "ok")
+        with pg_connect(url, connect_timeout=5) as conn:
+            row = conn.execute("SELECT version() AS v").fetchone()
+            return Check("PG connection", True, row["v"] if row else "ok")
     except Exception as exc:  # noqa: BLE001 — source: ADR-0322
         return Check(
             "PG connection",
@@ -154,7 +156,9 @@ def _pg_connection() -> Check:
 
 def _pg_extensions() -> Check:
     try:
-        import psycopg  # noqa: PLC0415 — source: ADR-0322
+        import psycopg  # noqa: PLC0415, F401 — source: ADR-0322 (availability probe)
+
+        from mcp_server.infrastructure.db_connect import pg_connect  # noqa: PLC0415 — source: ADR-1110
     except ImportError:
         return Check(
             "pgvector + pg_trgm extensions", False, "psycopg not installed", ""
@@ -163,12 +167,12 @@ def _pg_extensions() -> Check:
     if not url:
         return Check("pgvector + pg_trgm extensions", False, "DATABASE_URL not set", "")
     try:
-        with psycopg.connect(url, connect_timeout=5) as conn:
+        with pg_connect(url, connect_timeout=5) as conn:
             rows = conn.execute(
                 "SELECT extname FROM pg_extension "
                 "WHERE extname IN ('vector', 'pg_trgm')"
             ).fetchall()
-            names = {r[0] for r in rows}
+            names = {r["extname"] for r in rows}
             missing = {"vector", "pg_trgm"} - names
             if missing:
                 return Check(

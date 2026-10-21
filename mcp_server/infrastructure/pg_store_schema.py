@@ -8,11 +8,11 @@ from contextlib import contextmanager
 from typing import Iterator
 
 import psycopg
-from psycopg.rows import DictRow, dict_row
+from psycopg.rows import DictRow
 from pgvector.psycopg import register_vector
 from psycopg_pool import ConnectionPool
 
-from mcp_server.infrastructure.pg_gated_cursor import GatedCursor
+from mcp_server.infrastructure.db_connect import pg_connect, pg_pool
 from mcp_server.infrastructure.pg_gated_cursor import install as install_redaction_gate
 from mcp_server.infrastructure.pg_iterative_scan import enable_iterative_scan
 from mcp_server.infrastructure.pg_store_host import PgStoreHost
@@ -33,9 +33,7 @@ class PgSchemaMixin(PgStoreHost):
         """Create a new database connection (gated from its first statement).
 
         source: ADR-1110"""
-        return psycopg.Connection[DictRow].connect(
-            self._url, row_factory=dict_row, autocommit=True, cursor_factory=GatedCursor
-        )
+        return pg_connect(self._url, autocommit=True)
 
     # source: ADR-0565
 
@@ -59,17 +57,13 @@ class PgSchemaMixin(PgStoreHost):
         """Open the hot-path pool on first use."""
 
         settings = get_memory_settings()
-        pool: ConnectionPool[psycopg.Connection[DictRow]] = ConnectionPool(
-            conninfo=self._url,
+        pool: ConnectionPool[psycopg.Connection[DictRow]] = pg_pool(
+            self._url,
+            kwargs={"autocommit": True},
             min_size=settings.POOL_INTERACTIVE_MIN,
             max_size=settings.POOL_INTERACTIVE_MAX,
             timeout=settings.POOL_INTERACTIVE_TIMEOUT_S,
             configure=self._configure_pool_connection,
-            kwargs={
-                "row_factory": dict_row,
-                "autocommit": True,
-                "cursor_factory": GatedCursor,  # source: ADR-1110
-            },
             open=True,
         )
         return pool
@@ -78,17 +72,13 @@ class PgSchemaMixin(PgStoreHost):
         """Open the batch/long-running pool on first use."""
 
         settings = get_memory_settings()
-        pool: ConnectionPool[psycopg.Connection[DictRow]] = ConnectionPool(
-            conninfo=self._url,
+        pool: ConnectionPool[psycopg.Connection[DictRow]] = pg_pool(
+            self._url,
+            kwargs={"autocommit": True},
             min_size=settings.POOL_BATCH_MIN,
             max_size=settings.POOL_BATCH_MAX,
             timeout=settings.POOL_BATCH_TIMEOUT_S,
             configure=self._configure_pool_connection,
-            kwargs={
-                "row_factory": dict_row,
-                "autocommit": True,
-                "cursor_factory": GatedCursor,  # source: ADR-1110
-            },
             open=True,
         )
         return pool

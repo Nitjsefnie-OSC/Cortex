@@ -404,7 +404,9 @@ def _check_pg_reachable() -> McpCheck:
             fix="Set DATABASE_URL first.",
         )
     try:
-        import psycopg  # noqa: PLC0415 — source: ADR-0323
+        import psycopg  # noqa: PLC0415, F401 — source: ADR-0323 (availability probe)
+
+        from mcp_server.infrastructure.db_connect import pg_connect  # noqa: PLC0415 — source: ADR-1110
     except ImportError as exc:
         return McpCheck(
             name="postgresql reachable",
@@ -415,7 +417,7 @@ def _check_pg_reachable() -> McpCheck:
         )
     attempted = f"psycopg.connect({redact_url(url)!r}); cur.execute('SELECT 1')"
     try:
-        with psycopg.connect(url, connect_timeout=5) as conn:
+        with pg_connect(url, connect_timeout=5) as conn:
             row = conn.execute("SELECT 1").fetchone()
     except Exception as exc:  # noqa: BLE001 — source: ADR-0323
         # source: ADR-0323
@@ -458,7 +460,9 @@ def _check_pg_extensions() -> McpCheck:
             detail="DATABASE_URL not set",
         )
     try:
-        import psycopg  # noqa: PLC0415 — source: ADR-0323
+        import psycopg  # noqa: PLC0415, F401 — source: ADR-0323 (availability probe)
+
+        from mcp_server.infrastructure.db_connect import pg_connect  # noqa: PLC0415 — source: ADR-1110
     except ImportError as exc:
         return McpCheck(
             name="postgresql extensions",
@@ -468,7 +472,7 @@ def _check_pg_extensions() -> McpCheck:
         )
     attempted = "SELECT extname FROM pg_extension"
     try:
-        with psycopg.connect(url, connect_timeout=5) as conn:
+        with pg_connect(url, connect_timeout=5) as conn:
             rows = conn.execute(attempted).fetchall()
     except Exception as exc:  # noqa: BLE001 — source: ADR-0323
         # source: ADR-0323
@@ -480,7 +484,7 @@ def _check_pg_extensions() -> McpCheck:
             attempted=attempted,
             error=redact_text(f"{type(exc).__name__}: {exc}"),
         )
-    names = sorted({r[0] for r in rows})
+    names = sorted({r["extname"] for r in rows})
     missing = sorted({"vector", "pg_trgm"} - set(names))
     if missing:
         return McpCheck(
