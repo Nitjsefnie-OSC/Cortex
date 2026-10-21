@@ -841,3 +841,19 @@ local time).
 - command: `python scripts/repro_connection_broker.py latency`
 - pytest exit code: 1 (+++++++++++++++++++++++++++++++++++ Timeout ++++++++++++++++++++++++++++++++++++)
 - measured: `{}`
+
+### 2026-10-21T07:30:05+00:00 latency
+
+- head: `e76ebea2083d7ce93e907ef50474647745ee6f23` (clean)
+- command: `python scripts/repro_connection_broker.py latency`
+- pytest exit code: 0 (1 passed in 394.02s (0:06:34))
+- measured: `{"broker": {"p50_ms": 294.79, "p95_ms": 600.17}, "embedding_mode": "neural", "in_process": {"p50_ms": 289.38, "p95_ms": 493.54}, "memories": 3000, "parity": {"broker": {"mismatched": 1, "time_unstable": 7}, "control_second_in_process_store": {"mismatched": 3, "time_unstable": 8}}, "queries": 150}`
+
+### 24. 2026-10-21T07:31Z: the acceptance measurements on the final head, under load
+
+- Heads: `069403a4` for census, saturation and priority (07:1xZ entries above, the log the only dirty file), `e76ebea2` (clean) for latency. The machine carried a load average of 16 to 19 from processes outside this work (`uptime` at 07:22Z: 19.4, 16.0, 11.3; at 07:30Z: 17.3, 15.1, 12.6); the load during entries 17 to 21 was not recorded.
+- Census (A2, A3, A4): passed; one owner PID, the broker's; 0 other backends; 0 `idle in transaction` samples; 0 shared DDL. Slower under load (`remember` 15.5 s, `consolidate` 6.3 s).
+- A1 (`saturation`): passed; 9 Cortex backends at peak with 8 and with 64 clients, one PID, 0 failed.
+- A5 (`priority`): passed; point reads under a saturated background queue p50 1.5 ms, p95 88.0 ms; 1 read in 8 s (27088 ms) when the same load shares one class.
+- A6 (`latency`): parity holds (broker 1 ranking of 150 differs, control 3). Latency: in process p50 289.4 ms, p95 493.5 ms; broker p50 294.8 ms, p95 600.2 ms, so +1.9 % at p50 and +21.6 % at p95. The p95 is outside the 10 % budget set from entry 19. The test asserts parity only, not the budget. The first run on this head timed out at the suite's 300 s default; `e76ebea2` gives A6 its own 1200 s bound. One run under a load this branch does not control does not separate the broker's tail from the machine's; a run on an unloaded machine (or the CI job `broker-measurements`) is the next measurement, and whether the budget becomes an assertion is the owner's call.
+- Correction: the message of `e76ebea2` calls the 288 s run (04:40Z entry) an idle machine's; its load was not recorded. The test's source comment now cites the entry only.

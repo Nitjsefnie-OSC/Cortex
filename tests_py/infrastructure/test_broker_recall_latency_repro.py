@@ -49,7 +49,7 @@ pytestmark = [
         ),
         reason="set CORTEX_BROKER_MEASUREMENTS=1 (measurement, about 5 min)",
     ),
-    # source: experiment log, 288 s on an idle machine against the suite's
+    # source: experiment log, 288 s (04:40Z latency entry) against the suite's
     # 300 s default (pyproject.toml); a timeout at load average 19 on 2026-10-21
     pytest.mark.timeout(1200),
 ]
