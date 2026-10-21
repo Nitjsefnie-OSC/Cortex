@@ -1959,45 +1959,48 @@ def _split_statements(ddl: str) -> list[str]:
     return statements
 
 
+# source: ADR-0537 (statement order: extensions, tables, views, indexes, functions)
+_DDL_BLOCKS: tuple[str, ...] = (
+    EXTENSIONS_DDL,
+    MEMORIES_DDL,
+    HOMEOSTATIC_STATE_DDL,
+    ENTITIES_DDL,
+    RELATIONSHIPS_DDL,
+    MEMORY_ENTITIES_DDL,
+    WIKI_SCHEMA_DDL,
+    WIKI_TRIGGERS_DDL,
+    WIKI_LINK_TRIGGER_DDL,
+    SUPPORT_TABLES_DDL,
+    PROCEDURAL_SKILLS_DDL,
+    PREDICTIONS_DDL,
+    BACKFILL_LOG_DDL,
+    # source: ADR-0537
+    MIGRATIONS_DDL,
+    TEAM_DECISION_BACKFILL_PG,
+    MEMORIES_STORAGE_OPTIONS_DDL,
+    # source: ADR-0537
+    CURRENT_MEMORIES_VIEW_DDL,
+    INDEXES_DDL,
+    # source: ADR-0537
+    EFFECTIVE_STAGE_FN,
+    ALPHA_INTEGRAL_FN,
+    EFFECTIVE_HEAT_FN,
+    EFFECTIVE_HEAT_FROZEN_FN,
+    # source: ADR-0537
+    RECALL_MEMORIES_LAZY_FN,
+    SPREAD_ACTIVATION_FN,
+    SPREAD_ACTIVATION_MEMORIES_FN,
+    GET_HOT_EMBEDDINGS_FN,
+    GET_TEMPORAL_CO_ACCESS_FN,
+)
+
+
 def get_all_ddl() -> list[LiteralString]:
     """Return all DDL as individual statements for safe per-statement execution.
 
     source: ADR-0537"""
-    blocks = [
-        EXTENSIONS_DDL,
-        MEMORIES_DDL,
-        HOMEOSTATIC_STATE_DDL,
-        ENTITIES_DDL,
-        RELATIONSHIPS_DDL,
-        MEMORY_ENTITIES_DDL,
-        WIKI_SCHEMA_DDL,
-        WIKI_TRIGGERS_DDL,
-        WIKI_LINK_TRIGGER_DDL,
-        SUPPORT_TABLES_DDL,
-        PROCEDURAL_SKILLS_DDL,
-        PREDICTIONS_DDL,
-        BACKFILL_LOG_DDL,
-        # source: ADR-0537
-        MIGRATIONS_DDL,
-        TEAM_DECISION_BACKFILL_PG,
-        MEMORIES_STORAGE_OPTIONS_DDL,
-        # source: ADR-0537
-        CURRENT_MEMORIES_VIEW_DDL,
-        INDEXES_DDL,
-        # source: ADR-0537
-        EFFECTIVE_STAGE_FN,
-        ALPHA_INTEGRAL_FN,
-        EFFECTIVE_HEAT_FN,
-        EFFECTIVE_HEAT_FROZEN_FN,
-        # source: ADR-0537
-        RECALL_MEMORIES_LAZY_FN,
-        SPREAD_ACTIVATION_FN,
-        SPREAD_ACTIVATION_MEMORIES_FN,
-        GET_HOT_EMBEDDINGS_FN,
-        GET_TEMPORAL_CO_ACCESS_FN,
-    ]
     result: list[str] = []
-    for block in blocks:
+    for block in _DDL_BLOCKS:
         result.extend(_split_statements(block))
     # source: ADR-0537
     return cast("list[LiteralString]", result)

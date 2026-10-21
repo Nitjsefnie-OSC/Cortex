@@ -38,6 +38,25 @@ def _rows_to_groups(rows: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     ]
 
 
+def _supersede(
+    store: Any, election: Any, *, apply: bool, out: dict[str, Any]
+) -> list[int]:
+    """Supersede each duplicate by the survivor; a duplicate another writer
+    already changed is counted as a skipped race, not journaled."""
+    superseded_written: list[int] = []
+    for duplicate_id in election.superseded_ids:
+        written = False
+        if apply:
+            written = store.call_batch(
+                supersede_to_existing, duplicate_id, election.survivor_id
+            )
+        if apply and not written:
+            out["skipped_race"] += 1
+        else:
+            superseded_written.append(duplicate_id)
+    return superseded_written
+
+
 def _process_group(
     store: Any,
     group: list[dict[str, Any]],
@@ -58,18 +77,7 @@ def _process_group(
     election = elect_survivor(members)
     domains = sorted({row["domain"] or "" for row in group})
 
-    superseded_written: list[int] = []
-    for duplicate_id in election.superseded_ids:
-        written = False
-        if apply:
-            written = store.call_batch(
-                supersede_to_existing, duplicate_id, election.survivor_id
-            )
-        if apply and not written:
-            out["skipped_race"] += 1
-        else:
-            superseded_written.append(duplicate_id)
-
+    superseded_written = _supersede(store, election, apply=apply, out=out)
     out["groups"] += 1
     out["superseded_total"] += len(superseded_written)
     out["journal"].append(

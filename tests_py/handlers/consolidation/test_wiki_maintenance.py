@@ -24,15 +24,10 @@ def _run(coro):
 
 
 class _FakeStore:
-    """Stand-in store; every sub-pass below is monkeypatched so this
-    object's shape never actually matters to the passes it's threaded
-    through. Declares ``backend = "postgresql"`` so
-    ``run_wiki_maintenance``'s own backend gate (issue #636, ADR-1112
-    increment 2) treats it as PostgreSQL-backed and
-    actually invokes the mocked PG-only passes below -- without this,
-    the four PG-only stanzas would never be wired in these tests at
-    all, since gating now happens once, at the top of the function,
-    not per pass."""
+    """Stand-in store; every sub-pass below is monkeypatched. Its
+    ``backend`` makes ``run_wiki_maintenance``'s one backend gate (issue
+    #636, ADR-1112 increment 2) wire the four mocked PG-only passes;
+    without it they would never run in these tests."""
 
     backend = "postgresql"
 
