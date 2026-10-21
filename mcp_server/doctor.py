@@ -24,6 +24,7 @@ from mcp_server.doctor_mcp import run_mcp
 from mcp_server.doctor_pgvector import pgvector_iterative_scan
 from mcp_server.infrastructure.config import CLAUDE_DIR
 from mcp_server.shared.subprocess_safe import run_with_hard_timeout
+from mcp_server.shared import gated_files
 
 # source: validate_memory.py:29 precedent (_GIT_CHECK_TIMEOUT_S)
 _WORKTREE_LIST_TIMEOUT_S = 2.0
@@ -199,7 +200,7 @@ def _methodology_dir() -> Check:
     try:
         path.mkdir(parents=True, exist_ok=True)
         probe = path / ".write_probe"
-        probe.write_text("ok")
+        gated_files.write_text(probe, "ok")
         probe.unlink()
         return Check("~/.claude/methodology writable", True, str(path))
     except Exception as exc:  # noqa: BLE001 — source: ADR-0322

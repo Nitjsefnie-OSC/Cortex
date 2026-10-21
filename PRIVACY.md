@@ -18,8 +18,16 @@ To build and retrieve memory, Cortex reads and processes:
   scores, and cognitive-profile statistics computed from the above.
 
 Cortex does **not** ask for, collect, or process passwords, payment data, or
-credentials. If you place such data into a memory yourself, it is stored exactly
-like any other memory (locally) — avoid doing so.
+credentials. Credentials that reach Cortex anyway (a token in a tool output, a
+transcript, a memory you write) are replaced by `[REDACTED:<rule>]` before
+anything is written: every database write, file, log line and embedding goes
+through one redaction gate (ADR-1110). It detects the gitleaks 8.30.1 default
+rule set (GitHub, Anthropic, OpenAI, AWS, Slack, Stripe and Google keys, JWTs,
+private keys, keyword-anchored API keys and about 200 more shapes) plus URL
+passwords and `password=` assignments. A secret that matches no rule (a bare
+random string with no `key=` context, an encoded value) is not caught, and rows
+written before this gate existed are not rewritten. Email addresses and other
+personal data are not redacted.
 
 ## Where your data is stored
 

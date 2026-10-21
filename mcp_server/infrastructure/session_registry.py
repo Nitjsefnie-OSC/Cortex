@@ -9,10 +9,8 @@ source: ADR-1096 (Windows; POSIX: ADR-0597)"""
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 
@@ -20,6 +18,7 @@ from mcp_server.infrastructure import process_ancestry
 from mcp_server.infrastructure.file_io import read_json
 from mcp_server.shared import platform as host_platform
 from mcp_server.shared.process_liveness import pid_alive as _pid_alive
+from mcp_server.shared import gated_files
 
 # source: ADR-0597
 _SCHEMA_VERSION = 1
@@ -146,15 +145,7 @@ def _atomic_write(path: Path, payload: dict) -> bool:
 
     source: ADR-0597"""
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(prefix=path.name + ".tmp.", dir=str(path.parent))
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(payload, f)
-        except Exception:
-            os.unlink(tmp)
-            raise
-        os.replace(tmp, path)
+        gated_files.write_json(path, payload, mode=0o600)
     except OSError:
         return False
     return True

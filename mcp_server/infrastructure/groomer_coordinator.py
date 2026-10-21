@@ -24,6 +24,7 @@ import os
 from mcp_server.infrastructure.backend_marker import effective_backend
 from mcp_server.infrastructure.memory_config import get_memory_settings
 from mcp_server.infrastructure.groomer_identity import LivenessProbeUnavailableError
+from mcp_server.shared import gated_files
 
 logger = logging.getLogger(__name__)
 
@@ -256,9 +257,7 @@ class GroomerCoordinator:
         if session_pid is not None:
             rec["session_pid"] = int(session_pid)
         try:
-            self.base_dir.mkdir(parents=True, exist_ok=True)
-            with self.log_path.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(rec) + "\n")
+            gated_files.append_text(self.log_path, json.dumps(rec) + "\n")
         except OSError:
             pass
 

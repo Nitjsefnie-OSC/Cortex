@@ -12,6 +12,8 @@ from psycopg.rows import DictRow, dict_row
 from pgvector.psycopg import register_vector
 from psycopg_pool import ConnectionPool
 
+from mcp_server.infrastructure.pg_gated_cursor import GatedCursor
+from mcp_server.infrastructure.pg_gated_cursor import install as install_redaction_gate
 from mcp_server.infrastructure.pg_iterative_scan import enable_iterative_scan
 from mcp_server.infrastructure.pg_store_host import PgStoreHost
 from mcp_server.infrastructure.memory_config import get_memory_settings
@@ -28,9 +30,11 @@ class PgSchemaMixin(PgStoreHost):
     source: ADR-0565"""
 
     def _create_connection(self) -> psycopg.Connection[DictRow]:
-        """Create a new database connection."""
+        """Create a new database connection (gated from its first statement).
+
+        source: ADR-1110"""
         return psycopg.Connection[DictRow].connect(
-            self._url, row_factory=dict_row, autocommit=True
+            self._url, row_factory=dict_row, autocommit=True, cursor_factory=GatedCursor
         )
 
     # source: ADR-0565
@@ -46,7 +50,8 @@ class PgSchemaMixin(PgStoreHost):
         the store queries through: the pools' ``configure`` callback, the
         persistent ``_conn`` once the schema exists, and every reconnect.
 
-        source: ADR-1105"""
+        source: ADR-1105 and ADR-1110 (redaction gate on every write)"""
+        install_redaction_gate(conn)
         register_vector(conn)
         enable_iterative_scan(conn)
 
@@ -60,7 +65,11 @@ class PgSchemaMixin(PgStoreHost):
             max_size=settings.POOL_INTERACTIVE_MAX,
             timeout=settings.POOL_INTERACTIVE_TIMEOUT_S,
             configure=self._configure_pool_connection,
-            kwargs={"row_factory": dict_row, "autocommit": True},
+            kwargs={
+                "row_factory": dict_row,
+                "autocommit": True,
+                "cursor_factory": GatedCursor,  # source: ADR-1110
+            },
             open=True,
         )
         return pool
@@ -75,7 +84,11 @@ class PgSchemaMixin(PgStoreHost):
             max_size=settings.POOL_BATCH_MAX,
             timeout=settings.POOL_BATCH_TIMEOUT_S,
             configure=self._configure_pool_connection,
-            kwargs={"row_factory": dict_row, "autocommit": True},
+            kwargs={
+                "row_factory": dict_row,
+                "autocommit": True,
+                "cursor_factory": GatedCursor,  # source: ADR-1110
+            },
             open=True,
         )
         return pool

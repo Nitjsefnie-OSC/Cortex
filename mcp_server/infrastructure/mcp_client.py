@@ -13,6 +13,8 @@ import sys
 import time
 
 from mcp_server.infrastructure.upstream_identity import ALLOWED_UPSTREAM_COMMANDS
+from mcp_server.shared import gated_files
+from mcp_server.shared.redaction_gate import redact_text
 from typing import Any, NoReturn
 
 from mcp_server.errors import McpConnectionError
@@ -522,7 +524,7 @@ class MCPClient:
                 self._last_child_output = time.monotonic()
                 decoded = line.decode("utf-8", errors="replace").rstrip()
                 print(
-                    f"[mcp-client] {self._config['command']}: {decoded}",
+                    f"[mcp-client] {self._config['command']}: {redact_text(decoded)}",
                     file=sys.stderr,
                 )
                 if log_fh is not None:
@@ -556,7 +558,9 @@ class MCPClient:
             stem = raw.split("/")[-1] or "unknown"
             safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in stem)
             pid = os.getpid()
-            return open(base / f"{safe}.{pid}.log", "a", encoding="utf-8")
+            # source: ADR-1110 — a redacting stream; upstream stderr can quote
+            # anything, so each mirrored line passes the gate.
+            return gated_files.open_text_log(base / f"{safe}.{pid}.log")
         except OSError:
             return None
 

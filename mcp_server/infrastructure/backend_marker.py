@@ -26,12 +26,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 from pathlib import Path
 from typing import Mapping, MutableMapping
 
 from mcp_server.infrastructure.config import METHODOLOGY_DIR
+from mcp_server.shared import gated_files
 
 logger = logging.getLogger(__name__)
 
@@ -90,16 +89,8 @@ def write_backend_marker(
     if backend not in VALID_BACKENDS:
         raise BackendMarkerError(f"refusing to persist unknown backend {backend!r}")
     marker_path = path or BACKEND_MARKER_PATH
-    marker_path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps({"backend": backend, "written_by": written_by}, indent=2)
-    fd, tmp = tempfile.mkstemp(dir=marker_path.parent, prefix=marker_path.name + ".")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text + "\n")
-        os.replace(tmp, marker_path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
+    gated_files.write_text(marker_path, text + "\n", mode=0o600)
     return marker_path
 
 

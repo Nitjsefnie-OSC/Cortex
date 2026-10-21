@@ -15,7 +15,8 @@ from pathlib import Path
 from mcp_server.doctor_pgvector import pgvector_iterative_scan
 from mcp_server.hooks.output_streams import use_utf8_output
 from mcp_server.shared.platform import home_dir, python_executable
-from mcp_server.shared.redaction import redact_url, scrub_secrets
+from mcp_server.shared.redaction import redact_url
+from mcp_server.shared.redaction_gate import redact_text
 
 
 @dataclass
@@ -424,7 +425,7 @@ def _check_pg_reachable() -> McpCheck:
             ok=False,
             detail="connection failed",
             attempted=attempted,
-            error=scrub_secrets(f"{type(exc).__name__}: {exc}"),
+            error=redact_text(f"{type(exc).__name__}: {exc}"),
             fix="Check that PostgreSQL is running and the DSN is correct. "
             "macOS Homebrew: `brew services start postgresql@17`. "
             "Verify with: `psql \"$DATABASE_URL\" -c 'SELECT 1'`.",
@@ -477,7 +478,7 @@ def _check_pg_extensions() -> McpCheck:
             ok=False,
             detail="query failed",
             attempted=attempted,
-            error=scrub_secrets(f"{type(exc).__name__}: {exc}"),
+            error=redact_text(f"{type(exc).__name__}: {exc}"),
         )
     names = sorted({r[0] for r in rows})
     missing = sorted({"vector", "pg_trgm"} - set(names))

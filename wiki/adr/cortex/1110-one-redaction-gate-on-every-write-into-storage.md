@@ -1,0 +1,62 @@
+---
+created: 2026-10-21T00:25:05Z
+kind: adr
+number: 1110
+status: accepted
+tags: [security, privacy, secrets, storage, ssdlc, zero-trust]
+title: One redaction gate on every write into storage
+---
+# ADR-1110: One redaction gate on every write into storage
+
+## Status
+
+accepted
+
+## Context
+
+Supersedes the coverage claim of ADR-0663 (`scrub_secrets` as "the single choke point"); `scrub_secrets` stays, as the Cortex-specific second pass of the gate.
+
+The three-pillar audit of 2026-10-21 (E16, `docs/audits/2026-10-21-three-pillar-audit.md`) measured on `main` at `df3a4479`:
+
+- `shared/redaction.py:144-216` (`scrub_secrets`) redacts AWS key ids, `Bearer` values, `password=`-style assignments, URL passwords and PEM blocks, and keeps GitHub tokens (`ghp_`), Anthropic keys (`sk-ant-`), OpenAI keys and JWTs.
+- It runs on one write path only, the PostToolUse capture hook (`hooks/post_tool_capture.py:359,369`). `remember` (`handlers/remember.py:130`: `harden_content` strips control characters, it does not redact), session import (`handlers/import_sessions.py:168,180`; an oversized item goes raw to an artifact file first, `handlers/backfill_helpers.py:175` then `infrastructure/artifact_store.py:40`), session end (`handlers/record_session_end_memory.py:93,151`, `handlers/record_session_end.py:262,286`), `checkpoint`, `add_rule`, `create_trigger`, `anchor` (raw `UPDATE memories SET content` at `handlers/anchor.py:143-148`), the wiki writers and every log stored text unfiltered.
+- The write surface is not closed at the store-class level: wiki writers take a caller's connection (`pg_store_wiki_*.py`), handlers borrow pool connections for raw updates (`anchor.py:143`, `remember_helpers.py:413,422`), SQLite mixins call `_raw_conn.executemany` under the compat layer (`sqlite_store.py:605`, `sqlite_store_entities.py:28`, `sqlite_store_stats.py:155`, `sqlite_store_relationships.py:25`, `sqlite_store_receipts.py:39`) and two COPY sinks write rows (`batch_sinks.py:46`, `staging_resolve_sink.py:76`). Five detached children (consolidation, re-analysis, the capture drainer) inherited an open log file as stdout/stderr, so their output reached disk with no parent able to filter it.
+- Derived values are computed from the raw text before the row is written: the SQLite FTS row appends identifier sub-tokens (`augment_content`) that split a token into fragments a literal match no longer finds (measured: `ghp a 1b 2 c 3d ...` next to the redacted marker); embeddings are vectors of the raw text.
+
+Options considered:
+
+1. Call the scrubber at each entry point. This is the design that left every path but one unfiltered; a new entry point is unprotected by default.
+2. Gate each store write method, proven by an AST test over SQL literals. The writer set above is not closed at the store class (caller-supplied connections, borrowed pool connections, raw `executemany`, COPY), so the test would chase SQL shapes indefinitely.
+3. Gate the primitives storage is written through, and prove no other primitive exists. Chosen.
+
+## Decision
+
+1. **Detector: the gitleaks default rule set, vendored and pinned.** `third_party/gitleaks/v8.30.1/gitleaks.toml` is byte-identical to upstream at tag `v8.30.1` (tag commit `83d9cd68`, sha256 `e163e53b`, MIT, `PROVENANCE.json`). `scripts/vendor_gitleaks_rules.py` translates the 222 RE2 rules to Python `re` (a mid-pattern `(?i)` becomes a scoped `(?i:...)` closed with its group and reopened after an alternation bar, `\z` becomes `\Z`, `[[:alnum:]]` is expanded) into `mcp_server/shared/redaction_rules/gitleaks.json`; 221 translate, the one path-only rule (`pkcs12-file`) is listed as skipped. `mcp_server/shared/redaction_engine.py` ports gitleaks' decision procedure (`detect/detect.go` `detectRule`, `checkFindingAllowed`, `filter`; `config/allowlist.go`): keyword prefilter, secret group or first non-empty group, Shannon entropy threshold, global then rule allowlists (regex targets, stopwords, AND/OR), a generic finding yields to a specific one on the same line. Not ported: decoding passes (base64, hex, percent) and multi-part rules (none in the default set). Regexes compile lazily on the first keyword hit.
+2. **Prose pass (Cortex extension).** Six rules (`anthropic-api-key`, `anthropic-admin-api-key`, `openai-api-key`, `jwt`, `stripe-access-token`, `gcp-api-key`) require whitespace, a quote or `;` after the key, so a key followed by sentence punctuation is missed by gitleaks itself (measured on the corpus with seven punctuation marks). The gate runs the same rules a second time over a same-length view of the text in which punctuation followed by whitespace, a quote or end of text is blanked; spans map one to one. The first pass alone is what gitleaks reports, so parity is unaffected.
+3. **Second pass: Cortex's own shapes** (`scrub_secrets`, ADR-0663: URL passwords, `Bearer`, `password=`-style assignments, PEM), which catch low-entropy passwords below gitleaks' entropy floor. A marker left by the first pass is not rewritten.
+4. **Gate points, one per substrate** (`mcp_server/shared/redaction_gate.py`):
+   - SQL: every store connection is built gated. SQLite: `sqlite3.connect(..., factory=GatedConnection)` (`infrastructure/sqlite_gated_connection.py`); its `execute`, `executemany` and every cursor it hands out are `GatedCursor`s. PostgreSQL: `cursor_factory=GatedCursor` at `_create_connection` and in both pools' connection kwargs, re-installed in `_prepare_connection` (`infrastructure/pg_gated_cursor.py`); `Connection.execute` and `Connection.cursor()` build from it, `executemany` is gated, `copy()` returns a proxy whose `write_row` redacts and whose raw `write` raises. A statement is gated when one of `INSERT UPDATE REPLACE MERGE UPSERT COPY` appears as a word in it; reads bind their parameters unchanged (nothing they bind is persisted, and recall latency is untouched). Strings, dicts, lists, tuples and psycopg `Json`/`Jsonb` are redacted recursively.
+   - Derived values: `remember` redacts its content before any derivation (gist, entities, tags, hash, embedding) and the capture hook redacts tool output before tagging and gisting; the SQLite FTS augmentation is computed from redacted text; the embedding engine encodes redacted text (`encode`, `encode_batch`, `warm_cache`); an artifact's content address is taken over redacted text.
+   - Files: `mcp_server/shared/gated_files.py` is the one writer (`write_text`, `write_bytes`, `write_json`, `append_text`, `open_text_log`): atomic replace, a new file gets the umask's mode, a replaced file keeps its mode, an explicit `mode` is honoured. `log_rotation.open_rotating_log` yields a redacting stream that has no descriptor.
+   - Child output: `infrastructure/log_relay.spawn_logged` starts a relay process, then the child with stdout and stderr on the relay's stdin; the relay redacts block by block (a multi-line PEM is held until its END line) and appends through `gated_files`. No hook opens a child's log any more.
+   - Logs: every file handler carries a `RedactingFilter` (message, formatted traceback, stack).
+5. **Proof** (`tests_py/architecture/test_storage_redaction_gate.py`): an AST scan of `mcp_server/` lists every raw storage primitive (file write or creation, temporary file, log file handler, database connection, child handed a file as stdio); each must be an audited site with its reason (the gate modules, empty lock files, a sha256-verified release tarball, a toolchain download, read-only probes); writable connections must pass the gated factory by keyword; connections audited as read-only or schema-only must contain no SQL write verb in any string literal; every log file handler must be filtered in the same function. The scanner's own detection of each primitive kind is pinned.
+6. **Repository and CI.** `.pre-commit-config.yaml` runs gitleaks 8.30.1 (pinned by tag commit) on the staged diff. The `secret-scan` job of `ci.yml` (in `CI Green`'s needs, always run) installs the v8.30.1 linux tarball checked against its release sha256, scans every commit of every fetched ref and the working tree with `.gitleaks.toml` (default rules plus five value-scoped allowlists and the rule file itself) and `.gitleaksignore` (fingerprints of the synthetic fixture commit `3bf44168`), then runs `scripts/redaction_parity.py`, which fails the build if the Python port and the binary disagree on the generated corpus or the tree. The release SBOM gains the vendored rule set as a CycloneDX `file` component whose hash is recomputed from the committed bytes (`scripts/sbom_add_vendored.py`).
+7. `content_hash` stays computed on the text as received: dedup of a repeated raw input still matches, and a SHA-256 does not disclose the text. Hashing the redacted text instead would change dedup behaviour; it is not done.
+
+## Consequences
+
+Evidence (2026-10-21, Apple M4, Python 3.12.11, PostgreSQL 17.9 private cluster):
+
+- Parity of the port with the gitleaks 8.30.1 binary, as sets of (file, line, rule): `main` tree 55 of 55 (85.7 MB), the fixture commit's `.claude` tree 13 of 13 (aws, github-oauth, github-app-token, jwt, private-key, generic), generated corpus 15 of 15 (every provider shape in `scripts/secret_corpus.py`).
+- Entry points (`tests_py/handlers/test_redaction_gate_entry_points.py`, whole-store search in normalised form): 8 of 8 fail on `main` (each names the table and column holding the key), 8 of 8 pass with this change.
+- Latency of `redact_text` on repository source text: cold start (rule load, first compile) 27 to 32 ms; 1 KB 1.05 ms, 10 KB 9.0 ms, 100 KB 110 ms median (the prose pass doubles the single-pass 0.59, 5.2 and 65 ms).
+- History scan of a full mirror (3,031 commits: 17 branches, 109 tags, 536 pull refs) with the default rules: 82 findings; after triage none is a credential (`.gitleaks.toml` descriptions, `.gitleaksignore`).
+
+Consequences and limits:
+
+- Text that matches a rule is replaced by `[REDACTED:<rule-id>]` wherever it is written; a memory quoting a token loses the token. That is the intent.
+- A bare random string with no key context is not detectable by any rule; base64- or hex-encoded secrets are not decoded first.
+- Rows written before this change are not rewritten. A retroactive scrub must cover `memories` and `memories_fts`, `memory_archives`, `wiki.*`, `predictions`, `checkpoints`, artifact files, rejected spool payloads and wiki markdown; it is planned, not done.
+- Hook and server diagnostics written to stderr are persisted by the host, not by Cortex; only the upstream MCP stderr mirror is gated. `migrate.py` opens an ungated connection that issues schema statements only (asserted by the architecture test); the connection broker (ADR-1112 on its branch) is expected to own every connection and must keep `cursor_factory=GatedCursor`.
+- Email addresses and bank numbers are personal data, not secrets; they are not redacted.

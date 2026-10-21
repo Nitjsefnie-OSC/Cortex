@@ -25,7 +25,7 @@ from mcp_server.core.gist_extraction import (
 )
 from mcp_server.hooks._capture_mode import capture_skip_reason
 from mcp_server.hooks._capture_mode import HIGH_VALUE_TOOLS as _HIGH_VALUE_TOOLS
-from mcp_server.shared.redaction import scrub_secrets
+from mcp_server.shared.redaction_gate import redact_text
 
 _LOG_PREFIX = "[cortex-post-tool-capture]"
 
@@ -352,11 +352,10 @@ def process_event(event: dict[str, Any]) -> None:
         _log(f"skip {tool_name}: {reason}")
         return
 
-    # Scrub secrets from the tool output BEFORE tagging, gisting, or
-    # persisting.  This is the single choke point on the write path.
-    # scrub_secrets covers: URL passwords, AWS keys, bearer tokens,
-    # key=value secret assignments, and PEM private-key blocks.
-    output = scrub_secrets(output)
+    # Redact the tool output BEFORE tagging, gisting or persisting, so no
+    # derived value (tags, gist, artifact address) is computed from a secret.
+    # Storage writes are gated again at the store and file layers (ADR-1110).
+    output = redact_text(output)
 
     # Tags are derived from the FULL output so signal tags (error/test/
     # success) survive even when the body is gisted.
@@ -366,7 +365,7 @@ def process_event(event: dict[str, Any]) -> None:
     if pointer:
         content = f"{content}\n\n{pointer}"
     # source: ADR-0495
-    content = scrub_secrets(content)
+    content = redact_text(content)
 
     try:
         _store_memory(tool_name, content, tags, cwd)

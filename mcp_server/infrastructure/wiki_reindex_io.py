@@ -12,6 +12,7 @@ from mcp_server.shared.wiki_pages import build_index
 from mcp_server.shared.wiki_readme import build_plain_readme
 
 from mcp_server.infrastructure.wiki_pages_listing import list_pages
+from mcp_server.shared import gated_files
 
 
 def _refresh_readme_if_safe(root: Path, page_paths: list[str]) -> None:
@@ -33,7 +34,7 @@ def _refresh_readme_if_safe(root: Path, page_paths: list[str]) -> None:
     if should_write:
         readme_md = build_plain_readme(page_paths)
         readme_md += f"\n{auto_marker}\n"
-        readme_path.write_text(readme_md, encoding="utf-8")
+        gated_files.write_text(readme_path, readme_md)
 
 
 def try_reindex(root: Path) -> None:
@@ -48,7 +49,7 @@ def try_reindex(root: Path) -> None:
         index_md = build_index(page_paths)
         gen_dir = root / ".generated"
         gen_dir.mkdir(exist_ok=True)
-        (gen_dir / "INDEX.md").write_text(index_md, encoding="utf-8")
+        gated_files.write_text(gen_dir / "INDEX.md", index_md)
         _refresh_readme_if_safe(root, page_paths)
         cleanup_id_prefixed_pages(root)
     except Exception as exc:  # noqa: BLE001 — index rebuild is best-effort after a write

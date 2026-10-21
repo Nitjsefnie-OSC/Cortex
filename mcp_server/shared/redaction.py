@@ -154,7 +154,8 @@ _RE_BEARER_TOKEN = re.compile(r"\bbearer\s+([A-Za-z0-9\-_\.+/=]{8,})", re.IGNORE
 _RE_KV_SECRET = re.compile(
     r"(?i)\b(password|token|api[_\-]?key|secret[_\-]?key?|private[_\-]?key)"
     r"\s*[:=]\s*"
-    r"(['\"]?)([^\s'\"]{4,})\2",
+    # source: ADR-1110 — a value the gitleaks pass already replaced is kept
+    r"(['\"]?)(?!\[REDACTED)([^\s'\"]{4,})\2",
 )
 
 # source: ADR-0663

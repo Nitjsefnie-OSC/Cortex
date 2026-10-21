@@ -6,6 +6,30 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **One redaction gate on every write into storage (ADR-1110).** The 2026-10-21
+  audit (E16) found the secret scrubber on the capture hook only, missing
+  GitHub, Anthropic and OpenAI keys and JWTs, while `remember`, session import
+  and session end stored text unfiltered. Now:
+  - the detector is the gitleaks 8.30.1 default rule set, vendored byte-identical
+    under `third_party/gitleaks/v8.30.1/` (sha256-pinned, MIT, in the release
+    SBOM), translated to Python by `scripts/vendor_gitleaks_rules.py` (221 of
+    222 rules; the path-only rule cannot apply to text) and applied by a port of
+    gitleaks' decision procedure, with exact parity against the binary on the
+    repository tree and on a real-format fake-credential corpus
+    (`scripts/redaction_parity.py`, run in CI); a second pass catches keys
+    followed by sentence punctuation, which six gitleaks rules miss;
+  - SQLite and PostgreSQL store connections are built gated: every write
+    statement, through any helper, pool, cursor, `executemany` or COPY, binds
+    redacted parameters; embeddings, the SQLite FTS augmentation and artifact
+    addresses are derived from redacted text;
+  - files are written only through `shared/gated_files.py`, child processes log
+    through a redacting relay, file log handlers carry a redacting filter; an
+    architecture test fails on any other storage primitive in `mcp_server/`;
+  - `.pre-commit-config.yaml` (gitleaks hook) and a blocking `secret-scan` CI job
+    (full history and tree, pinned and checksum-verified binary).
+
 ### Added
 
 - **Benchmark refresh preparation: pinned datasets, a per-query journal,

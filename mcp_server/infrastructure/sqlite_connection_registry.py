@@ -12,6 +12,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from mcp_server.infrastructure.sqlite_gated_connection import GatedConnection
 from mcp_server.infrastructure.sqlite_request_scope import (
     register_request_connection,
 )
@@ -117,11 +118,13 @@ class SqliteConnectionRegistry:
         return True
 
     def _open_locked(self) -> sqlite3.Connection:
+        # source: ADR-1110 — every store connection is gated
         connection = sqlite3.connect(
             self._target,
             uri=self._uri,
             check_same_thread=False,
             detect_types=sqlite3.PARSE_DECLTYPES,
+            factory=GatedConnection,
         )
         try:
             expected_journal_mode = "memory" if self._uri else "wal"
