@@ -268,3 +268,33 @@ def test_sql_script_on_a_store_connection_is_redacted(tmp_path):
         assert locations(s, GH) == []
     finally:
         s.close()
+
+
+def test_a_page_hash_is_taken_over_the_redacted_body(store):
+    """CodeQL on #775 (py/weak-sensitive-data-hashing): the stored body_hash
+    was sha256 of the body before the gate redacted it. Next to the
+    redacted body, that fast hash lets anyone holding the database test
+    guesses for the secret; the hash must be of what is stored."""
+    import hashlib
+
+    from mcp_server.infrastructure.pg_store_wiki_common import body_hash
+    from mcp_server.infrastructure.pg_store_wiki_pages import upsert_page
+
+    body = f"body {SECRET}"
+    upsert_page(
+        store._conn,
+        {
+            "rel_path": "notes/h.md",
+            "slug": "h",
+            "kind": "note",
+            "title": "h",
+            "body": body,
+            "domain": DOMAIN,
+        },
+    )
+    row = store._conn.execute(
+        "SELECT body_hash FROM wiki.pages WHERE rel_path = %s", ("notes/h.md",)
+    ).fetchone()
+    raw = hashlib.sha256(body.encode()).hexdigest()
+    assert body_hash(body) != raw
+    assert row["body_hash"] == hashlib.sha256(redact_text(body).encode()).hexdigest()
