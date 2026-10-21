@@ -5,7 +5,8 @@ the redaction gate.
 ``factory=GatedConnection``. ``Connection.execute``/``executemany`` and every
 cursor the connection hands out (the compat layer's ``_CompatExecutingCursor``
 and the ``_raw_conn.executemany`` call sites alike) are ``GatedCursor``s, so a
-write statement cannot bind a parameter that has not been redacted.
+write statement cannot bind a parameter that has not been redacted, and a
+script that writes (``executescript``, values inline) is redacted as text.
 
 source: ADR-1110"""
 
@@ -17,6 +18,7 @@ from typing import Any, Iterable
 from mcp_server.shared.redaction_gate import (
     is_write_statement,
     redact_params,
+    redact_script,
     redact_value,
 )
 
@@ -34,6 +36,10 @@ class GatedCursor(sqlite3.Cursor):
             seq_of_parameters = (redact_value(p) for p in seq_of_parameters)
         return super().executemany(sql, seq_of_parameters)
 
+    def executescript(self, sql_script: str, /) -> "GatedCursor":
+        super().executescript(redact_script(sql_script))
+        return self
+
 
 class GatedConnection(sqlite3.Connection):
     """A connection whose every cursor is a :class:`GatedCursor`."""
@@ -48,3 +54,6 @@ class GatedConnection(sqlite3.Connection):
 
     def executemany(self, sql: str, parameters: Iterable[Any], /) -> GatedCursor:
         return self.cursor().executemany(sql, parameters)
+
+    def executescript(self, sql_script: str, /) -> GatedCursor:
+        return self.cursor().executescript(sql_script)

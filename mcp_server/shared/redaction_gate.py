@@ -93,6 +93,12 @@ def is_write_statement(sql: str) -> bool:
     return bool(_WRITE_VERB.search(sql))
 
 
+def redact_script(sql: str) -> str:
+    """A SQL script carries its values inline: redact the text of a script
+    that writes; a read-only script passes unchanged."""
+    return redact_text(sql) if is_write_statement(sql) else sql
+
+
 def redact_params(sql: str, params: Any) -> Any:
     """Redact bound parameters of a write statement; reads pass unchanged."""
     if params is None or not is_write_statement(sql):

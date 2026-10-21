@@ -254,3 +254,17 @@ def test_relay_survives_the_spawner_and_drains_after_it_exits(tmp_path):
         time.sleep(0.05)
     assert not any(pid_alive(int(p)) for p in out)
     assert log.read_text().strip() == "[REDACTED:github-pat]"
+
+
+def test_sql_script_on_a_store_connection_is_redacted(tmp_path):
+    """Review of #775, N1: executescript ran literal SQL past the gate."""
+    s = SqliteMemoryStore(str(tmp_path / "memory.db"))
+    try:
+        s._conn.executescript(
+            "INSERT INTO memory_rules (rule_type, scope, condition, action) "
+            f"VALUES ('soft', 'global', 'if {GH}', 'x');"
+        )
+        s._conn.commit()
+        assert locations(s, GH) == []
+    finally:
+        s.close()

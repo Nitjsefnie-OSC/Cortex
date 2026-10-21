@@ -66,6 +66,26 @@ _AUDITED = {
         1,
         "download staging for a pinned toolchain, no user content",
     ),
+    ("infrastructure/pipeline_install_release.py", "shutil-copy"): (
+        1,
+        "moves the sha256-verified binary into place, no user content",
+    ),
+    ("infrastructure/profile_store.py", "shutil-copy"): (
+        1,
+        "renames the existing private profiles file to its legacy backup",
+    ),
+    ("infrastructure/sqlite_gated_connection.py", "sql-script"): (
+        2,
+        "the gate: runs redact_script on the script, then the base class",
+    ),
+    ("infrastructure/sqlite_compat.py", "sql-script"): (
+        1,
+        "delegates to GatedConnection.executescript, which redacts the script",
+    ),
+    ("infrastructure/sqlite_connection_registry.py", "sql-script"): (
+        1,
+        "delegates to GatedConnection.executescript, which redacts the script",
+    ),
     ("infrastructure/db_connect.py", "db-connect"): (
         3,
         "the one connection factory: sqlite3, psycopg and the pool, all gated",
@@ -73,8 +93,23 @@ _AUDITED = {
 }
 
 
-_CURSOR_CLASS_ATTRS = {"cursor_factory", "server_cursor_factory"}
+_CURSOR_CLASS_ATTRS = {"cursor_factory", "server_cursor_factory", "<dynamic>"}
 _CURSOR_CLASSES = {"Cursor", "ClientCursor", "ServerCursor", "RawCursor"}
+
+
+def _assigned(node: ast.AST) -> list[ast.expr]:
+    if isinstance(node, ast.Assign):
+        return list(node.targets)
+    if isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+        return [node.target]
+    return []
+
+
+def _setattr_name(node: ast.AST) -> str:
+    if not (isinstance(node, ast.Call) and _name_of(node.func) == "setattr"):
+        return ""
+    arg = node.args[1] if len(node.args) > 1 else None
+    return arg.value if isinstance(arg, ast.Constant) else "<dynamic>"
 
 
 def _name_of(node: ast.AST) -> str:
@@ -120,10 +155,12 @@ def test_no_module_swaps_the_cursor_class_of_a_connection():
         rel = path.relative_to(MCP_SERVER_ROOT).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            targets = node.targets if isinstance(node, ast.Assign) else []
-            swaps = any(
-                isinstance(t, ast.Attribute) and t.attr in _CURSOR_CLASS_ATTRS
-                for t in targets
+            swaps = (
+                any(
+                    isinstance(t, ast.Attribute) and t.attr in _CURSOR_CLASS_ATTRS
+                    for t in _assigned(node)
+                )
+                or _setattr_name(node) in _CURSOR_CLASS_ATTRS
             )
             builds = (
                 isinstance(node, ast.Call) and _name_of(node.func) in _CURSOR_CLASSES
@@ -146,29 +183,48 @@ def test_every_log_file_handler_is_filtered_in_the_same_function():
                 assert "RedactingFilter" in names, f"{path}:{fn.name}"
 
 
+# source: review of PR #775 (N1) — each evasion listed there, as a module
+_EVASIONS = {
+    "import sqlite3 as s\ns.connect(p)": "db-connect",
+    "from sqlite3 import connect as c\nc(p)": "db-connect",
+    "import psycopg as pg\npg.connect(u)": "db-connect",
+    "import sqlite3\ngetattr(sqlite3, 'connect')(p)": "db-connect",
+    "import importlib\nimportlib.import_module('sqlite3').connect(p)": "db-connect",
+    "m = 'w'\nopen(p, m)": "open-write",
+    "from pathlib import Path\nPath(p).open(mode)": "open-write",
+    "gated_files = Path(p)\ngated_files.write_text(t)": "write_text",
+    "import shelve\nshelve.open(p)": "kv-store",
+    "import numpy as np\nnp.save(p, a)": "array-dump",
+    "a.tofile(p)": "array-dump",
+    "conn.executescript(sql)": "sql-script",
+    "import gzip\ngzip.open(p, 'wt')": "open-write",
+}
+
+
 def test_scanner_detects_each_primitive_kind():
     """The proof is only as good as the detector: pin each kind on a sample."""
-    from tests_py.architecture._storage_primitives import classify
+    from tests_py.architecture._storage_primitives import kinds_in
 
     samples = {
         "p.write_text(x)": "write_text",
         "open(p, 'a')": "open-write",
-        "os.open(p, os.O_CREAT | os.O_WRONLY)": "os.open-write",
-        "os.open(p, flags, 0o600)": "os.open-write",
-        "logging.FileHandler(p)": "log-file-handler",
-        "tempfile.mkstemp()": "tempfile",
-        "sqlite3.connect(p)": "db-connect",
-        "psycopg.Connection[R].connect(u)": "db-connect",
-        "subprocess.Popen(c, stdout=log)": "child-stdio-file",
-        "shutil.copyfile(a, b)": "shutil-copy",
+        "import os\nos.open(p, os.O_CREAT | os.O_WRONLY)": "os.open-write",
+        "import os\nos.open(p, flags, 0o600)": "os.open-write",
+        "import logging\nlogging.FileHandler(p)": "log-file-handler",
+        "import tempfile\ntempfile.mkstemp()": "tempfile",
+        "import sqlite3\nsqlite3.connect(p)": "db-connect",
+        "import psycopg\npsycopg.Connection[R].connect(u)": "db-connect",
+        "import subprocess\nsubprocess.Popen(c, stdout=log)": "child-stdio-file",
+        "import shutil\nshutil.copyfile(a, b)": "shutil-copy",
+        **_EVASIONS,
     }
     for source, kind in samples.items():
-        call = ast.parse(source).body[0].value  # type: ignore[attr-defined]
-        assert classify(call) == kind, source
+        assert kinds_in(source) == [kind], source
     for harmless in (
         "open(p)",
-        "gated_files.write_text(p, t)",
-        "os.open(p, os.O_RDONLY)",
+        "from mcp_server.shared import gated_files\ngated_files.write_text(p, t)",
+        "import os\nos.open(p, os.O_RDONLY)",
+        "from pathlib import Path\nPath(p).open()",
+        "import subprocess\nsubprocess.run(c, stdout=subprocess.DEVNULL)",
     ):
-        call = ast.parse(harmless).body[0].value  # type: ignore[attr-defined]
-        assert classify(call) is None, harmless
+        assert kinds_in(harmless) == [], harmless
