@@ -127,6 +127,24 @@ jobs:
           python-version: "3.12"
           broker-mode: "true"
 
+  # The same PostgreSQL suite as a role without SUPERUSER (LOGIN CREATEDB),
+  # vector and pg_trgm created in template1 by the administrator: the
+  # three-pillar audit's Track 0.3 (CI otherwise runs as SUPERUSER).
+  test-pg-least-privilege:
+    needs: [changes, lint]
+    if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || needs.changes.outputs.code == 'true' || needs.changes.outputs.deps == 'true' || needs.changes.outputs.workflows == 'true')
+    name: Test as a non-superuser role (Python 3.12)
+    runs-on: ubuntu-latest
+    # source: ADR-1112 the 3.12 suite leg's bound (ADR-0802)
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/test-suite
+        with:
+          python-version: "3.12"
+          least-privilege: "true"
+
   test-sqlite:
     needs: [changes, lint]
     # source: ADR-0802
@@ -1142,6 +1160,7 @@ jobs:
           pytest -q -s -p no:cacheprovider
           tests_py/infrastructure/test_pg_connection_saturation_repro.py
           tests_py/infrastructure/test_pg_role_probes.py
+          tests_py/infrastructure/test_pg_least_privilege_probe_b.py
 
       - name: Interactive capacity under a full background queue (A5)
         env:
@@ -1154,6 +1173,18 @@ jobs:
           CORTEX_TEST_DATABASE_URL: postgresql://127.0.0.1:1/unused
           CORTEX_BROKER_MEASUREMENTS: "1"
         run: python scripts/repro_connection_broker.py census
+
+      - name: Saturation scenario through the broker, 8 and 64 clients (A1)
+        env:
+          CORTEX_TEST_DATABASE_URL: postgresql://127.0.0.1:1/unused
+          CORTEX_BROKER_MEASUREMENTS: "1"
+        run: python scripts/repro_connection_broker.py saturation
+
+      - name: Recall through the broker against in-process (A6)
+        env:
+          CORTEX_TEST_DATABASE_URL: postgresql://127.0.0.1:1/unused
+          CORTEX_BROKER_MEASUREMENTS: "1"
+        run: python scripts/repro_connection_broker.py latency
 
       - name: Lock-chain reproduction (pre-fix main against this tree)
         run: python scripts/repro_lock_chain.py --base-ref origin/main --other-tree ""
@@ -1181,6 +1212,7 @@ jobs:
       - mcp-host-config
       - test-windows
       - test-broker-mode
+      - test-pg-least-privilege
       - release-deps
       - craftsmanship
       - lint
@@ -1199,7 +1231,7 @@ jobs:
           # source: ADR-0802
 
 
-          ALLOWED_SKIPS: test,test-broker-mode,test-sqlite,mcp-host-config,test-windows,release-deps,craftsmanship,typecheck,build,docker-runtime-build,devcontainer-build,docker-smoke,install-e2e,broker-measurements
+          ALLOWED_SKIPS: test,test-broker-mode,test-pg-least-privilege,test-sqlite,mcp-host-config,test-windows,release-deps,craftsmanship,typecheck,build,docker-runtime-build,devcontainer-build,docker-smoke,install-e2e,broker-measurements
         run: python3 scripts/check_ci_gate_results.py
 
   # source: ADR-0802

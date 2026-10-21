@@ -35,6 +35,24 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Least privilege in PostgreSQL; one pool per store kind; schema
+  version 3 (ADR-1112 increment 6).** `scripts/setup_least_privilege.py`
+  creates a migration role that owns the database and a runtime role with
+  CONNECT only; with `CORTEX_MIGRATION_DATABASE_URL` the broker migrates as
+  the first and grants the second (`DATABASE_URL`) data access only, no DDL.
+  `recall_memories()` sets its trigram threshold in its body and restores
+  the caller's value, instead of a `SET` clause a non-superuser cannot create
+  (audit E14); the whole suite passes as a role without SUPERUSER
+  (`python scripts/repro_least_privilege_suite.py`, CI job
+  `test-pg-least-privilege`). The store's pools are created once under a
+  lock (concurrent first use opened one pool per thread: 12 to 16
+  interactive connections from a pool of 8), and the broker runs at most as
+  many requests per class as that class's pool has connections. Measured:
+  the saturation scenario with 64 clients now holds 9 connections, refuses
+  none and fails none (`python scripts/repro_connection_broker.py
+  saturation`); recall through the broker p95 276 ms against 262 ms in
+  process (`latency`).
+
 - **Every Cortex process talks to one store broker per store (ADR-1112
   increment 5).** With PostgreSQL, MCP servers, hooks, background jobs, the
   capture worker and doctor's store checks no longer open connections: the

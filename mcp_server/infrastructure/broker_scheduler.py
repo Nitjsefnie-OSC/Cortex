@@ -1,9 +1,12 @@
 """The broker's two request classes, reserved capacity and backpressure.
 
-``workers`` threads execute requests; at most ``workers - reserved`` of them
-run background requests at once, so ``reserved`` workers are always free
-for interactive requests (recall, remember, hooks) however much
-consolidation is queued. Each class has a bounded FIFO queue. A request that
+Each class has its own slots, sized like the store pool it runs on
+(``interactive_slots`` = ``POOL_INTERACTIVE_MAX``, ``background_slots`` =
+``POOL_BATCH_MAX``): background work can never take an interactive slot, so
+interactive requests (recall, remember, hooks) keep their capacity however
+much consolidation is queued, and no class runs more requests than it has
+connections (A1 measured pool timeouts when 10 workers shared 8 interactive
+connections). Each class has a bounded FIFO queue. A request that
 finds its queue full waits for a place until its own deadline and is then
 refused, explicitly; a request whose deadline passes while queued is
 answered with an error and never executed. Nothing is dropped silently
@@ -24,15 +27,19 @@ from typing import Any
 
 @dataclass(frozen=True)
 class SchedulerPolicy:
-    workers: int
-    reserved_interactive: int
+    interactive_slots: int
+    background_slots: int
     queue_limit: int
 
     def __post_init__(self) -> None:
-        if not 0 < self.reserved_interactive < self.workers:
-            raise ValueError("need 0 < reserved_interactive < workers")
+        if self.interactive_slots < 1 or self.background_slots < 1:
+            raise ValueError("each class needs at least one slot")
         if self.queue_limit < 1:
             raise ValueError("queue_limit must be positive")
+
+    @property
+    def workers(self) -> int:
+        return self.interactive_slots + self.background_slots
 
 
 @dataclass
@@ -84,11 +91,14 @@ class Scheduler:
             self._cond.notify_all()
 
     def _next(self) -> Task | None:
-        if self._queues["interactive"]:
-            return self._queues["interactive"].popleft()
-        background_cap = self.policy.workers - self.policy.reserved_interactive
-        if self._queues["background"] and self._busy["background"] < background_cap:
-            return self._queues["background"].popleft()
+        interactive, background = (
+            self._queues["interactive"],
+            self._queues["background"],
+        )
+        if interactive and self._busy["interactive"] < self.policy.interactive_slots:
+            return interactive.popleft()
+        if background and self._busy["background"] < self.policy.background_slots:
+            return background.popleft()
         return None
 
     def take(self) -> Task | None:

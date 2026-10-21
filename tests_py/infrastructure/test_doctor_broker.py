@@ -32,3 +32,22 @@ def test_doctor_reports_not_running_then_the_running_broker(broker_env, monkeypa
         assert after["ok"] and f"pid {children[0].pid}" in after["detail"], after
     finally:
         store.close()
+
+
+@pytest.mark.parametrize(
+    ("migration", "expected"),
+    [
+        (None, "no separation"),
+        ("postgresql://cortex_migrate@127.0.0.1/cortex", "migration cortex_migrate"),
+    ],
+)
+def test_doctor_reports_whether_the_roles_are_separate(
+    migration, expected, monkeypatch
+):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://cortex_runtime@127.0.0.1/cortex")
+    if migration is None:
+        monkeypatch.delenv("CORTEX_MIGRATION_DATABASE_URL", raising=False)
+    else:
+        monkeypatch.setenv("CORTEX_MIGRATION_DATABASE_URL", migration)
+    check = doctor_broker.database_roles_check()
+    assert check["ok"] and expected in check["detail"], check

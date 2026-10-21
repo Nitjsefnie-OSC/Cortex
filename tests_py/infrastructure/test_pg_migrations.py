@@ -191,10 +191,10 @@ def _downgrade_to_v1(url: str) -> None:
 
 
 @needs_pg
-def test_a_version_1_database_is_refused_at_runtime_then_migrated_to_2(scratch_url):
+def test_a_version_1_database_is_refused_at_runtime_then_migrated(scratch_url):
     """Increment 2 bumped the schema (backfill_log moved into the DDL): a
     runtime refuses the v1 database untouched, the migration step brings it
-    to v2 and creates the table."""
+    to the current version and creates the table."""
     mig.apply_schema(scratch_url)
     _downgrade_to_v1(scratch_url)
     from mcp_server.infrastructure.pg_store import PgMemoryStore  # noqa: PLC0415 — PG-only import
@@ -203,7 +203,9 @@ def test_a_version_1_database_is_refused_at_runtime_then_migrated_to_2(scratch_u
         PgMemoryStore(database_url=scratch_url)
     assert _read(scratch_url, "SELECT to_regclass('public.backfill_log')") == [(None,)]
     assert mig.apply_schema(scratch_url) > 0
-    assert _read(scratch_url, "SELECT max(version) FROM schema_version") == [(2,)]
+    assert _read(scratch_url, "SELECT max(version) FROM schema_version") == [
+        (sv.SCHEMA_VERSION,)
+    ]
     assert _read(
         scratch_url, "SELECT to_regclass('public.backfill_log') IS NOT NULL"
     ) == [(True,)]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING, Any, Iterator
 
 # source: ADR-0550
@@ -85,6 +86,7 @@ class PgStoreHost:
         _url: str
         _interactive_pool: ConnectionPool[psycopg.Connection[DictRow]] | None
         _batch_pool: ConnectionPool[psycopg.Connection[DictRow]] | None
+        _pool_lock: threading.Lock
 
         @property
         def batch_pool(self) -> ConnectionPool[psycopg.Connection[DictRow]]: ...

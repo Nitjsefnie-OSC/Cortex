@@ -30,6 +30,7 @@ from mcp_server.infrastructure.broker_endpoint import URL_ENVIRONMENT, store_key
 from mcp_server.infrastructure.broker_executor import StoreExecutor
 from mcp_server.infrastructure.broker_server import BrokerServer, Identity
 from mcp_server.infrastructure.pg_migrations import apply_schema
+from mcp_server.infrastructure.pg_roles import grant_runtime, migration_url, role_of
 from mcp_server.infrastructure.schema_versions import SCHEMA_VERSION, code_revision
 
 logger = logging.getLogger("cortex.store_broker")
@@ -50,10 +51,15 @@ def _arguments() -> argparse.Namespace:
 def _open_store(url: str):
     from mcp_server.infrastructure.pg_store import PgMemoryStore  # noqa: PLC0415 — the broker is the one process that loads the driver's store
 
-    applied = apply_schema(url)
+    owner = migration_url(url, os.environ)
+    applied = apply_schema(owner)
     logger.info(
         "schema version %s ready (%s statements applied)", SCHEMA_VERSION, applied
     )
+    if owner != url:
+        # least privilege: the pool's role gets data access, never DDL
+        granted = grant_runtime(owner, role_of(url))
+        logger.info("runtime role %s granted (%s statements)", role_of(url), granted)
     return PgMemoryStore(database_url=url)
 
 

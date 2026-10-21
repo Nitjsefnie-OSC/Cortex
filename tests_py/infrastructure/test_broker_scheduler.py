@@ -37,18 +37,18 @@ def _task(cls: str, run, budget: float = 10.0) -> Task:
     return Task(request_class=cls, deadline=time.monotonic() + budget, run=run)
 
 
-def test_policy_rejects_capacity_without_a_reserve():
+def test_policy_rejects_a_class_without_slots():
     with pytest.raises(ValueError):
-        SchedulerPolicy(workers=2, reserved_interactive=0, queue_limit=1)
+        SchedulerPolicy(interactive_slots=0, background_slots=1, queue_limit=1)
     with pytest.raises(ValueError):
-        SchedulerPolicy(workers=2, reserved_interactive=2, queue_limit=1)
+        SchedulerPolicy(interactive_slots=1, background_slots=0, queue_limit=1)
 
 
 def test_interactive_is_served_while_background_saturates_its_share():
     """A5 at the scheduler: background holds every worker it may use and has
     a full queue behind it; an interactive request still runs at once."""
     scheduler = Scheduler(
-        SchedulerPolicy(workers=3, reserved_interactive=1, queue_limit=4)
+        SchedulerPolicy(interactive_slots=1, background_slots=2, queue_limit=4)
     )
     _start(scheduler)
     release = threading.Event()
@@ -58,7 +58,7 @@ def test_interactive_is_served_while_background_saturates_its_share():
     deadline = time.monotonic() + 5
     while scheduler.snapshot()["busy_background"] < 2 and time.monotonic() < deadline:
         time.sleep(0.01)
-    assert scheduler.snapshot()["busy_background"] == 2  # the cap: workers - reserved
+    assert scheduler.snapshot()["busy_background"] == 2  # its slots
     started = time.monotonic()
     interactive = _task("interactive", lambda: "served")
     scheduler.submit(interactive)
@@ -73,7 +73,7 @@ def test_interactive_is_served_while_background_saturates_its_share():
 
 def test_a_full_queue_refuses_at_the_callers_deadline():
     scheduler = Scheduler(
-        SchedulerPolicy(workers=2, reserved_interactive=1, queue_limit=1)
+        SchedulerPolicy(interactive_slots=1, background_slots=1, queue_limit=1)
     )
     release = threading.Event()
     _start(scheduler)
@@ -90,7 +90,7 @@ def test_a_full_queue_refuses_at_the_callers_deadline():
 
 def test_a_request_whose_deadline_passed_in_the_queue_is_not_executed():
     scheduler = Scheduler(
-        SchedulerPolicy(workers=2, reserved_interactive=1, queue_limit=4)
+        SchedulerPolicy(interactive_slots=1, background_slots=1, queue_limit=4)
     )
     release = threading.Event()
     _start(scheduler)
@@ -108,7 +108,7 @@ def test_a_request_whose_deadline_passed_in_the_queue_is_not_executed():
 
 def test_errors_are_returned_to_the_requester_not_swallowed():
     scheduler = Scheduler(
-        SchedulerPolicy(workers=2, reserved_interactive=1, queue_limit=4)
+        SchedulerPolicy(interactive_slots=1, background_slots=1, queue_limit=4)
     )
     _start(scheduler)
 

@@ -98,9 +98,13 @@ class PgSchemaMixin(PgStoreHost):
     def interactive_pool(self) -> ConnectionPool[psycopg.Connection[DictRow]]:
         """Hot-path ConnectionPool for recall / remember / anchor / etc.
 
-        source: ADR-0565"""
+        source: ADR-0565 (the pool), ADR-1112 acceptance A1 (the lock): A1
+        measured 12 to 16 interactive connections from one broker whose 10
+        workers raced the first use, each opening its own pool (max 8)"""
         if self._interactive_pool is None:
-            self._interactive_pool = self._open_interactive_pool()
+            with self._pool_lock:
+                if self._interactive_pool is None:
+                    self._interactive_pool = self._open_interactive_pool()
         return self._interactive_pool
 
     @property
@@ -109,9 +113,12 @@ class PgSchemaMixin(PgStoreHost):
         ingest / seed_project / backfill_memories.
 
         Separate resource so batch jobs cannot starve the interactive pool.
+        Opened once under the store's pool lock, as ``interactive_pool``.
         """
         if self._batch_pool is None:
-            self._batch_pool = self._open_batch_pool()
+            with self._pool_lock:
+                if self._batch_pool is None:
+                    self._batch_pool = self._open_batch_pool()
         return self._batch_pool
 
     @contextmanager

@@ -57,7 +57,7 @@ class _Harness:
         self.pending: queue.Queue = queue.Queue()
         self.store = _FakeStore()
         policy = ServerPolicy(
-            SchedulerPolicy(workers=2, reserved_interactive=1, queue_limit=8),
+            SchedulerPolicy(interactive_slots=1, background_slots=1, queue_limit=8),
             idle_seconds=60.0,
             max_connections=4,
         )

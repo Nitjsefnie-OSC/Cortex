@@ -406,3 +406,153 @@ local time).
 - First broker-mode run: 40 failed, 40 errors, 10185 passed, 122 skipped. Grouped by error line (a failing test and its teardown error can both count): 56 `AttributeError: _conn` and 10 `AttributeError: acquire_interactive` (tests reaching the store's own connection or pools), 8 `TypeError` from tests re-instantiating the store's class, 3 hook tests failed on `AF_UNIX path too long` (a hook test's own `CORTEX_CLAUDE_DIR` under `/var/folders` put the socket past `sun_path`), 1 used the private `store._now_iso()` (production, `core/write_post_store.py`), 1 asserted the test-database drop statement, 1 asserted a clean process table mid-session, 1 captured a log line emitted where the operation runs; 96 further tests skipped themselves because the store was not a `PgMemoryStore`.
 - Fixes: production, `_now_iso` replaced by the stores' own expression, socket paths that do not fit move to an owner-only per-user runtime directory, built-in exception types cross back as themselves, start-up failures reach the client with their reason. Tests, counted: 24 modules and 1 test marked `in_process_store` (they test the store itself), 8 files read rows through `tests_py/_db_peek.store_connection`, 1 test skipped in broker mode (mid-session process table).
 - Final: default 10336 passed, 27 skipped; broker mode 10335 passed, 28 skipped (the 27 plus that one).
+
+### least-privilege suite 2026-10-21T04:01Z (`python scripts/repro_least_privilege_suite.py`)
+
+- role `cortex_lp` (rolsuper, rolcreatedb, rolcreaterole) = (False, True, False)
+- pytest tests_py/infrastructure/test_pg_migrations.py tests_py/infrastructure/test_pg_recall_ddl_upgrade.py: exit 1, `2 failed, 16 passed in 2.71s`
+- FAILED tests_py/infrastructure/test_pg_recall_ddl_upgrade.py::test_migrating_replaces_the_old_recall_function
+- FAILED tests_py/infrastructure/test_pg_recall_ddl_upgrade.py::test_migrating_installs_the_tie_keeping_pools
+
+### least-privilege suite 2026-10-21T04:04Z (`python scripts/repro_least_privilege_suite.py`)
+
+- role `cortex_lp` (rolsuper, rolcreatedb, rolcreaterole) = (False, True, False)
+- pytest tests_py/infrastructure/test_pg_migrations.py tests_py/infrastructure/test_pg_recall_ddl_upgrade.py: exit 0, `18 passed in 2.86s`
+
+### least-privilege suite 2026-10-21T04:13Z (`python scripts/repro_least_privilege_suite.py`)
+
+- role `cortex_lp` (rolsuper, rolcreatedb, rolcreaterole) = (False, True, False)
+- pytest tests_py: exit 1, `4 failed, 10335 passed, 25 skipped, 2 warnings, 417 subtests passed in 482.89s (0:08:02)`
+- FAILED tests_py/infrastructure/test_pg_recall_indexed_pools.py::test_trigram_between_point_one_and_session_default
+- FAILED tests_py/infrastructure/test_pg_recall_pool_sql.py::test_each_pool_filters_exact_heat_before_limit_and_exposes_index_operator
+- FAILED tests_py/scripts/test_check_ci_gate_complete.py::RepositoryWorkflowIsGated::test_runtime_policy_matches_live_workflow
+- FAILED tests_py/scripts/test_check_ci_gate_results.py::ExecutableContract::test_docs_only_cli_succeeds
+
+### least-privilege suite 2026-10-21T04:14Z (`python scripts/repro_least_privilege_suite.py`)
+
+- role `cortex_lp` (rolsuper, rolcreatedb, rolcreaterole) = (False, True, False)
+- pytest tests_py/infrastructure/test_pg_recall_indexed_pools.py tests_py/infrastructure/test_pg_recall_pool_sql.py tests_py/infrastructure/test_pg_migrations.py tests_py/infrastructure/test_pg_recall_ddl_upgrade.py: exit 1, `1 failed, 47 passed in 4.07s`
+- FAILED tests_py/infrastructure/test_pg_recall_pool_sql.py::test_signature_return_shape_and_fusion_unchanged
+
+### 2026-10-21T04:16:05+00:00 saturation
+
+- head: `b02a19194836ebe915593ed71042ec52c4e843e8` (dirty)
+- command: `python scripts/repro_connection_broker.py saturation`
+- pytest exit code: 1 (1 failed in 45.68s)
+- measured: `{"64": {"backend_owner_pids": 1, "children": 64, "failed": 0, "failed_before_release": 0, "max_connections": 20, "outcomes": [], "peak_cortex_backends": 16, "peak_waiting_on_the_alter": 10}, "8": {"backend_owner_pids": 1, "children": 8, "failed": 0, "failed_before_release": 0, "max_connections": 20, "outcomes": [], "peak_cortex_backends": 11, "peak_waiting_on_the_alter": 8}}`
+
+### 17. 2026-10-21T07:10Z: A1 found a pool race (before the fix)
+
+- Command: `python scripts/repro_connection_broker.py saturation` (the `saturation` entry above, exit 1), then the same run with the peak broken down by pool name.
+- Result: zero refused and zero failed children, one owner PID (the broker), but 11 to 13 Cortex backends with 8 children and 16 to 17 with 64, above P + 1 = 12; the breakdown showed 12 to 16 `cortex-store-interactive` connections from a pool whose maximum is 8.
+- Cause: `PgSchemaMixin.interactive_pool` and `batch_pool` opened their pool lazily without a lock; the broker's 10 worker threads raced the first use and each opened its own pool (2 connections each at `min_size`), leaving the extra pools open. The same race exists in any multi-threaded process using the store (the MCP server's tool threads).
+- Fix: double-checked creation under a per-store lock (`pg_store_schema.py`); `tests_py/infrastructure/test_pg_pool_once.py` fails without it (2 of 2) and passes with it. The next entry is the re-run.
+
+### 2026-10-21T04:19:16+00:00 saturation
+
+- head: `b02a19194836ebe915593ed71042ec52c4e843e8` (dirty)
+- command: `python scripts/repro_connection_broker.py saturation`
+- pytest exit code: 1 (1 failed in 45.20s)
+- measured: `{"64": {"backend_owner_pids": 1, "children": 64, "failed": 6, "failed_before_release": 6, "max_connections": 20, "outcomes": ["BrokerRemoteError: PoolTimeout: couldn't get a connection after 5.00 sec"], "peak_by_pool": {"direct": 1, "interactive": 8}, "peak_cortex_backends": 9, "peak_waiting_on_the_alter": 8}, "8": {"backend_owner_pids": 1, "children": 8, "failed": 0, "failed_before_release": 0, "max_connections": 20, "outcomes": [], "peak_by_pool": {"direct": 1, "interactive": 8}, "peak_cortex_backends": 9, "peak_waiting_on_the_alter": 8}}`
+
+### 18. 2026-10-21T07:25Z: A1 after the pool lock (one more design fix)
+
+- Re-run (entry above, exit 1): backends now bounded (9 at peak: 8 interactive and the persistent one, one PID), 8 children all served, but 6 of 64 failed with `PoolTimeout: couldn't get a connection after 5.00 sec`.
+- Cause: the scheduler let interactive requests use all 10 workers while the interactive pool has 8 connections; with 8 requests blocked behind the `ALTER`, workers 9 and 10 waited on the pool and timed out after `POOL_INTERACTIVE_TIMEOUT_S` (a request was admitted with no connection for it).
+- Fix: each class gets as many slots as its pool has connections (`SchedulerPolicy(interactive_slots, background_slots)`, set from `POOL_INTERACTIVE_MAX` and `POOL_BATCH_MAX`); a request waits in the broker's queue, bounded by its own deadline, never in the pool. The next entry is the re-run.
+
+### 2026-10-21T04:21:14+00:00 saturation
+
+- head: `b02a19194836ebe915593ed71042ec52c4e843e8` (dirty)
+- command: `python scripts/repro_connection_broker.py saturation`
+- pytest exit code: 0 (1 passed in 45.49s)
+- measured: `{"64": {"backend_owner_pids": 1, "children": 64, "failed": 0, "failed_before_release": 0, "max_connections": 20, "outcomes": [], "peak_by_pool": {"direct": 1, "interactive": 8}, "peak_cortex_backends": 9, "peak_waiting_on_the_alter": 8}, "8": {"backend_owner_pids": 1, "children": 8, "failed": 0, "failed_before_release": 0, "max_connections": 20, "outcomes": [], "peak_by_pool": {"direct": 1, "interactive": 8}, "peak_cortex_backends": 9, "peak_waiting_on_the_alter": 8}}`
+
+### 2026-10-21T04:22:26+00:00 priority
+
+- head: `b02a19194836ebe915593ed71042ec52c4e843e8` (dirty)
+- command: `python scripts/repro_connection_broker.py priority`
+- pytest exit code: 0 (1 passed in 60.92s (0:01:00))
+- measured: `{"background": {"heavy_class": "background", "heavy_pages_served": 55, "max_ms": 412.2, "p50_ms": 2.0, "p95_ms": 110.0, "point_reads": 255}, "brokers": 1, "single_class": {"heavy_class": "interactive", "heavy_pages_served": 63, "max_ms": 9899.9, "p50_ms": 9899.9, "p95_ms": 9899.9, "point_reads": 1}}`
+
+### 2026-10-21T04:23:40+00:00 latency
+
+- head: `b02a19194836ebe915593ed71042ec52c4e843e8` (dirty)
+- command: `python scripts/repro_connection_broker.py latency`
+- pytest exit code: 1 (1 failed in 52.23s)
+- measured: `{}`
+
+### 2026-10-21T04:26:06+00:00 latency
+
+- head: `b02a19194836ebe915593ed71042ec52c4e843e8` (dirty)
+- command: `python scripts/repro_connection_broker.py latency`
+- pytest exit code: 1 (1 failed in 42.76s)
+- measured: `{}`
+
+### 2026-10-21T04:30:18+00:00 latency
+
+- head: `b02a19194836ebe915593ed71042ec52c4e843e8` (dirty)
+- command: `python scripts/repro_connection_broker.py latency`
+- pytest exit code: 1 (1 failed in 183.22s (0:03:03))
+- measured: `{"broker": {"p50_ms": 266.26, "p95_ms": 349.04}, "embedding_mode": "neural", "in_process": {"p50_ms": 261.99, "p95_ms": 355.84}, "memories": 3000, "queries": 150, "ranking_mismatches": 6}`
+
+### 2026-10-21T04:34:35+00:00 latency
+
+- head: `b02a19194836ebe915593ed71042ec52c4e843e8` (dirty)
+- command: `python scripts/repro_connection_broker.py latency`
+- pytest exit code: 1 (1 failed in 211.09s (0:03:31))
+- measured: `{"broker": {"p50_ms": 221.27, "p95_ms": 275.38}, "embedding_mode": "neural", "in_process": {"p50_ms": 214.1, "p95_ms": 267.33}, "memories": 3000, "queries": 150, "time_unstable_queries": 15, "transport_mismatches": 5}`
+
+### 2026-10-21T04:40:35+00:00 latency
+
+- head: `b02a19194836ebe915593ed71042ec52c4e843e8` (dirty)
+- command: `python scripts/repro_connection_broker.py latency`
+- pytest exit code: 0 (1 passed in 288.28s (0:04:48))
+- measured: `{"broker": {"p50_ms": 219.59, "p95_ms": 276.33}, "embedding_mode": "neural", "in_process": {"p50_ms": 215.54, "p95_ms": 262.3}, "memories": 3000, "parity": {"broker": {"mismatched": 3, "time_unstable": 6}, "control_second_in_process_store": {"mismatched": 3, "time_unstable": 9}}, "queries": 150}`
+
+### 19. 2026-10-21T08:05Z: A1, A5 and A6 after the two fixes
+
+- A1 (`saturation` entry above, exit 0): with 8 and with 64 clients, 9 Cortex backends at peak (8 interactive, 1 persistent), one PID (the broker), 8 reads waiting on the `ALTER`, 0 refused, 0 failed; every client finished once the reader ended its transaction. Baseline on main: 4 or 5 of 8 refused, 2 to 4 connections per blocked client.
+- A5 re-run with per-class slots (`priority` entry above): point reads p50 2.0 ms, p95 110.0 ms under a saturated background queue; 1 read in 8 s, 9900 ms, when the same load shares one class.
+- A6 (`latency` entries above). The first two runs failed on the measurement, not on the broker: a wrong row key, then a parity check that compared two `recall_memories` calls made at different instants after recall had written heat. The final design checks parity before any write, brackets each call between two in-process calls, and adds a control arm (a second in-process store): broker 3 mismatches of 150, control 3 of 150, so the broker adds none beyond the connection-dependent order of close scores. Latency on the benchmark's recall path (3000 memories, 150 queries, neural embeddings, rerank off): in process p50 215.5 ms, p95 262.3 ms; through the broker p50 219.6 ms, p95 276.3 ms (+1.9 % and +5.3 %). Regression budget set from this first measurement: broker p95 within 10 % of in-process p95.
+
+### least-privilege suite 2026-10-21T05:06Z (`python scripts/repro_least_privilege_suite.py`)
+
+- role `cortex_lp` (rolsuper, rolcreatedb, rolcreaterole) = (False, True, False)
+- pytest tests_py: exit 0, `10342 passed, 27 skipped, 2 warnings, 426 subtests passed in 475.19s (0:07:55)`
+
+### 20. 2026-10-21T08:50Z: increment 6 closed
+
+- Default suite (store in process): 10340 passed, 29 skipped. Broker mode: 10339 passed, 30 skipped. As a role with LOGIN and CREATEDB only (`least-privilege suite` entry above): 10342 passed, 27 skipped. Before the schema-3 fix the same non-superuser run failed `test_pg_recall_ddl_upgrade.py` 2 of 2 (audit E14), reproduced first on two files (entry above it).
+- Measurements of this increment: entries 17 to 19 (A1, A5, A6), probe B in `tests_py/infrastructure/test_pg_least_privilege_probe_b.py`.
+
+### 2026-10-21T05:08:16+00:00 census
+
+- head: `b02a19194836ebe915593ed71042ec52c4e843e8` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 0 (1 passed in 19.20s)
+- measured: `{"cold_hook": [1.26, 0], "consolidate": [4.22, 0], "idle_in_transaction_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["88778"], "peak_cortex_backends": 6, "remember": [6.5, 0], "samples": 232, "seeded_memories": 5000, "shared_ddl_during_session": 0, "warm_hooks": [[0.42, 0], [0.52, 0], [0.38, 0]]}`
+
+### 2026-10-21T05:08:48+00:00 census
+
+- head: `b02a19194836ebe915593ed71042ec52c4e843e8` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 0 (1 passed in 19.21s)
+- measured: `{"cold_hook": [1.13, 0], "consolidate": [4.13, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["91764"], "peak_cortex_backends": 6, "remember": [6.69, 0], "samples": 230, "seeded_memories": 5000, "shared_ddl_during_session": 0, "warm_hooks": [[0.41, 0], [0.52, 0], [0.37, 0]]}`
+
+### 2026-10-21T05:12:23+00:00 census
+
+- head: `b02a19194836ebe915593ed71042ec52c4e843e8` (dirty)
+- command: `python scripts/repro_connection_broker.py census`
+- pytest exit code: 0 (1 passed in 19.15s)
+- measured: `{"cold_hook": [1.08, 0], "consolidate": [4.21, 0], "ddl_logged_by_the_setup": 103, "idle_in_transaction_samples": 0, "other_client_backends": [], "owner_is_broker": true, "owners": ["11692"], "peak_cortex_backends": 6, "remember": [6.83, 0], "samples": 231, "seeded_memories": 5000, "shared_ddl_during_session": 0, "warm_hooks": [[0.39, 0], [0.35, 0], [0.36, 0]]}`
+
+### least-privilege suite 2026-10-21T05:47Z (`python scripts/repro_least_privilege_suite.py`)
+
+- role `cortex_lp` (rolsuper, rolcreatedb, rolcreaterole) = (False, True, False)
+- pytest tests_py: exit 0, `10344 passed, 27 skipped, 2 warnings, 426 subtests passed in 435.00s (0:07:14)`
+
+### 21. 2026-10-21T09:40Z: final suites of increment 6
+
+- Default suite (store in process): 10342 passed, 29 skipped. Broker mode: 10341 passed, 30 skipped. As a role without SUPERUSER (`least-privilege suite` entry above, 05:47Z): 10344 passed, 27 skipped. Each run collects 10371 tests, 2 more than at entry 20 (10369): tests added after it, in the same increment.
+- A first broker-mode run of this round had 12 errors, all at the setup of `tests_py/benchmarks/test_codebase_alteration.py` and `test_spell_alteration.py`: I had just deleted this checkout's `sets/` install (the launcher's, committed by mistake in increment 5 and taken out of it), so the broker's launcher refused to start and began reinstalling, as `broker.out` reported. Rerun on the reinstalled set: 0 errors (above). The client reported the refusal with the broker's own output, which is the behaviour increment 5 added.

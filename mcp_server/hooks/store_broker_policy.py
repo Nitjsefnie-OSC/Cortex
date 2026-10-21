@@ -1,9 +1,9 @@
 """The store broker's capacity, idle exit and private log.
 
-Workers and reserved capacity follow the store's own pools so that a worker
-always finds a connection: ``POOL_INTERACTIVE_MAX`` + ``POOL_BATCH_MAX``
-workers, of which background requests may use at most ``POOL_BATCH_MAX``
-(ADR-1112 decision 4: background may use at most P minus R). Every value can
+Each request class gets as many slots as its pool has connections, so a
+running request always finds one: ``POOL_INTERACTIVE_MAX`` interactive and
+``POOL_BATCH_MAX`` background slots (ADR-1112 decision 4: R is the
+interactive pool, background never takes it). Every value can
 be set from the environment; increment 4 measures them.
 
 source: ADR-1112 decision 4; ADR-0534 (pool sizes); ADR-0488 (worker log)
@@ -41,12 +41,10 @@ def _number(name: str, default: float) -> float:
 
 def server_policy() -> ServerPolicy:
     settings = get_memory_settings()
-    background = settings.POOL_BATCH_MAX
-    workers = settings.POOL_INTERACTIVE_MAX + background
     return ServerPolicy(
         scheduler=SchedulerPolicy(
-            workers=workers,
-            reserved_interactive=workers - background,
+            interactive_slots=settings.POOL_INTERACTIVE_MAX,
+            background_slots=settings.POOL_BATCH_MAX,
             queue_limit=int(_number("CORTEX_BROKER_QUEUE_LIMIT", DEFAULT_QUEUE_LIMIT)),
         ),
         idle_seconds=_number("CORTEX_BROKER_IDLE_SECONDS", DEFAULT_IDLE_SECONDS),

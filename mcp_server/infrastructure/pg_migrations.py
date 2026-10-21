@@ -110,17 +110,17 @@ def _record(conn: psycopg.Connection[Any]) -> None:
 
 
 def _ensure_prerequisites(conn: psycopg.Connection[Any]) -> None:
-    """Extensions first, as their own step, then load pg_trgm's library.
+    """Extensions first, as their own step.
 
     Measured (experiment log entry 11): an owner that is not a superuser
     cannot create ``vector`` (an untrusted extension), and on main that one
     failure cascaded into 58 (every table, index and function that needs the
     type). Here a missing extension the role cannot create stops the
     migration before any statement, with the one command an administrator
-    runs. ``recall_memories()`` sets ``pg_trgm.similarity_threshold`` per
-    function, which a non-superuser may do only once the library has defined
-    the parameter in the session; the census measured the re-run of an
-    existing schema failing there with ``InsufficientPrivilege``."""
+    runs. (Schema version 2 also loaded pg_trgm's library here, because
+    ``recall_memories()`` declared ``SET pg_trgm.similarity_threshold``, which
+    a non-superuser may create only once the library is loaded; version 3
+    sets the threshold in the function body, so no session state is needed.)"""
     with conn.cursor(row_factory=tuple_row) as cur:
         present = {
             row[0]
@@ -145,7 +145,6 @@ def _ensure_prerequisites(conn: psycopg.Connection[Any]) -> None:
                 f"'CREATE EXTENSION {name};' in this database, then migrate again. "
                 "No statement was applied and nothing was recorded."
             ) from exc
-    conn.execute("SELECT similarity('', '')")
 
 
 def _apply_statements(conn: psycopg.Connection[Any]) -> int:

@@ -1014,7 +1014,14 @@ DECLARE
                             THEN plainto_tsquery('english', p_query_text)
                             ELSE to_tsquery('english', v_or_expr) END;
     v_min_heat_base REAL;
+    -- the caller's trigram threshold, restored before returning
+    v_caller_trgm TEXT := current_setting('pg_trgm.similarity_threshold', true);
 BEGIN
+    -- source: ADR-0537 (the trigram threshold of the % pool below). Set in
+    -- the body and restored at the end, not as a function SET clause: a
+    -- non-superuser cannot create a SET clause of a placeholder parameter
+    -- before pg_trgm is loaded (audit E14; ADR-1112 increment 6).
+    PERFORM set_config('pg_trgm.similarity_threshold', '0.1', true);
     -- source: ADR-0537
     SELECT COALESCE(MAX(hs.factor), 1.0) INTO v_factor
     FROM homeostatic_state hs
@@ -1204,12 +1211,14 @@ BEGIN
     ORDER BY (c.superseded_by_id IS NOT NULL), tw.final_score DESC,
              c.created_at DESC, tw.id DESC
     LIMIT p_max_results * 3;
+    -- source: pg_trgm's default threshold when the caller had none set
+    PERFORM set_config(
+        'pg_trgm.similarity_threshold', COALESCE(v_caller_trgm, '0.3'), true
+    );
 END;
 $$ LANGUAGE plpgsql STABLE
 -- source: ADR-0537
-SET plan_cache_mode = 'force_custom_plan'
--- source: ADR-0537
-SET pg_trgm.similarity_threshold = '0.1';
+SET plan_cache_mode = 'force_custom_plan';
 """
 
 # ── PL/pgSQL: spread_activation ──────────────────────────────────────────

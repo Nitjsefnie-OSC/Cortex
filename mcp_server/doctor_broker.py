@@ -73,3 +73,33 @@ def store_broker_check() -> dict[str, Any]:
         return {"name": name, "ok": True, "detail": detail, "severity": "ok"}
     detail = f"running, pid {status['pid']} ({status['socket']})"
     return {"name": name, "ok": True, "detail": detail, "severity": "ok"}
+
+
+def database_roles_check() -> dict[str, Any]:
+    """Whether migration and runtime run as two roles (ADR-1112 least
+    privilege). One role for both is reported, not refused."""
+    name = "database roles"
+    url = os.environ.get("DATABASE_URL", "")
+    migration = os.environ.get("CORTEX_MIGRATION_DATABASE_URL", "")
+    if not url:
+        return {
+            "name": name,
+            "ok": True,
+            "detail": "skipped (no DATABASE_URL)",
+            "severity": "warn",
+        }
+    from mcp_server.infrastructure.pg_roles import role_of  # noqa: PLC0415 — PG-only
+
+    runtime = role_of(url)
+    if not migration or role_of(migration) == runtime:
+        return {
+            "name": name,
+            "ok": True,
+            "detail": f"one role ({runtime}) migrates and serves: no separation",
+            "fix": "Run scripts/setup_least_privilege.py as an administrator, then set "
+            "CORTEX_MIGRATION_DATABASE_URL to the migration role and DATABASE_URL "
+            "to the runtime role.",
+            "severity": "warn",
+        }
+    detail = f"migration {role_of(migration)}, runtime {runtime}"
+    return {"name": name, "ok": True, "detail": detail, "severity": "ok"}

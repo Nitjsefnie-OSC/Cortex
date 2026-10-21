@@ -10,6 +10,9 @@ three UserPromptSubmit recalls, one ``remember`` tool call, one
   PID, the broker's, and no other client backend appears (the sampler's own
   connection excluded).
 - A4: no sample shows a backend ``idle in transaction``.
+- A3: with ``log_statement = ddl``, no DDL on a shared relation is logged
+  during the session (the schema is current; the broker's start-up
+  migration applies nothing; temporary tables are session-local).
 - Timings: the first hook pays the broker's start (cold), the next ones do
   not (warm); every hook process exits by itself.
 
@@ -151,6 +154,20 @@ def _session(url: str, root: Path) -> dict:
     }
 
 
+def _shared_ddl(log: Path, start: int) -> list[str]:
+    """DDL statements on shared relations logged during the session (A3);
+    session-local temporary tables are not shared and are left out."""
+    with log.open("rb") as stream:
+        stream.seek(start)
+        text = stream.read().decode("utf-8", "replace")
+    statements = [
+        line.split("statement: ", 1)[1].strip()
+        for line in text.splitlines()
+        if "statement: " in line
+    ]
+    return [s for s in statements if not s.upper().startswith("CREATE TEMP")]
+
+
 def _command_of(pid: str) -> str:
     done = subprocess.run(
         ["ps", "-o", "command=", "-p", pid], capture_output=True, text=True, check=False
@@ -164,39 +181,49 @@ def _record(result: dict) -> None:
         Path(target).write_text(json.dumps(result))
 
 
-def test_one_broker_holds_every_connection_and_no_transaction_idles():
+def _seed(maint: str) -> str:
     from mcp_server.infrastructure.pg_migrations import apply_schema  # noqa: PLC0415
 
-    with tempfile.TemporaryDirectory(prefix="a2-", dir=Path("/tmp").resolve()) as raw:
-        root = Path(raw)
-        with cluster.private_cluster(root / "pg", max_connections=40) as maint:
-            with psycopg.connect(maint, autocommit=True) as conn:
-                conn.execute("CREATE DATABASE census")
-            url = maint.rpartition("/")[0] + "/census"
-            apply_schema(url)
-            with psycopg.connect(url, autocommit=True) as conn:
-                # several keyset pages for consolidation's streamed passes (A4)
-                conn.execute(
-                    "INSERT INTO memories (content, embedding) SELECT"
-                    " 'census memory ' || g, array_fill(0.1::real, ARRAY[384])::vector"
-                    " FROM generate_series(1, %s) g",
-                    (_SEEDED,),
-                )
-            sampler = _Sampler(url)
-            sampler.start()
-            steps = _session(url, root)
-            sampler.stop.set()
-            sampler.join(timeout=10)
-            brokers = {pid: _command_of(pid) for pid in sampler.owners}
-            for pid in brokers:
-                subprocess.run(["kill", pid], check=False)
+    with psycopg.connect(maint, autocommit=True) as conn:
+        conn.execute("CREATE DATABASE census")
+    url = maint.rpartition("/")[0] + "/census"
+    apply_schema(url)
+    with psycopg.connect(url, autocommit=True) as conn:
+        # several keyset pages for consolidation's streamed passes (A4)
+        conn.execute(
+            "INSERT INTO memories (content, embedding) SELECT"
+            " 'census memory ' || g, array_fill(0.1::real, ARRAY[384])::vector"
+            " FROM generate_series(1, %s) g",
+            (_SEEDED,),
+        )
+    return url
+
+
+def _measure(root: Path) -> tuple[dict, list[str]]:
+    with cluster.private_cluster(
+        root / "pg", max_connections=40, extra="-c log_statement=ddl"
+    ) as maint:
+        url = _seed(maint)
+        log = root / "pg" / "pg.log"
+        log_start = log.stat().st_size  # DDL before the session: the setup's
+        sampler = _Sampler(url)
+        sampler.start()
+        steps = _session(url, root)
+        sampler.stop.set()
+        sampler.join(timeout=10)
+        brokers = {pid: _command_of(pid) for pid in sampler.owners}
+        session_ddl = _shared_ddl(log, log_start)
+        # the instrument works: the setup's migration is in the same log
+        setup_ddl = len(_shared_ddl(log, 0)) - len(session_ddl)
+        for pid in brokers:
+            subprocess.run(["kill", pid], check=False)
     # seconds and exit code per step: the output tails stay out of the log,
     # they can quote the user's own paths
     timings = {
         name: [step[:2] for step in value] if isinstance(value, list) else value[:2]
         for name, value in steps.items()
     }
-    result = {
+    return {
         **timings,
         "owners": sorted(sampler.owners),
         "owner_is_broker": all("store_broker" in c for c in brokers.values()),
@@ -205,12 +232,21 @@ def test_one_broker_holds_every_connection_and_no_transaction_idles():
         "idle_in_transaction_samples": sampler.idle_in_tx,
         "samples": sampler.samples,
         "seeded_memories": _SEEDED,
-    }
+        "shared_ddl_during_session": len(session_ddl),
+        "ddl_logged_by_the_setup": setup_ddl,
+    }, session_ddl
+
+
+def test_one_broker_holds_every_connection_and_no_transaction_idles():
+    with tempfile.TemporaryDirectory(prefix="a2-", dir=Path("/tmp").resolve()) as raw:
+        result, session_ddl = _measure(Path(raw))
     _record(result)
-    hooks = [steps["cold_hook"], *steps["warm_hooks"]]
+    hooks = [result["cold_hook"], *result["warm_hooks"]]
     assert all(step[1] == 0 for step in hooks), result
-    assert steps["remember"][1] == 0 and steps["consolidate"][1] == 0, result
-    assert len(sampler.owners) == 1 and result["owner_is_broker"], result  # A2
+    assert result["remember"][1] == 0 and result["consolidate"][1] == 0, result
+    assert len(result["owners"]) == 1 and result["owner_is_broker"], result  # A2
     assert result["other_client_backends"] == [], result  # A2
     assert result["idle_in_transaction_samples"] == 0, result  # A4
+    assert result["ddl_logged_by_the_setup"] > 0, result  # the log records DDL
+    assert result["shared_ddl_during_session"] == 0, (result, session_ddl)  # A3
     assert result["peak_cortex_backends"] <= 12, result  # P + 1 (P = 11)

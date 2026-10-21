@@ -21,6 +21,11 @@ import time
 import pytest
 
 from tests_py._process_leak_guard import TOKEN_VAR, live_tokened_processes
+from tests_py._store_mode import select_store_mode
+
+# Read at store creation, never at import: setting it when conftest imports
+# the session fixtures is early enough, and subprocesses inherit it.
+select_store_mode()
 
 # source: ADR-1112 the broker's module name, as the launcher runs it
 _BROKER_MODULE = "mcp_server.hooks.store_broker"

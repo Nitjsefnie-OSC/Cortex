@@ -123,7 +123,7 @@ def test_a_request_round_trips_over_the_pipe():
     server = BrokerServer(
         listener.accept,
         executor,
-        ServerPolicy(SchedulerPolicy(2, 1, 4), idle_seconds=60.0, max_connections=4),
+        ServerPolicy(SchedulerPolicy(1, 1, 4), idle_seconds=60.0, max_connections=4),
         Identity("test", SCHEMA_VERSION),
     )
     thread = threading.Thread(target=server.run, args=(listener.close,), daemon=True)

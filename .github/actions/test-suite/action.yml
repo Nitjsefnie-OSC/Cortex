@@ -53,6 +53,10 @@ inputs:
     description: "Run the suite with every store reached through a real store broker (CORTEX_TEST_BROKER_MODE=1, ADR-1112). Compared against the literal 'true'."
     required: false
     default: "false"
+  least-privilege:
+    description: "Run the suite as a role without SUPERUSER (LOGIN CREATEDB only), the extensions created in template1 by the administrator (ADR-1112, audit Track 0.3). Compared against the literal 'true'."
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -79,6 +83,8 @@ runs:
 
     - name: Set up PostgreSQL + pgvector (runner-local, no registry pull)
       shell: bash
+      env:
+        LEAST_PRIVILEGE: ${{ inputs.least-privilege }}
       run: |
         set -euxo pipefail
         sudo systemctl start postgresql
@@ -141,9 +147,18 @@ runs:
           fi
           exit 1
         }
-        # Role + DB expected by DATABASE_URL.
+        # Role + DB expected by DATABASE_URL. least-privilege: no SUPERUSER,
+        # and the untrusted vector extension comes from template1, created
+        # by the administrator (source: ADR-1112, audit Track 0.3).
+        if [ "$LEAST_PRIVILEGE" = "true" ]; then
+          role_attributes="LOGIN CREATEDB NOSUPERUSER"
+          sudo -u postgres psql -v ON_ERROR_STOP=1 -d template1 \
+            -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+        else
+          role_attributes="LOGIN SUPERUSER"
+        fi
         sudo -u postgres psql -v ON_ERROR_STOP=1 \
-          -c "CREATE ROLE cortex LOGIN SUPERUSER PASSWORD 'cortex';"
+          -c "CREATE ROLE cortex ${role_attributes} PASSWORD 'cortex';"
         sudo -u postgres createdb -O cortex cortex
         sudo -u postgres psql -v ON_ERROR_STOP=1 -d cortex \
           -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm;"

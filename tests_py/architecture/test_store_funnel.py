@@ -141,3 +141,23 @@ def test_no_lower_layer_builds_a_shared_store():
         in line.replace("PgMemoryStore(", "").replace("SqliteMemoryStore(", "")
     ]
     assert builders == []
+
+
+# source: ADR-1112 increment 6 (the broker holds the only per-process pools)
+_STORE_BUILDERS = {
+    "hooks/store_broker.py": "the broker: the one process that holds the pools",
+    "infrastructure/memory_store.py": "the factory, with CORTEX_STORE_IN_PROCESS=1",
+}
+
+
+def test_only_the_broker_and_the_gated_factory_build_a_pg_store():
+    """Per-process pools are gone: a PgMemoryStore (and with it the
+    interactive and batch pools) exists only in the broker, or in a process
+    that explicitly runs the store in process (the broker, the tests)."""
+    builders = {
+        str(path.relative_to(_ROOT))
+        for path in _ROOT.rglob("*.py")
+        for _, line in _code_lines(path)
+        if "PgMemoryStore(" in line and "class PgMemoryStore(" not in line
+    }
+    assert builders == set(_STORE_BUILDERS), sorted(builders ^ set(_STORE_BUILDERS))

@@ -14,12 +14,15 @@ from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version as package_version
 
 # source: ADR-1112 the version this code defines; bump with every DDL change
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 # source: ADR-1112 compute_ddl_hash() of each version (v1 = main df3a4479)
 SCHEMA_HASHES: dict[int, str] = {
     1: "44002703f29f0c2d8d01b5b343bf6fe5e995b989126b7b00f7e6a96474c21f87",
     # v2: backfill_log is part of the schema (ADR-1112 increment 2)
     2: "88211fbd5be16f33b6401d81b9fef8a29180eaf3ec155a8e765af7343416a3a5",
+    # v3: recall_memories() sets its trigram threshold in its body, not as a
+    # function SET clause a non-superuser cannot create (ADR-1112 increment 6)
+    3: "a4c5fea2e4b88c0a0d64df0a250736e1b40484d57aa5b38255cf5898bb0f5ddd",
 }
 # source: ADR-1112 (the operator's remedy, named in every refusal)
 _MIGRATE_HINT = "run 'python -m mcp_server.migrate' once"

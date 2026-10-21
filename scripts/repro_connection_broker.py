@@ -22,6 +22,12 @@ recorded like a passing one.
 * ``census``: acceptance A2 and A4, a scripted session of real hook and tool
   processes on a private cluster with a ``pg_stat_activity`` sampler
   (tests_py/infrastructure/test_broker_session_census_repro.py).
+* ``saturation``: acceptance A1, the ``baseline`` scenario with 8 and 64
+  clients that reach the store through the broker
+  (tests_py/infrastructure/test_broker_saturation_repro.py).
+* ``latency``: acceptance A6, the benchmark's recall path on the in-process
+  store and through the broker
+  (tests_py/infrastructure/test_broker_recall_latency_repro.py).
 * ``bounds``: the audit's probe A on the store's connections: name and
   session bounds per pool (tests_py/infrastructure/test_pg_session_bounds.py).
 
@@ -53,6 +59,8 @@ TARGETS = {
     "priority": "tests_py/infrastructure/test_broker_priority_repro.py",
     "bounds": "tests_py/infrastructure/test_pg_session_bounds.py",
     "census": "tests_py/infrastructure/test_broker_session_census_repro.py",
+    "saturation": "tests_py/infrastructure/test_broker_saturation_repro.py",
+    "latency": "tests_py/infrastructure/test_broker_recall_latency_repro.py",
 }
 
 

@@ -4,6 +4,8 @@ source: ADR-0538"""
 
 from __future__ import annotations
 
+import threading
+
 import logging
 
 import psycopg
@@ -102,6 +104,8 @@ class PgMemoryStore(
             None
         )
         self._batch_pool: ConnectionPool[psycopg.Connection[DictRow]] | None = None
+        # source: ADR-1112 A1 (one pool per kind, however many threads)
+        self._pool_lock = threading.Lock()
 
     def close(self) -> None:
         if self._interactive_pool is not None:
