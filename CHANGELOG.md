@@ -8,6 +8,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- The Claude Code PR review no longer checks out PR code in a privileged workflow (CodeQL `actions/untrusted-checkout/high`, `actions/untrusted-checkout-toctou/high`): the review job moves to `.github/workflows/claude-review.yml`, triggered by `pull_request` only, and `.github/workflows/claude.yml` keeps only the `@claude` job on its comment, review and issue triggers, with no PR head checkout.
 - **Personal data is stored owner-only (ADR-1112).** The 2026-10-21 audit
   (E18) measured `memory.db`, logs and telemetry at 0644/0664 in 0755/0775
   directories. Under `~/.claude/methodology`, the capture worker directory,
@@ -54,6 +55,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `.github/workflows/claude.yml`: every push to a PR runs a Claude Code review (`/code-review` then `/security-review`, one cycle), applies the findings and arms squash auto-merge; `@claude` in a comment or issue runs Claude on that request. Action pinned by SHA (anthropics/claude-code-action v1.0.256).
 - **Per-project export and import of memories (ADR-1113, GDPR art. 20).**
   `python -m mcp_server.portability export <project-root> <file>` writes the
   current memories of a project and its subdirectories (never a sibling or the
