@@ -128,14 +128,61 @@ def _first_hit_rank(retrieved: list[str], answers: list[str]) -> int:
 def _done_ids(out: Path) -> set[str]:
     if not out.exists():
         return set()
-    return {json.loads(line)["question_id"] for line in out.read_text().splitlines()}
+    done = set()
+    for line in out.read_text().splitlines():
+        try:
+            done.add(json.loads(line)["question_id"])
+        except (json.JSONDecodeError, KeyError):
+            continue  # a crash can leave a truncated last line; that question reruns
+    return done
+
+
+def _run_arms(db: BenchmarkDB, item: dict, source_map: dict, methods: dict) -> dict:
+    arms = {}
+    snapshot = _snapshot(db)
+    for fusion, rerank in ARMS:
+        _restore(db, snapshot)
+        _select(methods[fusion])
+        db._momentum_state = {"momentum": 0.5}
+        results = db.recall(
+            item["question"], top_k=10, domain="longmemeval", rerank=rerank
+        )
+        sids = [source_map.get(r["memory_id"], "") for r in results]
+        arms[f"{fusion}_rerank{int(rerank)}"] = {
+            "retrieved": sids,
+            "first_hit_rank": _first_hit_rank(sids, item["answer_session_ids"]),
+            "mrr": compute_mrr(sids, item["answer_session_ids"]),
+            "recall10": recall_at_k_binary(sids, item["answer_session_ids"]),
+        }
+    snapshot.close()
+    return arms
+
+
+def _record(out: Path, index: int, item: dict, arms: dict) -> None:
+    record = {
+        "index": index,
+        "question_id": item["question_id"],
+        "question_type": item["question_type"],
+        "answer_session_ids": item["answer_session_ids"],
+        "arms": arms,
+    }
+    with open(out, "a") as handle:
+        handle.write(json.dumps(record) + "\n")
+    print(
+        f"[{index}] {item['question_type']} "
+        + " ".join(f"{k}={v['mrr']:.2f}" for k, v in arms.items()),
+        flush=True,
+    )
 
 
 def run(data_path: str, out: Path, start: int, limit: int) -> None:
-    dataset = json.load(open(data_path))
+    with open(data_path) as handle:
+        dataset = json.load(handle)
     dataset = dataset[start : start + limit] if limit else dataset[start:]
-    score_methods = {n: getattr(SqliteMemoryStore, n) for n in FUSION_METHODS}
-    rrf_methods = _load_rrf_methods()
+    methods = {
+        "score": {n: getattr(SqliteMemoryStore, n) for n in FUSION_METHODS},
+        "rrf": _load_rrf_methods(),
+    }
     done = _done_ids(out)
     with BenchmarkDB(require_reranker=True, backend="sqlite") as db:
         for index, item in enumerate(dataset, start):
@@ -143,37 +190,7 @@ def run(data_path: str, out: Path, start: int, limit: int) -> None:
                 continue
             db.clear()
             _, source_map = db.load_memories(_load_memories(item), domain="longmemeval")
-            arms = {}
-            snapshot = _snapshot(db)
-            for fusion, rerank in ARMS:
-                _restore(db, snapshot)
-                _select(rrf_methods if fusion == "rrf" else score_methods)
-                db._momentum_state = {"momentum": 0.5}
-                results = db.recall(
-                    item["question"], top_k=10, domain="longmemeval", rerank=rerank
-                )
-                sids = [source_map.get(r["memory_id"], "") for r in results]
-                arms[f"{fusion}_rerank{int(rerank)}"] = {
-                    "retrieved": sids,
-                    "first_hit_rank": _first_hit_rank(sids, item["answer_session_ids"]),
-                    "mrr": compute_mrr(sids, item["answer_session_ids"]),
-                    "recall10": recall_at_k_binary(sids, item["answer_session_ids"]),
-                }
-            snapshot.close()
-            record = {
-                "index": index,
-                "question_id": item["question_id"],
-                "question_type": item["question_type"],
-                "answer_session_ids": item["answer_session_ids"],
-                "arms": arms,
-            }
-            with open(out, "a") as handle:
-                handle.write(json.dumps(record) + "\n")
-            print(
-                f"[{index}] {item['question_type']} "
-                + " ".join(f"{k}={v['mrr']:.2f}" for k, v in arms.items()),
-                flush=True,
-            )
+            _record(out, index, item, _run_arms(db, item, source_map, methods))
 
 
 if __name__ == "__main__":

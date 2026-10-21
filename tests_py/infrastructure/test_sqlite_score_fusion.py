@@ -48,6 +48,13 @@ def store():
     s.close()
 
 
+@pytest.fixture
+def vec_store(store):
+    if not store._has_vec:
+        pytest.skip("sqlite-vec not installed ([sqlite] extra)")
+    return store
+
+
 class TestNormalised:
     def test_plain_signal_is_divided_by_its_maximum(self):
         assert _normalised({1: 4.0, 2: 2.0}, weight=0.5) == {1: 0.5, 2: 0.25}
@@ -65,22 +72,26 @@ class TestNormalised:
 
 
 class TestVectorSignal:
-    def test_signal_is_cosine_similarity(self, store):
+    def test_signal_is_cosine_similarity(self, vec_store):
         base = _unit(0)
         for i, cosine in enumerate((0.9, 0.5, 0.1)):
-            store.insert_memory(_payload(f"m{i}", _at_cosine(base, cosine, 10 + i)))
-        raw = store._signal_vector(base.tobytes(), weight=1.0, pool=10)
+            vec_store.insert_memory(
+                _payload(f"m{i}", _at_cosine(base, cosine, 10 + i))
+            )
+        raw = vec_store._signal_vector(base.tobytes(), weight=1.0, pool=10)
         assert sorted(raw.values(), reverse=True) == pytest.approx(
             [0.9, 0.5, 0.1], abs=1e-4
         )
 
 
 class TestFusedScore:
-    def test_vector_only_score_is_shifted_cosine_over_pool_maximum(self, store):
+    def test_vector_only_score_is_shifted_cosine_over_pool_maximum(self, vec_store):
         base = _unit(0)
         for i, cosine in enumerate((0.9, 0.5)):
-            store.insert_memory(_payload(f"m{i}", _at_cosine(base, cosine, 10 + i)))
-        rows = store.recall_memories(
+            vec_store.insert_memory(
+                _payload(f"m{i}", _at_cosine(base, cosine, 10 + i))
+            )
+        rows = vec_store.recall_memories(
             query_text="",
             query_embedding=base.tobytes(),
             domain=_DOMAIN,
@@ -91,10 +102,10 @@ class TestFusedScore:
         assert scores["m0"] == pytest.approx(1.0, abs=1e-4)
         assert scores["m1"] == pytest.approx((0.5 + 1.0) / (0.9 + 1.0), abs=1e-4)
 
-    def test_weights_scale_each_signal_contribution(self, store):
+    def test_weights_scale_each_signal_contribution(self, vec_store):
         base = _unit(0)
-        store.insert_memory(_payload("only", _at_cosine(base, 0.8, 10)))
-        rows = store.recall_memories(
+        vec_store.insert_memory(_payload("only", _at_cosine(base, 0.8, 10)))
+        rows = vec_store.recall_memories(
             query_text="",
             query_embedding=base.tobytes(),
             domain=_DOMAIN,
