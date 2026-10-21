@@ -1,21 +1,18 @@
-"""Tests for scripts/check_ci_gate_complete.py — the aggregate-CI-gate guard.
+"""Retained aggregate-parser tests and the replacement shared CI contract.
 
-Branch protection names one status check, ``CI Green``, and the real list of
-gated jobs lives in that job's ``needs:``. This guard is the only thing
-standing between that design and its failure mode: a job added to ci.yml but
-never added to ``needs`` runs outside the gate and can fail without blocking
-a merge — silently, exactly like the eleven-context arrangement it replaced.
+The parser's fixtures cover its historical CI Green format. Live assertions
+cover shared-tests.yml and the caller's release dependency instead.
 
-So the guard's own failure mode is silence. Each check below is pinned by a
-fixture that must FAIL, plus a live assertion that the repository's real
-ci.yml passes — a parser that quietly stopped matching would otherwise be
-indistinguishable from a clean tree.
+Source: scripts/check_ci_gate_complete.py and ADR-1114.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import json
 import unittest
+
+import yaml
 from pathlib import Path
 
 # Dotted, path-derived module name: mutmut keys its trampolines on
@@ -203,38 +200,58 @@ class GateExemptJobs(unittest.TestCase):
         self.assertTrue(unmarked, failures)
 
 
-class RepositoryWorkflowIsGated(unittest.TestCase):
-    def test_live_ci_workflow_passes(self) -> None:
-        """The guard must agree with the tree it ships in, not just fixtures."""
-        self.assertTrue(gate.CI_WORKFLOW.exists(), gate.CI_WORKFLOW)
+class SharedWorkflowContract(unittest.TestCase):
+    """The five required categories cannot be skipped or made advisory.
+
+    Source: ADR-1114 and .github/workflows/shared-tests.yml.
+    """
+
+    def workflow(self):
+        path = _SCRIPTS.parent / ".github/workflows/shared-tests.yml"
+        return yaml.safe_load(path.read_text())
+
+    def test_primary_runner_executes_every_category_without_failure_override(self):
+        job = self.workflow()["jobs"]["tests"]
+        self.assertNotIn("if", job)
+        self.assertNotIn("continue-on-error", job)
+        phases = ["unit", "regression", "e2e", "environment", "installation"]
+        for phase in phases:
+            commands = [
+                step
+                for step in job["steps"]
+                if step.get("run") == f"bash .github/ci/run.sh {phase}"
+            ]
+            self.assertEqual(len(commands), 1, phase)
+            if phase == "environment":
+                self.assertNotIn("if", commands[0])
+            else:
+                condition = commands[0].get("if", "")
+                condition = condition.removeprefix("${{").removesuffix("}}").strip()
+                self.assertEqual(condition, "matrix.runner == 'ubuntu-latest'")
+            self.assertNotIn("continue-on-error", commands[0])
+
+    def test_platforms_start_in_one_matrix_without_a_serial_dependency(self):
+        jobs = self.workflow()["jobs"]
+        self.assertEqual(set(jobs), {"tests"})
+        job = jobs["tests"]
+        self.assertNotIn("needs", job)
+        self.assertNotIn("continue-on-error", job)
+        self.assertEqual(job["runs-on"], "${{ matrix.runner }}")
         self.assertEqual(
-            gate.check(gate.CI_WORKFLOW.read_text(encoding="utf-8")),
-            [],
+            job["strategy"]["matrix"]["runner"], "${{ fromJSON(inputs.runners) }}"
         )
 
-    def test_runtime_policy_matches_live_workflow(self) -> None:
-        self.assertEqual(gate.check_runtime_contract(gate.CI_WORKFLOW.read_text()), [])
-
-    def test_costly_jobs_must_wait_for_lint_and_changes(self) -> None:
-        workflow = gate.CI_WORKFLOW.read_text()
-        for prerequisites in ("[changes]", "[lint]", "[changes, lint, test]"):
-            changed = workflow.replace("[changes, lint]", prerequisites, 1)
-            failures = gate.check_runtime_contract(changed)
-            self.assertTrue(any("depend on exactly" in f for f in failures))
-
-    def test_lint_and_changes_cannot_be_conditional(self) -> None:
-        workflow = gate.CI_WORKFLOW.read_text()
-        for job in ("changes", "lint"):
-            changed = workflow.replace(f"  {job}:\n", f"  {job}:\n    if: false\n")
-            self.assertTrue(gate.check_runtime_contract(changed))
-
-    def test_new_skip_needs_an_executable_policy(self) -> None:
-        workflow = gate.CI_WORKFLOW.read_text()
-        workflow = workflow.replace(
-            "ALLOWED_SKIPS: test,", "ALLOWED_SKIPS: unknown-job,test,"
-        )
-        failures = gate.check_runtime_contract(workflow)
-        self.assertTrue(any("runtime skip policy" in f for f in failures))
+    def test_caller_waits_for_the_entire_reusable_workflow(self):
+        path = _SCRIPTS.parent / ".github/workflows/ci.yml"
+        jobs = yaml.safe_load(path.read_text())["jobs"]
+        self.assertEqual(jobs["tests"]["uses"], "./.github/workflows/shared-tests.yml")
+        self.assertEqual(jobs["release-tag"]["needs"], ["tests"])
+        self.assertNotIn("continue-on-error", jobs["tests"])
+        self.assertNotIn("if", jobs["tests"])
+        runners = json.loads(jobs["tests"]["with"]["runners"])
+        self.assertEqual(runners.count("ubuntu-latest"), 1)
+        config = json.loads((_SCRIPTS.parent / ".github/ci/config.json").read_text())
+        self.assertEqual(set(runners), {"ubuntu-latest", *config["environment_runners"]})
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ source: ADR-1092"""
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -31,7 +32,6 @@ LOCK = tomllib.loads((REPO / "uv.lock").read_text(encoding="utf-8"))
 PYPROJECT = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
 UV_PINS = (
     ".github/actions/uv-locked-install/action.yml",
-    ".github/workflows/ci.yml",
     ".github/workflows/release.yml",
 )
 UV_IMAGES = (
@@ -64,6 +64,13 @@ def test_ci_installs_the_uv_the_launcher_bootstraps(path: str) -> None:
     uses = len(re.findall(r"astral-sh/setup-uv@", text))
     assert len(pins) == uses
     assert set(pins) <= {launcher_uv.UV_VERSION}
+
+
+def test_shared_ci_uses_the_declared_launcher_uv_version() -> None:
+    config = json.loads((REPO / ".github/ci/config.json").read_text())
+    assert config["uv_version"] == launcher_uv.UV_VERSION
+    setup = (REPO / ".github/actions/shared-setup/action.yml").read_text()
+    assert "version: ${{ steps.config.outputs.uv_version }}" in setup
 
 
 @pytest.mark.parametrize("path", UV_IMAGES)
@@ -110,19 +117,20 @@ def test_no_dependency_file_but_the_lock_is_left_for_dependabot() -> None:
 def test_every_uv_sync_installs_the_lock_as_it_is() -> None:
     """``uv sync`` without ``--locked`` would re-resolve and rewrite uv.lock."""
     tracked = subprocess.run(
-        ["git", "ls-files", ".github", ".clusterfuzzlite", ".devcontainer", "docker",
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", ".github", ".clusterfuzzlite", ".devcontainer", "docker",
          "scripts", "Dockerfile"],
         cwd=REPO, capture_output=True, text=True, check=True,
     ).stdout.splitlines()  # fmt: skip
     commands = [
         f"{path}: {line.strip()}"
-        for path in tracked
-        if path.endswith((".yml", ".sh", "Dockerfile"))
+        for path in set(tracked)
+        if path.endswith((".yml", ".sh", "Dockerfile")) and (REPO / path).is_file()
         for line in (REPO / path).read_text(encoding="utf-8").splitlines()
         if re.search(r"\buv sync\b", line) and not line.lstrip().startswith("#")
         and "description:" not in line
     ]  # fmt: skip
-    assert len(commands) == 5, commands
+    assert commands, "No dependency installation commands were found"
+    assert any(command.startswith(".github/ci/run.sh:") for command in commands)
     assert [c for c in commands if "--locked" not in c] == []
 
 

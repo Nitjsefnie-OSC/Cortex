@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "python_version": "3.12",
+  "node_version": "24",
+  "rust_toolchain": "",
+  "linux_packages": [],
+  "postgres": true,
+  "auxiliary_python_versions": [],
+  "uv_version": "0.11.3",
+  "pnpm_version": "",
+  "claude_version": "2.1.296",
+  "categories": {
+    "unit": "bash .github/ci/run.sh unit",
+    "regression": "bash .github/ci/run.sh regression",
+    "e2e": "bash .github/ci/run.sh e2e",
+    "environment": "bash .github/ci/run.sh environment",
+    "installation": "bash .github/ci/run.sh installation"
+  },
+  "version_source": "pyproject.toml:[project].version",
+  "tag_prefix": "v",
+  "environment_runners": [
+    "windows-latest",
+    "macos-latest",
+    "ubuntu-24.04-arm"
+  ],
+  "source_sha": "33aad87a84041f189c76d842f2792e4af8d42391",
+  "setup_sources": [
+    ".github/actions/test-suite/action.yml",
+    ".github/actions/uv-locked-install/action.yml",
+    ".github/workflows/ci.yml"
+  ],
+  "required_environment": {
+    "DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/cortex_test",
+    "CI": "true"
+  },
+  "evidence": "README.md",
+  "release_workflows": [
+    "release.yml"
+  ]
+}

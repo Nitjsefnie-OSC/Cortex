@@ -105,19 +105,16 @@ def test_candidate_job_installs_dependencies_and_checks_its_full_surface() -> No
     import pathlib
     import re
 
-    workflow = pathlib.Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    job = workflow.split("\n  mcp-host-config:\n", 1)
-    assert len(job) == 2
-    body = re.split(r"\n  [a-z][a-z-]*:\n", job[1], maxsplit=1)[0]
+    body = pathlib.Path(".github/ci/codex-runtime.sh").read_text(encoding="utf-8")
     commands = body.replace("\\\n", " ")
     invocations = re.findall(
         r"uv run[^\n]*scripts/verify_mcp_hosts\.py[^\n]*", commands
     )
     assert invocations, "candidate verification must install its wheel dependencies"
-    assert 'uv build --wheel --out-dir "$RUNNER_TEMP/cortex-codex-wheel"' in body
+    assert 'uv build --wheel --out-dir "$work/wheel"' in body
     for invocation in invocations:
         assert '--no-project --with "$candidate_wheel" -- env' in invocation
-        assert 'UV_FIND_LINKS="$RUNNER_TEMP/cortex-codex-wheel"' in invocation
+        assert 'UV_FIND_LINKS="$work/wheel"' in invocation
         assert "--profiles full" in invocation
         assert "--published-surface" not in invocation, (
             "candidate bounds cannot be bypassed"

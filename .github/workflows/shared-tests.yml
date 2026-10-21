@@ -1,0 +1,54 @@
+name: Shared tests
+on:
+  workflow_call:
+    inputs:
+      runners:
+        description: Primary Linux runner plus declared compatibility platforms.
+        type: string
+        default: '["ubuntu-latest"]'
+      engine-ref:
+        description: Same immutable Cortex revision as the called workflow.
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  tests:
+    name: Tests (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(inputs.runners) }}
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: cdeust/Cortex
+          ref: ${{ inputs.engine-ref }}
+          path: .ci-engine
+          persist-credentials: false
+          sparse-checkout: .github
+      - uses: ./.ci-engine/.github/actions/shared-setup
+        with:
+          environment-only: ${{ matrix.runner != 'ubuntu-latest' }}
+      - name: Unit tests
+        if: matrix.runner == 'ubuntu-latest'
+        run: bash .github/ci/run.sh unit
+      - name: Non-regression tests
+        if: matrix.runner == 'ubuntu-latest'
+        run: bash .github/ci/run.sh regression
+      - name: End-to-end tests
+        if: matrix.runner == 'ubuntu-latest'
+        run: bash .github/ci/run.sh e2e
+      - name: Environment tests
+        run: bash .github/ci/run.sh environment
+      - name: Installation tests
+        if: matrix.runner == 'ubuntu-latest'
+        run: bash .github/ci/run.sh installation

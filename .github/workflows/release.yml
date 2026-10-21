@@ -93,7 +93,7 @@ jobs:
 
 
 
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v'))) && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     # source: ADR-0808
     timeout-minutes: 2
@@ -195,7 +195,7 @@ jobs:
         # source: ADR-0808
 
 
-        if: github.event_name == 'push'
+        if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v')))
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ github.ref_name }}
@@ -274,7 +274,7 @@ jobs:
       - name: Upload SBOM + checksum to the GitHub Release
         # source: ADR-0808
 
-        if: github.event_name == 'push'
+        if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v')))
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ github.ref_name }}
@@ -390,7 +390,7 @@ jobs:
       - name: Attach bundle + checksum + resolved server.json to the release
         # source: ADR-0808
 
-        if: github.event_name == 'push'
+        if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v')))
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ github.ref_name }}
@@ -430,7 +430,7 @@ jobs:
 
 
 
-        if: github.event_name == 'push'
+        if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v')))
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         # Treat this upload channel as best-effort.
         # source: ADR-0808

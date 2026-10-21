@@ -8,20 +8,11 @@ import re
 import subprocess
 import sys
 
-import yaml
-
-
 REPO = Path(__file__).resolve().parents[2]
 
 
 def _host_step() -> str:
-    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
-    return next(
-        step["run"]
-        for step in workflow["jobs"]["mcp-host-config"]["steps"]
-        if step.get("name")
-        == "Validate Claude, Gemini, and Codex configuration parsing"
-    )
+    return (REPO / ".github/ci/codex-runtime.sh").read_text()
 
 
 def test_native_host_step_is_valid_shell_and_resolves_plugin_command():
@@ -55,3 +46,13 @@ def test_host_step_prepares_candidate_in_same_environment_as_verifier():
     assert "--no-build" in step[setup:verifier]
     assert "hypermnesia-mcp[postgresql,sqlite] @ file://${candidate_wheel}" in step
     assert 's["transport"]["command"]=="python3"' in step
+
+
+def test_adapter_runs_native_codex_checks_in_e2e():
+    adapter = (REPO / ".github/ci/run.sh").read_text()
+    e2e = adapter.split("  e2e)", 1)[1].split(";;", 1)[0]
+    assert "bash .github/ci/codex-runtime.sh" in e2e
+    step = _host_step()
+    assert "npm ci --prefix tests_js/mcp-host-clis" in step
+    assert '"$cli_bin/codex" plugin add ' in step
+    assert '"$cli_bin/codex" mcp list --json' in step

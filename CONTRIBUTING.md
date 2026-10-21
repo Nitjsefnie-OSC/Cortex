@@ -40,8 +40,7 @@ cd Cortex
 # 2026-07-28 on a tree without them, 12 tests skipped [not-a-count-claim: tests]
 # locally that CI runs (8 tree-sitter, 1 leidenalg — both `codebase`;
 # 3 sqlite-vec — `sqlite`).
-# CI's SQLite job installs ".[dev,sqlite,codebase]"; its PG job adds
-# `postgresql`. Install all of them so your run is the stricter one.
+# CI installs dev, sqlite, codebase and postgresql together once.
 # `uv sync`, not `pip install -e`: sync resolves from uv.lock, which is what
 # CI installs (`uv sync --locked`, hash-verified). Resolving
 # from the pyproject.toml ranges instead lands you on versions CI never had —
@@ -80,9 +79,8 @@ pytest tests_py/scripts/test_launcher_platform_coverage.py
 
 ### Reproducing the pyright gate locally
 
-The gate is zero-diagnostic, so its answer only means something if your
-environment is CI's. Build it from `uv.lock` — the same lock CI's Type Check
-job installs from with `uv sync --locked`:
+The local type check uses a reproducible environment from `uv.lock`.
+Claude handles review and correction; type checking is not a separate CI job.
 
 ```bash
 uv sync --no-default-groups \
@@ -93,12 +91,9 @@ uv sync --no-default-groups \
 
 Do **not** resolve this environment from the `pyproject.toml` ranges
 (`pip install -e ".[dev,...]"`): the ranges admit versions whose type surface
-differs, so the gate reports one thing to you and another to CI. That is issue
-#253 — a contributor chasing a `tree-sitter-language-pack` diagnostic CI never
-saw. The extras above are not a hand-kept list: they are asserted equal to the
-`set:` CI's Type Check job installs by
-`tests_py/scripts/test_typecheck_env_parity.py`, which fails if this block and
-CI's install ever drift apart.
+differs from the lock. Issue #253 documented a diagnostic caused by that
+dependency drift. `tests_py/scripts/test_typecheck_env_parity.py` checks this
+documented local setup against the dependency groups.
 
 ---
 
@@ -109,22 +104,24 @@ CI's install ever drift apart.
 - One mechanism per PR when adding new biological mechanisms.
 - Conventional commit messages preferred.
 
-### The one required status check
+### Shared CI and autonomous PR handling
 
-Branch protection on `main` names a single `ci.yml` context, **`CI Green`**
-(plus `CodeQL`, which GitHub reports from its own default setup). `CI Green`
-is the `ci-green` job at the bottom of `.github/workflows/ci.yml`: it needs
-every other job in that workflow and fails on any result other than
-`success`, except for the jobs listed in its `ALLOWED_SKIPS` — which may
-contain only jobs carrying a job-level `if:`, each with its reason.
+`.github/workflows/ci.yml` calls the shared test workflow hosted in this
+repository. `.github/ci/run.sh` defines five categories: unit, regression,
+end-to-end, environment and installation. They share one development
+environment; additional platforms run only their environment probes.
 
-Naming individual jobs in the protection settings instead put the contract
-outside git, where no diff shows it and every rename breaks it: extracting
-the test steps into a reusable workflow (issue #336) renamed the four matrix
-legs to `Test (Python X.Y) / Test (Python X.Y)`, the four bare contexts
-`main` required were never reported again, and a fully green PR sat BLOCKED
-(#387). With one aggregate context, renaming a job, resizing the matrix, or
-delegating steps costs nothing.
+The Claude bot starts after CI completes, validates the current PR head,
+and runs native code and security reviews. It pushes tested corrections to
+the PR branch; the new head receives a fresh CI run and review. Auto-merge
+requires the test checks and the `Claude bot` status. Drafts and explicit
+holds remain excluded. A missing native review is a failed review status.
+
+Only successful main-branch tests can create a release tag. Tags come from
+the existing package version, are never overwritten, and dispatch the
+existing artifact publisher. The shared workflow revision is pinned in
+each consuming repository; changes to required check names must migrate
+branch protection after the replacement checks have passed.
 
 **Adding a job to `ci.yml` means adding it to `ci-green.needs`.**
 `scripts/check_ci_gate_complete.py` (run by `lint`) fails the build
@@ -198,10 +195,9 @@ reranker. Changes here:
 
 ## Coding standards (excerpt)
 
-Standard Python style, enforced in CI by `ruff format --check .` and
-`ruff check .` (ruff pinned at 0.15.20 in
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml)), plus
-project-specific rules:
+Standard Python style is checked locally with `ruff format --check .` and
+`ruff check .`, using the version in `uv.lock`. Claude reviews corrections
+against these project rules:
 
 - **No `Any`** in production code. Use `Protocol` or generic typing.
 - **§8 Source discipline.** Every numeric constant ≥3 significant digits
@@ -209,8 +205,8 @@ project-specific rules:
 - **No mutable default arguments.** No globals except for read-once
   configuration objects.
 - **No bare `except:`.** Catch the specific exception you mean.
-- **Type-checked at zero.** `pyright` (pinned 1.1.410, `typeCheckingMode:
-  "standard"`) runs over `mcp_server/` and ANY diagnostic fails the build —
+- **Type-checked at zero.** The local `pyright` check (`typeCheckingMode:
+  "standard"`) runs over `mcp_server/`; resolve every diagnostic —
   the 568-diagnostic ratchet backlog was burned to zero in issue #197
   (2026-07-28) and the ratchet retired. History:
   [`docs/provenance/pyright-remediation-plan.md`](docs/provenance/pyright-remediation-plan.md).
@@ -308,8 +304,8 @@ and child-process output goes through `mcp_server/infrastructure/log_relay.py`.
 New code that persists text uses these;
 `tests_py/architecture/test_storage_redaction_gate.py` fails on any other write
 primitive. Secrets are also kept out of git: run `pre-commit install` once
-(gitleaks 8.30.1, `.pre-commit-config.yaml`); CI's `secret-scan` job scans every
-commit and the tree and blocks the merge. (The `pre-tool-secret-shield` file gate some maintainers run is part of
+(gitleaks 8.30.1, `.pre-commit-config.yaml`). Claude's native security review
+is required on the current PR head. (The `pre-tool-secret-shield` file gate some maintainers run is part of
 their local agent tooling, not of Cortex; do not rely on it.) The security
 argument, its trust boundaries and its limits are in
 [`docs/ASSURANCE-CASE.md`](docs/ASSURANCE-CASE.md).

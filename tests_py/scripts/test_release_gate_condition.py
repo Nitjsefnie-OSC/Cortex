@@ -18,7 +18,7 @@ def _condition():
     text = (
         Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml"
     ).read_text()
-    body = re.search(r"^  release-gate:\n(.*?)(?=^  \S|\Z)", text, re.M | re.S)
+    body = re.search(r"^  release-tag:\n(.*?)(?=^  \S|\Z)", text, re.M | re.S)
     assert body is not None
     condition = re.search(r"^    if: (.+)$", body[1], re.M)
     assert condition is not None
@@ -50,13 +50,13 @@ def _evaluate(node, values):
 def _runs(expression, scenario):
     result, ancestors, event, ref, cancelled = scenario
     expression = expression.removeprefix("${{").removesuffix("}}")
-    for path in ("needs.ci-green.result", "github.event_name", "github.ref"):
+    for path in ("needs.tests.result", "github.event_name", "github.ref"):
         expression = expression.replace(path, path.replace(".", "_").replace("-", "_"))
     expression = expression.replace("&&", " and ").replace("||", " or ")
     expression = re.sub(r"!(?!=)", " not ", expression)
     tree = ast.parse(expression.strip(), mode="eval").body
     values = {
-        "needs_ci_green_result": result,
+        "needs_tests_result": result,
         "github_event_name": event,
         "github_ref": ref,
         "always": lambda: True,
@@ -79,7 +79,7 @@ def _runs(expression, scenario):
     "case",
     [
         ("success", ["success"], "push", "refs/heads/main", False, True),
-        # Issue #628: Docker ancestors skipped, but CI Green accepted the run.
+        # Optional platform jobs can skip after the required tests succeed.
         ("success", ["success", "skipped"], "push", "refs/heads/main", False, True),
         ("failure", ["failure"], "push", "refs/heads/main", False, False),
         ("cancelled", ["success"], "push", "refs/heads/main", True, False),
@@ -88,7 +88,9 @@ def _runs(expression, scenario):
         ("success", ["skipped"], "pull_request", "refs/heads/main", False, False),
         ("success", ["skipped"], "push", "refs/heads/feature", False, False),
         ("success", ["skipped"], "push", "refs/tags/v4.23.2", False, False),
-        ("success", ["skipped"], "workflow_dispatch", "refs/heads/main", False, False),
+        ("success", ["skipped"], "workflow_dispatch", "refs/heads/main", False, True),
+        ("failure", ["failure"], "workflow_dispatch", "refs/heads/main", False, False),
+        ("success", ["success"], "workflow_dispatch", "refs/heads/feature", False, False),
     ],
 )
 def test_release_condition(case):

@@ -1,0 +1,48 @@
+name: Shared CI environment
+description: Install declared runtimes once for the five test categories.
+inputs:
+  dependencies:
+    description: Install the development environment now; Claude installs it when correcting code.
+    default: 'true'
+  environment-only:
+    description: Prepare only platform environment probes.
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - id: config
+      shell: bash
+      run: python "$GITHUB_ACTION_PATH/../../shared-ci/config.py"
+    - if: steps.config.outputs.auxiliary_python_versions != '[]'
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: ${{ steps.config.outputs.auxiliary_python_version }}
+    - if: steps.config.outputs.python_version != ''
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: ${{ steps.config.outputs.python_version }}
+    - if: steps.config.outputs.node_version != ''
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: ${{ steps.config.outputs.node_version }}
+    - if: steps.config.outputs.uv_version != ''
+      uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      with:
+        version: ${{ steps.config.outputs.uv_version }}
+        enable-cache: false
+    - name: Repository prerequisites
+      shell: bash
+      env:
+        CI_ENVIRONMENT_ONLY: ${{ inputs.environment-only }}
+      run: python "$GITHUB_ACTION_PATH/../../shared-ci/prerequisites.py"
+    - name: Locked development dependencies
+      if: inputs.dependencies == 'true'
+      shell: bash
+      env:
+        CI_ENVIRONMENT_ONLY: ${{ inputs.environment-only }}
+      run: |
+        if [[ "$CI_ENVIRONMENT_ONLY" == true ]]; then
+          bash .github/ci/run.sh setup environment
+        else
+          bash .github/ci/run.sh setup
+        fi

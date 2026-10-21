@@ -1,0 +1,36 @@
+name: Shared release tag
+on:
+  workflow_call:
+    inputs:
+      engine-ref:
+        required: true
+        type: string
+permissions:
+  contents: write
+  actions: write
+jobs:
+  tag:
+    name: Release tag
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-tag
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: cdeust/Cortex
+          ref: ${{ inputs.engine-ref }}
+          path: .ci-engine
+          persist-credentials: false
+          sparse-checkout: .github
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Tag tested version and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .ci-engine/.github/shared-ci/release.py
