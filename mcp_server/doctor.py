@@ -25,6 +25,7 @@ from mcp_server.doctor_mcp import run_mcp
 from mcp_server.doctor_pgvector import pgvector_iterative_scan
 from mcp_server.infrastructure.config import CLAUDE_DIR
 from mcp_server.shared.subprocess_safe import run_with_hard_timeout
+from mcp_server.shared import gated_files
 
 # source: validate_memory.py:29 precedent (_GIT_CHECK_TIMEOUT_S)
 _WORKTREE_LIST_TIMEOUT_S = 2.0
@@ -132,16 +133,18 @@ def _database_url() -> Check:
 
 def _pg_connection() -> Check:
     try:
-        import psycopg  # noqa: PLC0415 — source: ADR-0322
+        import psycopg  # noqa: PLC0415, F401 — source: ADR-0322 (availability probe)
+
+        from mcp_server.infrastructure.db_connect import pg_connect  # noqa: PLC0415 — source: ADR-1110
     except ImportError:
         return Check("PG connection", False, "psycopg not installed", "")
     url = os.environ.get("DATABASE_URL", "")
     if not url:
         return Check("PG connection", False, "DATABASE_URL not set", "")
     try:
-        with psycopg.connect(url, connect_timeout=5) as conn:
-            row = conn.execute("SELECT version()").fetchone()
-            return Check("PG connection", True, row[0] if row else "ok")
+        with pg_connect(url, connect_timeout=5) as conn:
+            row = conn.execute("SELECT version() AS v").fetchone()
+            return Check("PG connection", True, row["v"] if row else "ok")
     except Exception as exc:  # noqa: BLE001 — source: ADR-0322
         return Check(
             "PG connection",
@@ -154,7 +157,9 @@ def _pg_connection() -> Check:
 
 def _pg_extensions() -> Check:
     try:
-        import psycopg  # noqa: PLC0415 — source: ADR-0322
+        import psycopg  # noqa: PLC0415, F401 — source: ADR-0322 (availability probe)
+
+        from mcp_server.infrastructure.db_connect import pg_connect  # noqa: PLC0415 — source: ADR-1110
     except ImportError:
         return Check(
             "pgvector + pg_trgm extensions", False, "psycopg not installed", ""
@@ -163,12 +168,12 @@ def _pg_extensions() -> Check:
     if not url:
         return Check("pgvector + pg_trgm extensions", False, "DATABASE_URL not set", "")
     try:
-        with psycopg.connect(url, connect_timeout=5) as conn:
+        with pg_connect(url, connect_timeout=5) as conn:
             rows = conn.execute(
                 "SELECT extname FROM pg_extension "
                 "WHERE extname IN ('vector', 'pg_trgm')"
             ).fetchall()
-            names = {r[0] for r in rows}
+            names = {r["extname"] for r in rows}
             missing = {"vector", "pg_trgm"} - names
             if missing:
                 return Check(
@@ -200,7 +205,7 @@ def _methodology_dir() -> Check:
     try:
         path.mkdir(parents=True, exist_ok=True)
         probe = path / ".write_probe"
-        probe.write_text("ok")
+        gated_files.write_text(probe, "ok")
         probe.unlink()
         return Check("~/.claude/methodology writable", True, str(path))
     except Exception as exc:  # noqa: BLE001 — source: ADR-0322
@@ -535,7 +540,7 @@ SQLITE_CHECKS: list[Callable[[], Check]] = [
 
 
 def _managed_server() -> Check:
-    """source: ADR-1110 — attaches first, so the checks after it use the server."""
+    """source: ADR-1114 — attaches first, so the checks after it use the server."""
     return managed_server(Check)
 
 
@@ -543,7 +548,7 @@ def active_checks() -> list[Callable[[], Check]]:
     """Backend-appropriate check list (single point of truth).
 
     source: ADR-0322
-    source: ADR-1110 (a managed marker: the server check first)"""
+    source: ADR-1114 (a managed marker: the server check first)"""
     # A BackendMarkerError propagates: the doctor names the corrupt marker
     # instead of running the other backend's checks (source: ADR-1104).
     if effective_backend(os.environ) == "sqlite":

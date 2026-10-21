@@ -1,10 +1,10 @@
 """scripts/setup_db.py ``_init_schema``: a failed DDL statement fails the setup.
 
-Before ADR-1110 every statement error was logged as a "schema warning" and the
+Before ADR-1114 every statement error was logged as a "schema warning" and the
 result was still ``(True, "")``: a database missing a table or index reported
 ready (owner rule: no silent degradation; PR #748 review, minor).
 
-source: ADR-1110
+source: ADR-1114
 source: ADR-0784
 """
 

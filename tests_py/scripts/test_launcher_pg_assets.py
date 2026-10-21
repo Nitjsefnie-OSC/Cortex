@@ -3,7 +3,7 @@
 Archives are built locally and served over ``file://``; the digest table is
 patched to theirs. Nothing is downloaded.
 
-source: ADR-1110
+source: ADR-1114
 """
 
 from __future__ import annotations

@@ -19,7 +19,7 @@ of that triple; stdlib only, POSIX only. In order:
 
     python3 -I scripts/pgvector_build.py <target-triple> <work-dir>
 
-source: ADR-1110
+source: ADR-1114
 """
 
 from __future__ import annotations
@@ -37,12 +37,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import launcher_pg_assets as assets  # noqa: E402
 
-UPSTREAM = "https://github.com/pgvector/pgvector.git"  # source: ADR-1110
+UPSTREAM = "https://github.com/pgvector/pgvector.git"  # source: ADR-1114
 # source: theseus 18.6.0 linux gnu bin/postgres requires GLIBC_2.34 at most
 # (objdump -T, measured 2026-10-17, ~/.claude/fleet/state/cortex-748.md step2)
 GLIBC_FLOOR = (2, 34)
 _ARGC = 3  # source: this module's usage line (script, triple, work dir)
-# source: ADR-1110 (the extension Cortex creates, its version, one distance)
+# source: ADR-1114 (the extension Cortex creates, its version, one distance)
 _PROBE = (
     "CREATE EXTENSION vector;\n"
     "SELECT extversion FROM pg_extension WHERE extname = 'vector';\n"

@@ -115,7 +115,7 @@ never deletes your memories. It becomes the store only after it has started and 
 if it cannot start (a Linux distribution without `libxml2.so.2` or OpenSSL 3, for example) the SQLite
 store is used, as it is on Windows, and the session start says why (`SQLite fallback: ...`). The Codex
 plugin on the same account attaches to the same server. An existing SQLite store is not moved
-(ADR-1110).
+(ADR-1114).
 
 Otherwise the first use creates a local SQLite store under `~/.claude/methodology/`. Models are downloaded
 once when needed and then run offline. The embedding and reranking model files are both fetched

@@ -43,6 +43,7 @@ from mcp_server.infrastructure.pg_store_consolidation_stage import (
     PgConsolidationStageMixin,
 )
 from mcp_server.infrastructure.pg_store_cls import PgClsMixin
+from mcp_server.infrastructure.pg_store_erasure import PgErasureMixin
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,7 @@ class PgMemoryStore(
     PgArchiveMixin,
     PgEngramMixin,
     PgCorticalSchemaMixin,
+    PgErasureMixin,
 ):
     """PostgreSQL + pgvector storage engine for Cortex memory system."""
 

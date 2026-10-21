@@ -9,7 +9,7 @@ PostgreSQL's once-a-minute lock-file recheck shutting the orphan down. Now
 holder nothing recorded is adopted when it proves itself with the cluster's
 password, or named (PID and port) and left alone when it cannot.
 
-source: ADR-1110
+source: ADR-1114
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from mcp_server.infrastructure import managed_pg_pidfile as pidfile
 from tests_py.infrastructure import fake_postgres
 from tests_py.infrastructure.fake_pg_lifeline import fake_pg_lifeline
 
-pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX only (ADR-1110)")
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX only (ADR-1114)")
 __all__ = ["fake_pg_lifeline"]  # the autouse fixture, imported
 HOST = "127.0.0.1"  # source: managed_pg.HOST
 # source: test helper — start argv[3:] in its own session, holding the lock

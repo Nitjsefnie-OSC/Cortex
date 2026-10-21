@@ -10,7 +10,7 @@ start time) and, when it is gone, waits for the next change in the root
 directory (a new ``postmaster.json`` or ``status.json``) or for the
 supervisor's exit, then looks again.
 
-source: ADR-1110
+source: ADR-1114
 """
 
 from __future__ import annotations

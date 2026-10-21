@@ -10,7 +10,7 @@ runs as is, so the distribution's own libraries are what the server loads.
 It downloads about 13 MB, so it runs where it is asked for: the CI jobs that
 set ``CORTEX_MANAGED_PG_E2E=1`` (and anyone who sets it locally).
 
-source: ADR-1110
+source: ADR-1114
 source: issue #740
 """
 
@@ -26,7 +26,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _HARNESS = REPO_ROOT / "scripts" / "locked_mac_env"
-_OPT_IN = "CORTEX_MANAGED_PG_E2E"  # source: ADR-1110 (set by the managed-pg CI jobs)
+_OPT_IN = "CORTEX_MANAGED_PG_E2E"  # source: ADR-1114 (set by the managed-pg CI jobs)
 pytestmark = pytest.mark.skipif(
     os.environ.get(_OPT_IN) != "1" or os.name == "nt",
     reason=f"downloads the pinned archives; set {_OPT_IN}=1 (POSIX only)",

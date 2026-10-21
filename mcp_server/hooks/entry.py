@@ -118,7 +118,7 @@ def _print_usage() -> None:
 
 def _prepare_or_exit(environ: MutableMapping[str, str]) -> None:
     """``prepare_environment``; a managed server that cannot run ends the
-    hook in one line, exit 1, never a fallback (source: ADR-1110)."""
+    hook in one line, exit 1, never a fallback (source: ADR-1114)."""
     try:
         prepare_environment(environ)
     except ManagedPgError as exc:

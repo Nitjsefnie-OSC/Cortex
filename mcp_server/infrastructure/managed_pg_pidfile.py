@@ -10,7 +10,7 @@ Two proofs, both from the kernel, neither dials anything:
   writer, a postmaster of this cluster, whoever started it. A process that
   started later is a reused PID and the file is stale.
 
-source: ADR-1110
+source: ADR-1114
 source: PostgreSQL src/include/utils/pidfile.h (postmaster.pid lines)
 """
 
@@ -31,7 +31,7 @@ _PID, _DATA_DIR, _START, _PORT, _STATUS = 0, 1, 2, 3, 7
 # whole seconds. Measured kernel start minus a whole-second clock read taken
 # by the process itself, 20 runs each: macOS arm64 max 0.911 s (real PG 18.6:
 # 1792268628 in the file, 1792268628.936399 from the kernel), Linux arm64 max
-# -0.190 s, Linux x86_64 under qemu max -2.520 s. source: ADR-1110 (round 6)
+# -0.190 s, Linux x86_64 under qemu max -2.520 s. source: ADR-1114 (round 6)
 _START_SLACK = 2.0
 READY = "ready"  # source: pidfile.h PM_STATUS_READY ("ready   ")
 

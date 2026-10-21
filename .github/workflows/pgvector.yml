@@ -8,7 +8,7 @@ name: pgvector
 # release, so `gh attestation verify --source-ref refs/heads/main` holds for
 # what Setup downloads. An existing release is never modified: a rebuild
 # cannot replace the bytes the sha256 pins name.
-# source: ADR-1110
+# source: ADR-1114
 
 on:
   push:

@@ -8,7 +8,7 @@ directory and without ``-I``. A project directory holding its own top-level
 checkout) then supplied the module that ran. The postmaster is
 ``fake_postgres``; the supervisor, locks and marker are the real ones.
 
-source: ADR-1110
+source: ADR-1114
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from tests_py.infrastructure.test_managed_pg_attach import (
     home,
 )
 
-pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX only (ADR-1110)")
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX only (ADR-1114)")
 __all__ = ["fake_pg_lifeline", "home"]  # fixtures, imported
 # source: review F1 of #748 — the two exec forms the hosts use, run from a
 # project directory: Codex's runtime.py (`python -I -c`, the package on

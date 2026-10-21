@@ -8,7 +8,7 @@ releases the test's lock when the test ends however it ends (teardown, a
 failure, ``os._exit`` from pytest-timeout, a kill), so no fake outlives it.
 Teardown then waits for the fakes' group locks: events, never a timer.
 
-source: ADR-1110
+source: ADR-1114
 """
 
 from __future__ import annotations

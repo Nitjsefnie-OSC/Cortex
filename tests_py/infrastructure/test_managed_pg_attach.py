@@ -1,4 +1,4 @@
-"""Every surface attaches to the managed server the same way (ADR-1110, D1, B3).
+"""Every surface attaches to the managed server the same way (ADR-1114, D1, B3).
 
 Round-3 review: with a ``managed`` marker, ``python -m mcp_server``, the Codex
 hook entry (``mcp_server.hooks.entry``, what ``runtime.py`` executes) and the
@@ -8,7 +8,7 @@ and supervisor as the Claude Code launcher, so Claude and Codex on one HOME
 share one store. The postmaster is ``fake_postgres`` (real SCRAM, real
 ``postmaster.pid``); the supervisor, locks and marker are the real ones.
 
-source: ADR-1110
+source: ADR-1114
 """
 
 from __future__ import annotations
@@ -24,15 +24,15 @@ import pytest
 from tests_py.infrastructure import fake_postgres
 from tests_py.infrastructure.fake_pg_lifeline import fake_pg_lifeline
 
-pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX only (ADR-1110)")
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX only (ADR-1114)")
 __all__ = ["fake_pg_lifeline"]  # the autouse fixture, imported
 REPO_ROOT = Path(__file__).resolve().parents[2]
-# source: ADR-1110 D1 — what runtime.py runs for a Codex hook, minus the event
+# source: ADR-1114 D1 — what runtime.py runs for a Codex hook, minus the event
 _CODEX = (
     "import os; from mcp_server.hooks.entry import prepare_environment;"
     " prepare_environment(os.environ); print(os.environ['DATABASE_URL'], flush=True)"
 )
-# source: ADR-1110 — what the Claude Code launcher runs, then stays attached
+# source: ADR-1114 — what the Claude Code launcher runs, then stays attached
 _LAUNCHER = (
     "import os, sys; sys.path.insert(0, 'scripts'); import launcher_backend;"
     " launcher_backend.apply(); print(os.environ['DATABASE_URL'], flush=True);"

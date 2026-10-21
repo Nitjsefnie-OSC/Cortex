@@ -1,4 +1,4 @@
-"""`cortex doctor` check: the plugin's managed PostgreSQL server (ADR-1110, B3).
+"""`cortex doctor` check: the plugin's managed PostgreSQL server (ADR-1114, B3).
 
 With a ``managed`` backend marker the doctor is a direct launch like any other
 (owner decision D1): it attaches to the server, starting it when nobody runs
@@ -7,7 +7,7 @@ follow run against the store memories actually live in. A server that cannot
 run is a failed check naming its cause, never a traceback (round-3 review B3:
 the doctor crashed on every fresh managed install).
 
-source: ADR-1110
+source: ADR-1114
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from mcp_server.infrastructure.backend_marker import (
     read_backend_marker,
 )
 
-NAME = "Managed PostgreSQL server"  # source: ADR-1110 (the server's name in docs)
+NAME = "Managed PostgreSQL server"  # source: ADR-1114 (the server's name in docs)
 _FIX = (
     "Run `claude --init-only` (Setup installs the server again; your memories "
     "under ~/.claude/methodology/managed-pg are kept), or set database_url to "

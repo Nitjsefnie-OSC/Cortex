@@ -36,7 +36,7 @@ gone. An adopted postmaster still starting is stopped and started anew.
 proven stale. A live writer Cortex did not start holds no lock: it is named
 and left alone, never adopted (no exit event to supervise or stop on).
 
-source: ADR-1110
+source: ADR-1114
 source: PostgreSQL src/include/utils/pidfile.h (postmaster.pid lines)
 """
 

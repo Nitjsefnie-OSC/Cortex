@@ -8,7 +8,7 @@ Here ``(pid, kernel start time, port)`` recorded at spawn is the identity; a
 foreign process and its listener are never dialled, adopted or signalled.
 D2 — readiness and exit are kernel events, no ``pg_ctl -w`` timer.
 
-source: ADR-1110
+source: ADR-1114
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from mcp_server.infrastructure import managed_pg_pidfile as pidfile
 from tests_py.infrastructure import fake_postgres
 from tests_py.infrastructure.fake_pg_lifeline import fake_pg_lifeline
 
-pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX only (ADR-1110)")
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX only (ADR-1114)")
 __all__ = ["fake_pg_lifeline"]  # the autouse fixture, imported
 HOST = "127.0.0.1"  # source: managed_pg.HOST
 # source: test helper (a live process of this user listening on loopback that

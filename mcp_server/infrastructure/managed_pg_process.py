@@ -15,7 +15,7 @@ Nothing here reads a clock or retries:
   2026-10-17: ENOSYS) and no per-PID filter: the pipe is the exit event.
   The caller re-reads what it waits for after every wake-up.
 
-source: ADR-1110
+source: ADR-1114
 """
 
 from __future__ import annotations

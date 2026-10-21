@@ -12,7 +12,7 @@ cluster root lives next to the marker (D5); a configured database wins over a
 ``managed`` marker in Setup too (B1); a fallback to SQLite is returned with
 its cause (D3).
 
-source: ADR-1110
+source: ADR-1114
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX only (ADR-1110)")
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX only (ADR-1114)")
 _INITDB_OK = """#!/bin/sh
 for a in "$@"; do
   case "$a" in -D) next=1;; *) [ "$next" = 1 ] && d="$a"; next=;; esac
@@ -192,6 +192,6 @@ def test_a_fresh_store_is_provisioned_next_to_the_marker(setup_step, monkeypatch
     assert seen == [(root, marker.parents[1] / "data" / "pg" / "dist")]
     assert json.loads(marker.read_text()) == {
         "backend": "managed",
-        "written_by": "Setup (managed PostgreSQL started, ADR-1110)",
+        "written_by": "Setup (managed PostgreSQL started, ADR-1114)",
         "root": str(root),
     }

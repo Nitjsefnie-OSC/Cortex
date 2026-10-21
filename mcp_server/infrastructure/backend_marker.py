@@ -9,7 +9,7 @@ it provisioned in a small JSON marker::
                                  # pre-existing PostgreSQL install
     {"backend": "managed", "root": "~/.claude/methodology/managed-pg"}
                                  # the plugin's own PostgreSQL server, written
-                                 # by Setup only after it started (ADR-1110)
+                                 # by Setup only after it started (ADR-1114)
 
 1. ``CORTEX_MEMORY_STORE_BACKEND`` already set  -> untouched
 2. ``CORTEX_BACKEND`` = postgres|postgresql|sqlite -> mapped to (1)
@@ -30,19 +30,18 @@ launcher, ``python -m mcp_server``, the Codex hook entry, the doctor):
 
 source: ADR-0505
 source: ADR-1104
-source: ADR-1110"""
+source: ADR-1114"""
 
 from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 from pathlib import Path
 from typing import Mapping, MutableMapping
 
 from mcp_server.infrastructure import managed_pg
 from mcp_server.infrastructure.config import METHODOLOGY_DIR
+from mcp_server.shared import gated_files
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +51,7 @@ BACKEND_MARKER_PATH = METHODOLOGY_DIR / "backend.json"
 # (non-"auto") values of MemorySettings.STORE_BACKEND.
 VALID_BACKENDS = frozenset({"sqlite", "postgresql"})
 # The plugin's own PostgreSQL server: a marker value, never an engine value
-# (source: ADR-1110).
+# (source: ADR-1114).
 MANAGED = "managed"
 MARKER_BACKENDS = VALID_BACKENDS | {MANAGED}
 
@@ -108,25 +107,17 @@ def write_backend_marker(
     Pre:  ``backend`` is one of ``MARKER_BACKENDS``; ``root`` is non-empty
           exactly when ``backend`` is ``MANAGED``.
     source: ADR-1104
-    source: ADR-1110"""
+    source: ADR-1114"""
     if backend not in MARKER_BACKENDS or (backend == MANAGED) != bool(root):
         raise BackendMarkerError(
             f"refusing to persist backend {backend!r} with root {root!r}"
         )
     marker_path = path or BACKEND_MARKER_PATH
-    marker_path.parent.mkdir(parents=True, exist_ok=True)
     record = {"backend": backend, "written_by": written_by}
     if root:
         record["root"] = root
     text = json.dumps(record, indent=2)
-    fd, tmp = tempfile.mkstemp(dir=marker_path.parent, prefix=marker_path.name + ".")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text + "\n")
-        os.replace(tmp, marker_path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
+    gated_files.write_text(marker_path, text + "\n", mode=0o600)
     return marker_path
 
 
@@ -189,7 +180,7 @@ def apply_backend_resolution(
 
     A ``managed`` marker (or an inherited URL of that server, for a child of
     an attached process) attaches this process to the plugin's managed
-    PostgreSQL server and sets ``DATABASE_URL`` (ADR-1110, owner decision D1).
+    PostgreSQL server and sets ``DATABASE_URL`` (ADR-1114, owner decision D1).
 
     Pre:  ``environ`` is mutable (normally ``os.environ``); ``default`` is
           ``""`` or one of ``VALID_BACKENDS``.

@@ -162,7 +162,7 @@ def _checks(report: dict, expect_semantic: bool) -> dict:
         "init_exit_0": report["init"]["returncode"] == 0,
         "hook_ready_session_1": hook.get("status") == 0 and message_starts_ready(hook),
         # Every leg (Linux glibc, macOS arm64 and x86_64) is a host where
-        # Setup gives a fresh install the plugin's own server (ADR-1110).
+        # Setup gives a fresh install the plugin's own server (ADR-1114).
         "managed_postgresql_session_1": MANAGED_STORE in hook.get("system_message", ""),
         "hook_installed_nothing": not any(
             "installing" in text

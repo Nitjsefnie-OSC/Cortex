@@ -3,7 +3,7 @@
 This is the plugin's ``Setup`` hook (Claude Code runs it for ``claude --init-only``,
 before the first SessionStart) and the program the background pre-install runs
 for the next version's set. It installs the base set, the plugin's managed
-PostgreSQL server when the store is eligible (ADR-1110), the semantic-search
+PostgreSQL server when the store is eligible (ADR-1114), the semantic-search
 set from uv.lock, then downloads the pinned embedding model, and it is the
 only place besides the MCP server and the two detached jobs that installs.
 
@@ -11,14 +11,14 @@ Outcome: exit 0 and ``{"status": "ready"}`` in ``<set>.setup.json``, or exit 1
 with the cause printed and ``{"status": "failed", "error": ...}``. When the
 store was eligible for the managed PostgreSQL server but it could not run
 here, the outcome also carries ``"sqlite_fallback": <cause>`` and the next
-SessionStart shows it (ADR-1110, owner decision D3). The host
+SessionStart shows it (ADR-1114, owner decision D3). The host
 discards a Setup hook's output and exit code (measured: Claude Code 2.1.300,
 ``claude --init-only`` exits 0 whatever the hook did), so everything printed is
 also appended to ``<data>/setup.log`` and the outcome file is what a caller
 reads (``scripts/init_plugin.py``).
 
 source: ADR-1108
-source: ADR-1110
+source: ADR-1114
 """
 
 from __future__ import annotations
@@ -86,7 +86,7 @@ def outcome(deps_dir: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-FALLBACK = "sqlite_fallback"  # source: ADR-1110 D3 (the outcome field)
+FALLBACK = "sqlite_fallback"  # source: ADR-1114 D3 (the outcome field)
 
 
 def sqlite_fallback(deps_dir: str) -> str:
@@ -139,7 +139,7 @@ def _fail(deps_dir: str, error: str, fallback: str = "") -> int:
 
 
 def managed_pg_step(deps_dir: str, say):
-    """The managed PostgreSQL step (ADR-1110): a ``StepOutcome``.
+    """The managed PostgreSQL step (ADR-1114): a ``StepOutcome``.
 
     Imported here, after the base set, because it needs psycopg. The import
     system cached the set's directory as it was before the install, so it is

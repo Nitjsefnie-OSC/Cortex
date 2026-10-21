@@ -208,7 +208,7 @@ def _init_schema(database_url: str) -> tuple[bool, str]:
     returned ready).
 
     source: ADR-0784
-    source: ADR-1110"""
+    source: ADR-1114"""
     try:
         import psycopg  # noqa: PLC0415 — optional-feature probe: ImportError here is a handled degraded mode
         from psycopg.rows import dict_row  # noqa: PLC0415 — optional-feature probe: ImportError here is a handled degraded mode

@@ -18,9 +18,9 @@ psycopg is importable. In order, under the cluster root's install lock:
 
 A configured database (``database_url`` or an explicit ``CORTEX_*`` backend)
 wins before anything else, even over a ``managed`` marker: nothing managed
-is installed or started (ADR-1110 §4a).
+is installed or started (ADR-1114 §4a).
 
-source: ADR-1110
+source: ADR-1114
 source: ADR-1108
 """
 
@@ -36,8 +36,8 @@ from pathlib import Path
 import launcher_pg_assets
 from mcp_server.infrastructure import managed_pg
 
-_PASSWORD_BYTES = 24  # source: ADR-1110 (192 random bits)
-# source: ADR-1110 (loopback TCP only; an empty list disables unix sockets,
+_PASSWORD_BYTES = 24  # source: ADR-1114 (192 random bits)
+# source: ADR-1114 (loopback TCP only; an empty list disables unix sockets,
 # whose path limit the plugin data directory can exceed)
 _SERVER_CONF = "\nlisten_addresses = '127.0.0.1'\nunix_socket_directories = ''\n"
 _EXTENSIONS = ("vector", "pg_trgm")  # source: mcp_server/infrastructure/pg_schema.py
@@ -196,7 +196,7 @@ def setup_step(data_dir: str, say) -> StepOutcome:
 
     A store already on the managed server must stay reachable, so its failure
     fails Setup. For an eligible store a failure is printed and returned as
-    the SQLite fallback's cause (ADR-1110, D3); anything else is untouched.
+    the SQLite fallback's cause (ADR-1114, D3); anything else is untouched.
     """
     paths, managed, why = _target()
     if paths is None:

@@ -300,11 +300,16 @@ This project follows [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 See [`SECURITY.md`](SECURITY.md). The memory engine handles potentially
 sensitive user data (PII in conversation transcripts); any data-exposure
-or injection issue is high-priority. In-repo, the defence is
-[`mcp_server/shared/redaction.py`](mcp_server/shared/redaction.py), which
-masks credentials in URLs and scrubs well-known secret shapes before content
-is stored — new code paths that capture or persist text must route through
-it. (The `pre-tool-secret-shield` file gate some maintainers run is part of
+or injection issue is high-priority. In-repo, the defence is one redaction
+gate (ADR-1110, [`mcp_server/shared/redaction_gate.py`](mcp_server/shared/redaction_gate.py))
+on every storage primitive: store connections are built gated, files are
+written only through [`mcp_server/shared/gated_files.py`](mcp_server/shared/gated_files.py),
+and child-process output goes through `mcp_server/infrastructure/log_relay.py`.
+New code that persists text uses these;
+`tests_py/architecture/test_storage_redaction_gate.py` fails on any other write
+primitive. Secrets are also kept out of git: run `pre-commit install` once
+(gitleaks 8.30.1, `.pre-commit-config.yaml`); CI's `secret-scan` job scans every
+commit and the tree and blocks the merge. (The `pre-tool-secret-shield` file gate some maintainers run is part of
 their local agent tooling, not of Cortex; do not rely on it.) The security
 argument, its trust boundaries and its limits are in
 [`docs/ASSURANCE-CASE.md`](docs/ASSURANCE-CASE.md).

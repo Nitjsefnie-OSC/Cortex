@@ -44,7 +44,7 @@ _REFUSED = "refused"  # sentinel: this address actively refused
 def has_earlier_state(methodology_dir: Path, marker_name: str) -> bool:
     """Whether Cortex wrote anything there: not the marker, its temp file, a
     hidden file such as Finder's ``.DS_Store``, or the managed server's root
-    (Setup creates it before it may select the store, ADR-1110)."""
+    (Setup creates it before it may select the store, ADR-1114)."""
     from mcp_server.infrastructure.managed_pg import ROOT_NAME  # noqa: PLC0415 — resolvable once plugin_root is on sys.path
 
     if not methodology_dir.is_dir():
@@ -146,7 +146,7 @@ def apply() -> None:
     The host passes the user's ``database_url`` to the MCP server as
     ``DATABASE_URL`` and to hooks only as ``CLAUDE_PLUGIN_OPTION_DATABASE_URL``;
     both mean the same setting, mapped before anything else, so a configured
-    database always wins over the managed server (ADR-1110). Then a
+    database always wins over the managed server (ADR-1114). Then a
     ``managed`` marker attaches this launch to the plugin's own server;
     otherwise the shared precedence (backend_marker) with the plugin's
     default. A HOME nothing decides gets its marker once (launcher_backend):
@@ -155,7 +155,7 @@ def apply() -> None:
 
     source: ADR-0505
     source: ADR-1104
-    source: ADR-1110
+    source: ADR-1114
     """
     map_database_option(os.environ)
     from mcp_server.infrastructure.backend_marker import (  # noqa: PLC0415 — resolvable once plugin_root is on sys.path

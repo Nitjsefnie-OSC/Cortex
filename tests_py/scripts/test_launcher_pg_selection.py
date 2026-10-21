@@ -1,11 +1,11 @@
-"""Which store a launch and Setup choose once a managed server exists (ADR-1110).
+"""Which store a launch and Setup choose once a managed server exists (ADR-1114).
 
 PR #748's review (2026-10-16, blocker 3): with ``database_url`` set, hooks
 (which receive it only as ``CLAUDE_PLUGIN_OPTION_DATABASE_URL``) started the
 managed server while the MCP server used the user's database: two stores.
 A configured database must always win, in every hook, the server and Setup.
 
-source: ADR-1110
+source: ADR-1114
 source: ADR-1104
 """
 

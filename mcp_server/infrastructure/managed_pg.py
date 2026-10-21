@@ -1,4 +1,4 @@
-"""Attach a process to the plugin's managed PostgreSQL server (ADR-1110).
+"""Attach a process to the plugin's managed PostgreSQL server (ADR-1114).
 
 Stdlib only, POSIX only (``fcntl``). In the wheel, so every surface that reads
 the ``managed`` backend marker attaches the same way: the Claude Code launcher,
@@ -19,7 +19,7 @@ Three ``flock`` files under the root order everything, with no timer anywhere:
 - ``supervisor.lock``: held for the supervisor's whole life, so "is one
   running" is a non-blocking lock attempt.
 
-source: ADR-1110
+source: ADR-1114
 """
 
 from __future__ import annotations
@@ -33,13 +33,13 @@ from pathlib import Path
 from typing import MutableMapping
 from urllib.parse import quote
 
-DATABASE = "cortex"  # source: ADR-1110 (the database name every Cortex URL names)
-USER = "postgres"  # source: ADR-1110 (the superuser initdb -U creates)
-HOST = "127.0.0.1"  # source: ADR-1110 (TCP on loopback only; unix sockets off)
-ROOT_ENV = "CORTEX_MANAGED_PG_ROOT"  # source: ADR-1110 (inherited by children)
-ROOT_NAME = "managed-pg"  # source: ADR-1110 (the root's name under methodology/)
-_SUPERVISOR = "mcp_server.infrastructure.managed_pg_supervisor"  # source: ADR-1110
-# source: ADR-1110 (review F1 of #748) — the supervisor holds the cluster's
+DATABASE = "cortex"  # source: ADR-1114 (the database name every Cortex URL names)
+USER = "postgres"  # source: ADR-1114 (the superuser initdb -U creates)
+HOST = "127.0.0.1"  # source: ADR-1114 (TCP on loopback only; unix sockets off)
+ROOT_ENV = "CORTEX_MANAGED_PG_ROOT"  # source: ADR-1114 (inherited by children)
+ROOT_NAME = "managed-pg"  # source: ADR-1114 (the root's name under methodology/)
+_SUPERVISOR = "mcp_server.infrastructure.managed_pg_supervisor"  # source: ADR-1114
+# source: ADR-1114 (review F1 of #748) — the supervisor holds the cluster's
 # password and lock fds, so it runs isolated (-I: no cwd, PYTHONPATH or user
 # site on sys.path) with only this package's parent added, passed as argv[1].
 # `-P` would do the same but needs Python 3.11; the matrix has 3.10.
@@ -101,7 +101,7 @@ class PgPaths:
 
 
 def root_under(methodology_dir: Path) -> PgPaths:
-    """The cluster root next to the backend marker (D5, ADR-1110)."""
+    """The cluster root next to the backend marker (D5, ADR-1114)."""
     return PgPaths(methodology_dir / ROOT_NAME)
 
 
@@ -275,6 +275,6 @@ def detach() -> None:
 
 def exit_unless_runnable(error: ManagedPgError, surface: str) -> None:
     """End this process with one line naming why the managed server cannot
-    run: loud, exit 1, never a fallback to another store (ADR-1110, N5)."""
+    run: loud, exit 1, never a fallback to another store (ADR-1114, N5)."""
     print(f"[{surface}] Cortex not ready: {error}", file=sys.stderr)
     raise SystemExit(1)

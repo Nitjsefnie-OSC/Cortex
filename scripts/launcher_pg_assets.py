@@ -11,9 +11,9 @@ are laid over it, and a stamp naming both digests is
 written last, so a tree without the stamp is never used.
 
 A host this table has no row for is ``UnsupportedError``: the plugin keeps the
-SQLite store there (ADR-1110 records why per platform).
+SQLite store there (ADR-1114 records why per platform).
 
-source: ADR-1110
+source: ADR-1114
 """
 
 from __future__ import annotations
@@ -27,22 +27,22 @@ import tarfile
 import urllib.request
 from pathlib import Path
 
-PG_VERSION = "18.6.0"  # source: ADR-1110 (theseus-rs/postgresql-binaries release)
+PG_VERSION = "18.6.0"  # source: ADR-1114 (theseus-rs/postgresql-binaries release)
 # pgvector compiled by Cortex CI (.github/workflows/pgvector.yml) from this
 # upstream tag, refused unless it resolves to this commit.
-# source: ADR-1110 (pgvector/pgvector tag v0.8.7, 2026-10-01)
+# source: ADR-1114 (pgvector/pgvector tag v0.8.7, 2026-10-01)
 PGVECTOR_VERSION = "0.8.7"
-# source: ADR-1110 (gh api repos/pgvector/pgvector/git/refs/tags/v0.8.7)
+# source: ADR-1114 (gh api repos/pgvector/pgvector/git/refs/tags/v0.8.7)
 PGVECTOR_COMMIT = "f37c13f68b57d2c3472b2214fbcff699d6d34876"
 # The release of this repository that holds the archives the workflow built.
-PGVECTOR_RELEASE = f"pgvector-v{PGVECTOR_VERSION}-pg{PG_VERSION}"  # source: ADR-1110
-# source: ADR-1110 (release download URLs: theseus, and this repository)
+PGVECTOR_RELEASE = f"pgvector-v{PGVECTOR_VERSION}-pg{PG_VERSION}"  # source: ADR-1114
+# source: ADR-1114 (release download URLs: theseus, and this repository)
 PG_URL = "https://github.com/theseus-rs/postgresql-binaries/releases/download/{version}/{name}"
 VECTOR_URL = "https://github.com/cdeust/Cortex/releases/download/{tag}/{name}"
 # Per Rust target triple, the PostgreSQL then the pgvector archive digest,
 # measured 2026-10-17 and equal to the digests both releases publish (pgvector:
 # workflow run 39017072528, `gh attestation verify` passes for each archive).
-SHA256 = {  # source: ADR-1110
+SHA256 = {  # source: ADR-1114
     "aarch64-apple-darwin": (
         "a257bcdb8aa3301a13d6a5bcec48f8c9517045b7cbae71e50788b2615539e95b",
         "33959f25f3ab21f68e029ede739911d4a5c875024bf600ed92925cf3671ab68e",
@@ -65,10 +65,10 @@ _MACHINES = {
     "aarch64": "aarch64",
     "x86_64": "x86_64",
     "amd64": "x86_64",
-}  # source: ADR-1110
-_CHUNK = 1 << 20  # source: ADR-1110 (1 MiB read size; any size gives the same digest)
+}  # source: ADR-1114
+_CHUNK = 1 << 20  # source: ADR-1114 (1 MiB read size; any size gives the same digest)
 STAMP = (
-    ".cortex-installed.json"  # source: ADR-1110 (written last: the tree is complete)
+    ".cortex-installed.json"  # source: ADR-1114 (written last: the tree is complete)
 )
 
 

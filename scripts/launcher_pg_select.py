@@ -1,6 +1,6 @@
 """Whether Setup may select the plugin's managed PostgreSQL for this store.
 
-Selection order (ADR-1110, amending ADR-1104 decision 1):
+Selection order (ADR-1114, amending ADR-1104 decision 1):
 
 1. A configured database (``database_url`` — ``DATABASE_URL`` or, for hooks,
    ``CLAUDE_PLUGIN_OPTION_DATABASE_URL`` mapped onto it — or any explicit
@@ -12,7 +12,7 @@ Selection order (ADR-1110, amending ADR-1104 decision 1):
    (SQLite for a fresh install), with SQLite as the default.
 
 Attaching a launch to the selected server is ``backend_marker``'s job (in the
-wheel, so Codex and direct launches attach the same way, ADR-1110 D1).
+wheel, so Codex and direct launches attach the same way, ADR-1114 D1).
 
 A store is *eligible* for the managed server when nothing configures one and
 no store exists yet: no marker and no earlier Cortex state, or the launcher's
@@ -20,7 +20,7 @@ own first-launch SQLite marker with no SQLite file at the engine's path
 (``CORTEX_MEMORY_DB_PATH`` honoured). Nothing is migrated here: an existing
 SQLite store keeps its marker, which a later importer flips to ``managed``.
 
-source: ADR-1110
+source: ADR-1114
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Mapping
 
-WRITTEN_BY = "Setup (managed PostgreSQL started, ADR-1110)"  # source: ADR-1110
+WRITTEN_BY = "Setup (managed PostgreSQL started, ADR-1114)"  # source: ADR-1114
 # source: memory_config.MemorySettings DB_PATH and SQLITE_FALLBACK_PATH
 # (env_prefix CORTEX_MEMORY_)
 _DB_PATH_ENVS = ("CORTEX_MEMORY_DB_PATH", "CORTEX_MEMORY_SQLITE_FALLBACK_PATH")

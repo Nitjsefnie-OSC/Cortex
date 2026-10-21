@@ -141,7 +141,7 @@ def _ensure_runtime(module: str, install_deps: bool, deps_dir: str) -> None:
         semantic, detail = launcher_ml.start(deps_dir, _LAUNCHER)
         os.environ["CORTEX_SEMANTIC_SEARCH"] = semantic
         os.environ["CORTEX_SEMANTIC_SEARCH_DETAIL"] = detail
-        # source: ADR-1110 D3 — an eligible store Setup left on SQLite says why
+        # source: ADR-1114 D3 — an eligible store Setup left on SQLite says why
         fallback = launcher_setup.sqlite_fallback(deps_dir)
         if fallback and os.environ.get("CORTEX_MEMORY_STORE_BACKEND") == "sqlite":
             os.environ["CORTEX_SQLITE_FALLBACK"] = fallback

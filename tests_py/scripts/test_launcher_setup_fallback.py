@@ -1,10 +1,10 @@
-"""Setup records why an eligible store stays on SQLite (ADR-1110, owner D3).
+"""Setup records why an eligible store stays on SQLite (ADR-1114, owner D3).
 
 PR #748's round-3 review, N1: the fallback cause was only in ``setup.log``;
 the outcome said ``ready`` and nothing reached the user. Now the outcome
 carries ``sqlite_fallback`` and the SessionStart launch hands it to the hook.
 
-source: ADR-1110
+source: ADR-1114
 """
 
 from __future__ import annotations

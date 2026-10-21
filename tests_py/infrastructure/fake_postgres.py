@@ -1,4 +1,4 @@
-"""A stand-in ``bin/postgres`` for the managed server's tests (ADR-1110).
+"""A stand-in ``bin/postgres`` for the managed server's tests (ADR-1114).
 
 Run as ``postgres -D <cluster> -p <port>`` it behaves as far as the supervisor
 can observe: it writes ``postmaster.pid`` the way PostgreSQL does (5 lines,
@@ -11,7 +11,7 @@ exits 0, as it does once its test's lifeline is released
 exit 1 instead. Line 3 of ``postmaster.pid`` is the start time, as in PG.
 Every connection is appended to ``<cluster>/../connections.log``.
 
-source: ADR-1110 (test double of the postmaster the supervisor spawns)
+source: ADR-1114 (test double of the postmaster the supervisor spawns)
 """
 
 from __future__ import annotations

@@ -19,7 +19,7 @@ exits, and the next client starts a new supervisor). Its stdout/stderr are
 run with ``cwd`` = <root> by ``managed_pg._spawn_supervisor``: the caller's
 working directory and ``PYTHONPATH`` never supply this module (review F1).
 
-source: ADR-1110
+source: ADR-1114
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from mcp_server.infrastructure import managed_pg as _pg
 from mcp_server.infrastructure import managed_pg_process as _process
 from mcp_server.infrastructure import managed_pg_server as _server
 
-_ARGC = 4  # source: ADR-1110 (module + the three arguments above)
+_ARGC = 4  # source: ADR-1114 (module + the three arguments above)
 
 
 def _log(message: str) -> None:

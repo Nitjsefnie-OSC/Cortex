@@ -13,7 +13,7 @@ It is only ever called for a port held by a postmaster whose PID the kernel
 already proved to be ours (``managed_pg_server``), so a silent foreign
 listener is never dialled and no read here needs a timer.
 
-source: ADR-1110
+source: ADR-1114
 source: https://www.postgresql.org/docs/18/protocol-flow.html
 source: https://www.rfc-editor.org/rfc/rfc5802 (SCRAM), rfc7677 (SHA-256)
 """

@@ -18,7 +18,7 @@ Issue #740's locked-down Mac is reproduced by the caller: run it under
 
     python3 managed_pg_e2e.py <plugin_root> <work_dir>
 
-source: ADR-1110
+source: ADR-1114
 source: issue #740
 """
 
@@ -30,7 +30,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-_PROBE_DB = "cortex_e2e"  # source: ADR-1110 (a database Cortex never uses)
+_PROBE_DB = "cortex_e2e"  # source: ADR-1114 (a database Cortex never uses)
 _ARGC = 3  # source: the usage line in this module's docstring
 
 
@@ -87,7 +87,7 @@ def _wait_stopped(root: Path) -> dict:
     return managed_pg.read_json(root / "status.json")
 
 
-# source: ADR-1110 D1 (what Codex runs: mcp_server.hooks.entry's resolution)
+# source: ADR-1114 D1 (what Codex runs: mcp_server.hooks.entry's resolution)
 _DIRECT = (
     "import os, sys; sys.path.insert(0, sys.argv[1]);"
     " from mcp_server.hooks.entry import prepare_environment;"

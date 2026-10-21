@@ -6,7 +6,7 @@ status: accepted
 tags: [install, launcher, plugin, postgresql, setup, storage]
 title: The plugin runs its own PostgreSQL from pinned theseus binaries
 ---
-# ADR-1110: The plugin runs its own PostgreSQL from pinned theseus binaries
+# ADR-1114: The plugin runs its own PostgreSQL from pinned theseus binaries
 
 ## Status
 
