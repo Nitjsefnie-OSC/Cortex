@@ -352,10 +352,14 @@ def process_event(event: dict[str, Any]) -> None:
         _log(f"skip {tool_name}: {reason}")
         return
 
-    # Redact the tool output BEFORE tagging, gisting or persisting, so no
-    # derived value (tags, gist, artifact address) is computed from a secret.
-    # Storage writes are gated again at the store and file layers (ADR-1110).
-    output = redact_text(output)
+    # A gist is cut out of the output, and a cut could shorten a secret
+    # below what the detector recognises: redact an output that will be
+    # gisted before cutting it (the artifact store receives that same
+    # redacted object and does not scan it again). An output kept whole is
+    # redacted once, inside the content below. Tags are a fixed vocabulary
+    # and carry no output text. source: ADR-1110 (review of PR #775, N2)
+    if needs_gist(output):
+        output = redact_text(output)
 
     # Tags are derived from the FULL output so signal tags (error/test/
     # success) survive even when the body is gisted.
@@ -364,7 +368,7 @@ def process_event(event: dict[str, Any]) -> None:
     content = _build_memory_content(tool_name, tool_input, body_output, cwd)
     if pointer:
         content = f"{content}\n\n{pointer}"
-    # source: ADR-0495
+    # source: ADR-0495 (content shape); ADR-1110 — the hook redacts it once
     content = redact_text(content)
 
     try:

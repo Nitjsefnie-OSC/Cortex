@@ -61,16 +61,28 @@ def _prose_view(text: str) -> str:
     return _SENTENCE_PUNCT.sub(lambda m: " " * len(m.group()), text)
 
 
+class RedactedText(str):
+    """Text this process has already passed through :func:`redact_text`.
+
+    Only ``redact_text`` builds one. Every operation on it (concatenation,
+    slicing, formatting) returns a plain ``str``, so text derived from it is
+    redacted again when it reaches the gate; the very same object is not. It
+    does not cross a process boundary: a worker receives plain ``str`` over
+    its socket and redacts it. source: ADR-1110 (review of PR #775, N2)"""
+
+    __slots__ = ()
+
+
 def redact_text(text: str) -> str:
     """Return ``text`` with every detected secret replaced by a marker."""
-    if not text:
+    if not text or type(text) is RedactedText:
         return text
     rules = rule_set()
     spans = find_secrets(text, rules)
     view = _prose_view(text)
     if view != text:
         spans += find_secrets(view, rules)
-    return scrub_secrets(redact_spans(text, spans))
+    return RedactedText(scrub_secrets(redact_spans(text, spans)))
 
 
 def redact_value(value: Any) -> Any:

@@ -228,3 +228,17 @@ def test_scanner_detects_each_primitive_kind():
         "import subprocess\nsubprocess.run(c, stdout=subprocess.DEVNULL)",
     ):
         assert kinds_in(harmless) == [], harmless
+
+
+def test_only_the_gate_marks_text_as_redacted():
+    """RedactedText exempts a string from a second redaction in the same
+    process; a module that built one could exempt text never redacted."""
+    builders = []
+    for path in sorted(MCP_SERVER_ROOT.rglob("*.py")):
+        rel = path.relative_to(MCP_SERVER_ROOT).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            named = isinstance(node, (ast.Name, ast.Attribute))
+            if named and _name_of(node) == "RedactedText":
+                builders.append(rel)
+    assert set(builders) <= {"shared/redaction_gate.py"}, builders
