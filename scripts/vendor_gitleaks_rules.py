@@ -18,7 +18,9 @@ An alternation that follows a mid-pattern flag keeps the flag (RE2 scopes it
 to the whole rest of the group), so the scoped group is closed before the bar
 and reopened after it. A rule whose pattern still fails to compile is listed
 in ``skipped`` with its reason; nothing is dropped silently. Path-only rules
-(no ``regex``) cannot apply to text without a file name and are skipped too.
+(no ``regex``) and path-scoped rules (a ``regex`` gitleaks applies only to
+files whose name matches ``path``) cannot apply to text without a file name
+and are skipped too.
 
 Usage: ``python scripts/vendor_gitleaks_rules.py [--check]`` (``--check``
 exits 1 when the committed JSON differs from a fresh translation).
@@ -170,6 +172,10 @@ def build() -> dict:
             skipped.append(
                 {"id": raw["id"], "reason": "path-only rule: needs a file name"}
             )
+            continue
+        if "path" in raw:
+            reason = f"path-scoped rule (files matching {raw['path']})"
+            skipped.append({"id": raw["id"], "reason": f"{reason}: needs a file name"})
             continue
         try:
             rules.append(_rule(raw))

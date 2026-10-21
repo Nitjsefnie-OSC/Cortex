@@ -28,7 +28,7 @@ A schema survey of both backends lists the other copies a hard delete left behin
 - SQLite keeps a deleted row's bytes in free pages, in FTS5 index segments and in the WAL until something overwrites them (measured: the text was readable in `memory.db-wal` after `main`'s hard forget).
 - The handler deleted claims in a separate step whose failure was only logged (`forget.py:150-160`), then deleted the row anyway: a partial erasure reported as success.
 
-A foreign key `ON DELETE CASCADE` on `memory_archives` would need a schema migration; schema handling is being moved under the connection broker (ADR-1112 on its branch), so this change does not touch the migration layer.
+A foreign key `ON DELETE CASCADE` on `memory_archives` would need a schema migration; schema handling is being moved under the connection broker (its ADR on branch `fix/idle-transaction-lock`), so this change does not touch the migration layer.
 
 ## Decision
 

@@ -35,9 +35,12 @@ from scripts.secret_corpus import NEGATIVES, samples  # noqa: E402
 Finding = tuple[str, int, str]
 
 
+VENDORED_CONFIG = REPO_ROOT / "third_party" / "gitleaks" / "v8.30.1" / "gitleaks.toml"
+RULES_JSON = REPO_ROOT / "mcp_server" / "shared" / "redaction_rules" / "gitleaks.json"
+
+
 def _global_path_allowlist() -> list[re.Pattern[str]]:
-    toml = REPO_ROOT / "third_party" / "gitleaks" / "v8.30.1" / "gitleaks.toml"
-    block = toml.read_text(encoding="utf-8").split("[[rules]]", 1)[0]
+    block = VENDORED_CONFIG.read_text(encoding="utf-8").split("[[rules]]", 1)[0]
     paths = block.split("paths = [", 1)[1].split("]\nregexes", 1)[0]
     return [re.compile(p) for p in re.findall(r"'''(.*?)'''", paths)]
 
@@ -68,6 +71,9 @@ def gitleaks_findings(binary: str, root: Path) -> set[Finding]:
                 binary,
                 "dir",
                 str(root),
+                # the pinned default rules, never a .gitleaks.toml found in root
+                "--config",
+                str(VENDORED_CONFIG),
                 "--no-banner",
                 "--redact=100",
                 "-f",
@@ -82,7 +88,13 @@ def gitleaks_findings(binary: str, root: Path) -> set[Finding]:
         )
         rows = json.loads(report.read_text(encoding="utf-8"))
     prefix = str(root).rstrip("/") + "/"
-    return {(r["File"].removeprefix(prefix), r["StartLine"], r["RuleID"]) for r in rows}
+    # rules the port skips by design (they need a file name) are out of scope
+    skipped = {r["id"] for r in json.loads(RULES_JSON.read_text())["skipped"]}
+    return {
+        (r["File"].removeprefix(prefix), r["StartLine"], r["RuleID"])
+        for r in rows
+        if r["RuleID"] not in skipped
+    }
 
 
 def write_corpus(root: Path) -> None:

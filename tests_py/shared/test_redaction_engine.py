@@ -105,7 +105,14 @@ def test_the_rules_the_gate_relies_on_were_all_translated():
     required = set(CORPUS) | {"jwt-base64", "aws-amazon-bedrock-api-key-long-lived"}
     assert required <= translated
     # the only rule not applied needs a file name, which stored text has not
-    assert [s["id"] for s in doc["skipped"]] == ["pkcs12-file"]
+    assert sorted(s["id"] for s in doc["skipped"]) == [
+        "freemius-secret-key",
+        "hashicorp-tf-password",
+        "kubernetes-secret-yaml",
+        "nuget-config-password",
+        "pkcs12-file",
+    ]
+    assert len(doc["rules"]) == 217
 
 
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib is 3.11+")

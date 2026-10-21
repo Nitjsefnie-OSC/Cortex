@@ -35,8 +35,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   and session end stored text unfiltered. Now:
   - the detector is the gitleaks 8.30.1 default rule set, vendored byte-identical
     under `third_party/gitleaks/v8.30.1/` (sha256-pinned, MIT, in the release
-    SBOM), translated to Python by `scripts/vendor_gitleaks_rules.py` (221 of
-    222 rules; the path-only rule cannot apply to text) and applied by a port of
+    SBOM), translated to Python by `scripts/vendor_gitleaks_rules.py` (217 of
+    222 rules; the five that need a file name cannot apply to text) and applied by a port of
     gitleaks' decision procedure, with exact parity against the binary on the
     repository tree and on a real-format fake-credential corpus
     (`scripts/redaction_parity.py`, run in CI); a second pass catches keys

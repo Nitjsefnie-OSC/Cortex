@@ -804,16 +804,6 @@
   {
    "allowlists": [],
    "entropy": 0.0,
-   "id": "freemius-secret-key",
-   "keywords": [
-    "secret_key"
-   ],
-   "regex": "(?i)[\"']secret_key[\"']\\s*=>\\s*[\"'](sk_[\\S]{29})[\"']",
-   "secret_group": 0
-  },
-  {
-   "allowlists": [],
-   "entropy": 0.0,
    "id": "freshbooks-access-token",
    "keywords": [
     "freshbooks"
@@ -2653,17 +2643,6 @@
   },
   {
    "allowlists": [],
-   "entropy": 2.0,
-   "id": "hashicorp-tf-password",
-   "keywords": [
-    "administrator_login_password",
-    "password"
-   ],
-   "regex": "(?i)[\\w.-]{0,50}?(?:administrator_login_password|password)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}(\"[a-z0-9=_\\-]{8,20}\")(?:[\\x60'\"\\s;]|\\\\[nr]|$)",
-   "secret_group": 0
-  },
-  {
-   "allowlists": [],
    "entropy": 0.0,
    "id": "heroku-api-key",
    "keywords": [
@@ -2798,35 +2777,6 @@
     "kraken"
    ],
    "regex": "(?i)[\\w.-]{0,50}?(?:kraken)(?:[ \\t\\w.-]{0,20})[\\s'\"]{0,3}(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)[\\x60'\"\\s=]{0,5}([a-z0-9\\/=_\\+\\-]{80,90})(?:[\\x60'\"\\s;]|\\\\[nr]|$)",
-   "secret_group": 0
-  },
-  {
-   "allowlists": [
-    {
-     "condition": "OR",
-     "has_paths": false,
-     "regex_target": "secret",
-     "regexes": [
-      "[\\w.-]+:(?:[ \\t]*(?:\\||>[-+]?)\\s+)?[ \\t]*(?:\\{\\{[ \\t\\w\"|$:=,.-]+}}|\"\"|'')"
-     ],
-     "stopwords": []
-    },
-    {
-     "condition": "OR",
-     "has_paths": false,
-     "regex_target": "match",
-     "regexes": [
-      "(kind:(?s:.)+\\n---\\n(?s:.)+\\bdata:|data:(?s:.)+\\n---\\n(?s:.)+\\bkind:)"
-     ],
-     "stopwords": []
-    }
-   ],
-   "entropy": 0.0,
-   "id": "kubernetes-secret-yaml",
-   "keywords": [
-    "secret"
-   ],
-   "regex": "(?i)(?:\\bkind:[ \\t]*[\"']?\\bsecret\\b[\"']?(?s:.){0,200}?\\bdata:(?s:.){0,100}?\\s+([\\w.-]+:(?:[ \\t]*(?:\\||>[-+]?)\\s+)?[ \\t]*(?:[\"']?[a-z0-9+/]{10,}={0,3}[\"']?|\\{\\{[ \\t\\w\"|$:=,.-]+}}|\"\"|''))|\\bdata:(?s:.){0,100}?\\s+([\\w.-]+:(?:[ \\t]*(?:\\||>[-+]?)\\s+)?[ \\t]*(?:[\"']?[a-z0-9+/]{10,}={0,3}[\"']?|\\{\\{[ \\t\\w\"|$:=,.-]+}}|\"\"|''))(?s:.){0,200}?\\bkind:[ \\t]*[\"']?\\bsecret\\b[\"']?)",
    "secret_group": 0
   },
   {
@@ -3122,28 +3072,6 @@
     "npm_"
    ],
    "regex": "(?i)\\b(npm_[a-z0-9]{36})(?:[\\x60'\"\\s;]|\\\\[nr]|$)",
-   "secret_group": 0
-  },
-  {
-   "allowlists": [
-    {
-     "condition": "OR",
-     "has_paths": false,
-     "regex_target": "secret",
-     "regexes": [
-      "33f!!lloppa",
-      "hal\\+9ooo_da!sY",
-      "^\\%\\S.*\\%$"
-     ],
-     "stopwords": []
-    }
-   ],
-   "entropy": 1.0,
-   "id": "nuget-config-password",
-   "keywords": [
-    "<add key="
-   ],
-   "regex": "(?i)<add key=\\\"(?:(?:ClearText)?Password)\\\"\\s*value=\\\"(.{8,})\\\"\\s*/>",
    "secret_group": 0
   },
   {
@@ -3896,6 +3824,22 @@
   }
  ],
  "skipped": [
+  {
+   "id": "freemius-secret-key",
+   "reason": "path-scoped rule (files matching (?i)\\.php$): needs a file name"
+  },
+  {
+   "id": "hashicorp-tf-password",
+   "reason": "path-scoped rule (files matching (?i)\\.(?:tf|hcl)$): needs a file name"
+  },
+  {
+   "id": "kubernetes-secret-yaml",
+   "reason": "path-scoped rule (files matching (?i)\\.ya?ml$): needs a file name"
+  },
+  {
+   "id": "nuget-config-password",
+   "reason": "path-scoped rule (files matching (?i)nuget\\.config$): needs a file name"
+  },
   {
    "id": "pkcs12-file",
    "reason": "path-only rule: needs a file name"
