@@ -4,6 +4,7 @@
 # One pipeline for every pull request: contract -> unit -> regression -> e2e
 # -> environment -> install -> review (the Claude bot) -> merge, and a release
 # tag on push to main. The commands come from ci.json at the repository root.
+# Windows capture runs after contract and also gates review and merge.
 name: Pipeline
 
 on:
@@ -36,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # ci.json: exactly unit, regression, e2e, environment, install (non-empty
+      # ci.json: exactly unit, capture, regression, e2e, environment, install (non-empty
       # shell commands) plus an optional version_file that must exist. An
       # empty step is a failure, never a pass.
       - name: Validate ci.json
@@ -44,7 +45,7 @@ jobs:
           python3 - <<'PY'
           import json, sys
           from pathlib import Path
-          KEYS = ("unit", "regression", "e2e", "environment", "install")
+          KEYS = ("unit", "capture", "regression", "e2e", "environment", "install")
           VERSION_KEY, DEFAULT_VERSION_FILE = "version_file", ".claude-plugin/plugin.json"
           path = Path("ci.json")
           faults = []
@@ -125,6 +126,18 @@ jobs:
           if value < minimum:
               sys.exit(f"::error::{line}: under the minimum")
           PY
+
+  capture:
+    name: capture
+    needs: contract
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run the capture command
+        run: bash -eo pipefail -c "$(jq -r .capture ci.json)"
 
   regression:
     name: regression
@@ -211,7 +224,7 @@ jobs:
   # Dependabot pull request (out of the bot's scope, merges on green tests).
   review:
     name: review
-    needs: [contract, unit, regression, e2e, environment, install]
+    needs: [contract, unit, capture, regression, e2e, environment, install]
     if: >-
       always()
       && needs.contract.result == 'success'
@@ -287,7 +300,8 @@ jobs:
             pull request #${{ github.event.pull_request.number }}, branch
             ${{ github.event.pull_request.head.ref }}, head ${{ github.event.pull_request.head.sha }}.
             The branch is checked out. The pipeline runs, in order: unit, regression,
-            e2e, environment and install, with the commands of ci.json.
+            e2e, environment and install, with the commands of ci.json. Capture
+            runs on Windows after contract.
 
             Failed jobs of run ${{ github.run_id }} ("none" when every test passed):
             ${{ steps.guard.outputs.failed }}
@@ -303,14 +317,14 @@ jobs:
                Change nothing and push nothing when there is nothing to fix.
           claude_args: '--allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,Bash(git:*),Bash(gh:*),Bash(python3:*),Bash(pytest:*),Bash(uv:*),Bash(npm:*),Bash(npx:*),Bash(pnpm:*),Bash(cargo:*),Bash(bash:*)"'
 
-  # Arms the squash auto-merge when the five test jobs passed on this commit
+  # Arms the squash auto-merge when the six test jobs passed on this commit
   # and review did not fail (a skip by design does not block). Always runs on
   # a same-repo, non-draft pull request and FAILS explicitly otherwise: a
   # skipped required check counts as satisfied for GitHub (measured on
   # claude-mods #38 and session-optimizer #73, auto-merged on a red run).
   merge:
     name: merge
-    needs: [unit, regression, e2e, environment, install, review]
+    needs: [unit, capture, regression, e2e, environment, install, review]
     if: >-
       always()
       && github.event_name == 'pull_request'
@@ -322,9 +336,10 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - name: Refuse unless the five test jobs succeeded and review did not fail
+      - name: Refuse unless the six test jobs succeeded and review did not fail
         env:
           UNIT: ${{ needs.unit.result }}
+          CAPTURE: ${{ needs.capture.result }}
           REGRESSION: ${{ needs.regression.result }}
           E2E: ${{ needs.e2e.result }}
           ENVIRONMENT: ${{ needs.environment.result }}
@@ -332,7 +347,7 @@ jobs:
           REVIEW: ${{ needs.review.result }}
         run: |
           red=""
-          for job in UNIT REGRESSION E2E ENVIRONMENT INSTALL; do
+          for job in UNIT CAPTURE REGRESSION E2E ENVIRONMENT INSTALL; do
             if [ "${!job}" != "success" ]; then red="$red $job=${!job}"; fi
           done
           if [ "$REVIEW" = "failure" ]; then red="$red REVIEW=failure"; fi
@@ -341,7 +356,7 @@ jobs:
             echo "## Merge: refused ($red)" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          echo "## Merge: armed (unit, regression, e2e, environment, install green; review $REVIEW)" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Merge: armed (unit, capture, regression, e2e, environment, install green; review $REVIEW)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Arm the squash auto-merge
         env:
