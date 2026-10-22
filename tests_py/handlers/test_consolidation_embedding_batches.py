@@ -107,7 +107,10 @@ class DirectWriters(unittest.TestCase):
             actual = sleep._apply_dream_replay(store, engine, rows)
         self.assertEqual(actual, [7, 5])
         self.assertEqual(
-            [call.args[:3] for call in store.update_memory_compression.call_args_list],
+            [
+                invocation.args[:3]
+                for invocation in store.update_memory_compression.call_args_list
+            ],
             [(7, "a", b"a"), (2, "bad", b"bad"), (5, "", None)],
         )
         engine.encode_batch.assert_not_called()
@@ -124,7 +127,7 @@ class DirectWriters(unittest.TestCase):
         ]
         self.assertEqual(sleep._fix_stale_embeddings(store, engine, rows), 2)
         self.assertEqual(
-            [call.args[1] for call in conn.execute.call_args_list],
+            [invocation.args[1] for invocation in conn.execute.call_args_list],
             [(b"b", 7), (b"a", 5)],
         )
         engine.encode_batch.assert_not_called()
@@ -173,7 +176,9 @@ class DirectWriters(unittest.TestCase):
         }
         with self.assertLogs(cls.logger, level="ERROR"):
             self.assertEqual(cls._create_semantic_memories(store, engine, plan), 1)
-        rows = [call.args[0] for call in store.insert_memory.call_args_list]
+        rows = [
+            invocation.args[0] for invocation in store.insert_memory.call_args_list
+        ]
         self.assertEqual([row["embedding"] for row in rows], [b"a", b"b"])
         self.assertIn("derived-src:7", rows[0]["tags"])
         self.assertIn("confabulation-risk", rows[1]["tags"])

@@ -25,6 +25,9 @@ def uv_mod(monkeypatch):
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    # These tests fake ``run_install``; they must not depend on the host
+    # interpreter carrying pip (a ``uv sync`` venv does not).
+    monkeypatch.setattr(module._pip, "pip_entry", lambda: ["py", "-m", "pip"])
     return module
 
 
