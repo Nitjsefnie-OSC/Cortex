@@ -16,10 +16,15 @@ import signal
 import sys
 
 from mcp_server.infrastructure.backend_marker import apply_backend_resolution
+from mcp_server.infrastructure.managed_pg import ManagedPgError, exit_unless_runnable
 
 # source: ADR-0505 — direct console/module launches must resolve the saved
 # backend before registry imports instantiate MemorySettings, just as launcher.py.
-apply_backend_resolution(os.environ)
+# source: ADR-1114 — a managed server that cannot run ends the launch in one line.
+try:
+    apply_backend_resolution(os.environ)
+except ManagedPgError as _not_runnable:
+    exit_unless_runnable(_not_runnable, "cortex-mcp")
 
 
 try:  # pragma: no cover — defensive; sentence-transformers is mandatory
@@ -72,6 +77,7 @@ from mcp_server.infrastructure.upstream_availability import (
     prd_upstream_available,
 )
 from mcp_server.infrastructure.wiki_schema_reader import load_registry
+from mcp_server.shared.private_paths import harden_at_startup
 
 # source: ADR-0093
 
@@ -167,6 +173,8 @@ def _shutdown(sig=None, frame=None) -> None:
 def main() -> None:
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
+    # source: ADR-1112 — existing installs become owner-only before serving
+    harden_at_startup()
     # source: ADR-0093
 
     anyio.run(mcp.run_stdio_async)
