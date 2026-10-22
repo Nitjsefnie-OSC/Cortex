@@ -49,6 +49,10 @@ _AUDITED = {
         1,
         "opens the worker log 0600 for the filtered handler",
     ),
+    ("hooks/capture_worker_logging.py", "win32-open-write"): (
+        1,
+        "opens without following reparse points for the filtered handler",
+    ),
     ("hooks/capture_worker_logging.py", "open-write"): (
         1,
         "fdopen wraps the guarded descriptor for the filtered handler",
@@ -239,6 +243,9 @@ def test_scanner_detects_each_primitive_kind():
         "open(p, 'a')": "open-write",
         "import os\nos.open(p, os.O_CREAT | os.O_WRONLY)": "os.open-write",
         "import os\nos.open(p, flags, 0o600)": "os.open-write",
+        "dll.CreateFileW(p, access, share, None, disposition, flags, None)": (
+            "win32-open-write"
+        ),
         "import logging\nlogging.FileHandler(p)": "log-file-handler",
         "import tempfile\ntempfile.mkstemp()": "tempfile",
         "import sqlite3\nsqlite3.connect(p)": "db-connect",

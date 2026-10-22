@@ -7,16 +7,16 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest import mock
 
 from mcp_server.hooks import capture_worker_logging as logs
-
-
-def _os_without(*names):
-    return SimpleNamespace(
-        **{name: value for name, value in vars(os).items() if name not in names}
-    )
+from tests_py.hooks._capture_logging_regressions import (
+    TestCaptureLoggingOpenRaces,  # noqa: F401 — capture CI collects this class here
+    _host_fallback,
+    _intercept_open,
+    _os_without,
+    _real_open,
+)
 
 
 class TestCaptureWorkerLogging(unittest.TestCase):
@@ -63,13 +63,14 @@ class TestCaptureWorkerLogging(unittest.TestCase):
 
     def test_regular_logs_create_and_reopen_without_posix_capabilities(self):
         api = _os_without("O_NOFOLLOW", "geteuid", "fchmod")
-        self.assertIsNone(self._configuration_error(self.root, api))
-        self.logger.error("first diagnostic")
-        self.assertIsNone(self._configuration_error(self.root, api))
-        self.logger.error("second diagnostic")
-        text = (self.root / "worker.log").read_text()
-        self.assertIn("first diagnostic", text)
-        self.assertIn("second diagnostic", text)
+        with _host_fallback():
+            self.assertIsNone(self._configuration_error(self.root, api))
+            self.logger.error("first diagnostic")
+            self.assertIsNone(self._configuration_error(self.root, api))
+            self.logger.error("second diagnostic")
+            text = (self.root / "worker.log").read_text()
+            self.assertIn("first diagnostic", text)
+            self.assertIn("second diagnostic", text)
 
     def test_symlink_segments_are_refused_with_and_without_nofollow(self):
         for missing in ((), ("O_NOFOLLOW", "geteuid", "fchmod")):
@@ -92,7 +93,6 @@ class TestCaptureWorkerLogging(unittest.TestCase):
                                 self.assertEqual(target.read_text(), "untouched")
 
     def test_symlink_substituted_during_open_is_refused_on_both_paths(self):
-        real_open = os.open
         for missing in ((), ("O_NOFOLLOW", "geteuid", "fchmod")):
             for same_file in (False, True):
                 with (
@@ -107,20 +107,21 @@ class TestCaptureWorkerLogging(unittest.TestCase):
                     else:
                         target.write_text("untouched")
                     api = _os_without(*missing)
+                    op = _real_open(api)
                     opened = []
 
                     def redirect(
-                        path, flags, mode, *, target=target, api=api, opened=opened
+                        path, flags, mode, *, dst=target, api=api, seen=opened, op=op
                     ):
                         if hasattr(api, "O_NOFOLLOW"):
                             self.assertTrue(flags & api.O_NOFOLLOW)
                         Path(path).unlink()
-                        Path(path).symlink_to(target)
-                        descriptor = real_open(path, flags, mode)
-                        opened.append(descriptor)
+                        Path(path).symlink_to(dst)
+                        descriptor = op(path, flags, mode)
+                        seen.append(descriptor)
                         return descriptor
 
-                    with mock.patch.object(api, "open", side_effect=redirect):
+                    with _intercept_open(api, redirect):
                         error = self._configuration_error(runtime, api)
                     self.assertIsInstance(error, OSError)
                     self.assertEqual(target.read_text(), "untouched")

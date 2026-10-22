@@ -185,6 +185,8 @@ def _named_kind(name: str) -> str | None:
         return "kv-store"
     if name in _ARRAY_DUMPS or last == "tofile":
         return "array-dump"
+    if last == "CreateFileW":
+        return "win32-open-write"
     if last in _FILE_HANDLERS:
         return "log-file-handler"
     if last in _TEMPFILES and name.split(".")[0] in {"tempfile", _UNKNOWN}:
