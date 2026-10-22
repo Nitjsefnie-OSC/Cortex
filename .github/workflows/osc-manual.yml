@@ -1,0 +1,77 @@
+name: osc-manual
+
+# Manual dispatch wrapper used to run this repository's Pipeline stages against
+# an arbitrary ref of this fork, before anything is proposed upstream.
+#
+# It lives on the fork's DEFAULT branch because GitHub honours workflow_dispatch
+# definitions only from there: every dispatch runs THIS definition, whatever
+# target_ref is checked out — so a stage whose inputs a ref lacks prints a loud
+# WRAPPER-SKIP rather than passing quietly. Provenance: a dispatch run reports
+# head_branch/head_sha of this default branch, never the tree it checked out,
+# so the checked-out SHA is echoed in the log and a run is matched by that echo,
+# never by recency.
+#
+# Stages mirror .github/workflows/pipeline.yml (contract validation of ci.json
+# is upstream's contract job; the coverage floor is its unit job). Drift between
+# this mirror and upstream's jobs is expected; the PR itself is gated by
+# upstream's pipeline on the pull_request event.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_ref:
+        description: Ref of this fork to check out and test
+        required: true
+
+concurrency:
+  group: osc-manual-${{ inputs.target_ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  linux:
+    name: unit + regression (linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.target_ref }}
+          persist-credentials: false
+      - name: Provenance
+        run: |
+          echo "osc-manual sha=$(git rev-parse HEAD)"
+          echo "osc-manual target_ref=${{ inputs.target_ref }}"
+      - name: Unit
+        if: ${{ !cancelled() }}
+        run: bash -eo pipefail -c "$(jq -r .unit ci.json)"
+      - name: Regression
+        if: ${{ !cancelled() }}
+        run: bash -eo pipefail -c "$(jq -r .regression ci.json)"
+
+  capture-windows:
+    name: capture (windows)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.target_ref }}
+          persist-credentials: false
+      - name: Provenance
+        run: |
+          echo "osc-manual sha=$(git rev-parse HEAD)"
+      - name: Capture
+        if: ${{ !cancelled() }}
+        run: |
+          key="$(jq -r '.capture // "missing"' ci.json)"
+          if [ "$key" = "missing" ]; then
+            echo "WRAPPER-SKIP: ci.json on this ref has no capture key"
+          else
+            bash -eo pipefail -c "$key"
+          fi
