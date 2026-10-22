@@ -1,8 +1,10 @@
 """The spool drainer: one handler load per burst, one drainer at a time, nothing lost.
 
-``test_drainer_outlives_its_parent_and_stores_the_spooled_line`` starts the real
+``test_drainer_outlives_its_parent_without_draining_another_root`` starts the real
 drainer from a parent that exits at once, with the real platform's detach options
 (Windows flags on the Windows CI leg), and synchronises on pipe EOF, never on a delay.
+Its capture root is isolated through the child's environment; another root's
+pending file stays untouched.
 """
 
 from __future__ import annotations
@@ -206,11 +208,23 @@ DRAIN_DEADLINE_S = 120.0
 
 
 class TestDetachedDrainer(unittest.TestCase):
-    def test_drainer_outlives_its_parent_and_stores_the_spooled_line(self):
-        spool = capture_spool.spool_directory(capture_dispatch.CLAUDE_DIR)
+    def test_drainer_outlives_its_parent_without_draining_another_root(self):
+        global_spool = capture_spool.spool_directory(capture_dispatch.CLAUDE_DIR)
+        seeded = capture_spool.write(global_spool, EXPECTED)
+        self.addCleanup(seeded.unlink, missing_ok=True)
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        spool = capture_spool.spool_directory(root)
         self.assertEqual(capture_spool.pending(spool), [])
         capture_spool.write(spool, EXPECTED)
         before = _stored_rows()
+        diagnostics = self._run_detached_drainer(spool, root)
+        self.assertIn(seeded, capture_spool.pending(global_spool), diagnostics)
+        self.assertEqual(capture_spool.pending(spool), [], diagnostics)
+        self.assertEqual(_stored_rows(), before + 1, diagnostics)
+
+    def _run_detached_drainer(self, spool, root):
         repo_root = Path(capture_dispatch.__file__).resolve().parents[2]
         # The drainer is started through the plugin launcher (issue #667). The
         # real launcher installs deps/ over the network; this test is about
@@ -231,7 +245,11 @@ class TestDetachedDrainer(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=repo_root,
-            env={**os.environ, "CLAUDE_PLUGIN_ROOT": str(plugin_root)},
+            env={
+                **os.environ,
+                "CLAUDE_PLUGIN_ROOT": str(plugin_root),
+                "CORTEX_CLAUDE_DIR": str(root),
+            },
         )
         out, diagnostics = hook.communicate()
         self.assertEqual(hook.returncode, 0, diagnostics)  # the parent is gone ...
@@ -241,9 +259,7 @@ class TestDetachedDrainer(unittest.TestCase):
         while time.monotonic() < deadline and any(pid_alive(p) for p in pids):
             time.sleep(0.1)
         self.assertFalse(any(pid_alive(p) for p in pids), "drainer or relay hung")
-        # ... and the detached drainer still stored the line
-        self.assertEqual(capture_spool.pending(spool), [], diagnostics)
-        self.assertEqual(_stored_rows(), before + 1, diagnostics)
+        return diagnostics
 
 
 if __name__ == "__main__":
