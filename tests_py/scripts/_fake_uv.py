@@ -13,6 +13,8 @@ source: ADR-1092"""
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -45,6 +47,27 @@ def _launcher(name: str):
     return __import__(name)
 
 
+def host_pip() -> list[str]:
+    """A pip that runs, for the offline installs the stand-in delegates to.
+
+    The launcher's own resolution first; a ``uv sync`` venv has no pip and no
+    ensurepip wheel (issue #785), so then any other interpreter on PATH whose
+    ``-m pip`` works. The probe wheels are pure Python, so the interpreter
+    that installs them need not be the one under test.
+    """
+    try:
+        return _launcher("launcher_pip").pip_entry()
+    except FileNotFoundError as missing:
+        for name in ("python3", "python"):
+            exe = shutil.which(name)
+            if exe is None:
+                continue
+            probe = subprocess.run([exe, "-m", "pip", "--version"], capture_output=True)
+            if probe.returncode == 0:
+                return [exe, "-m", "pip"]
+        raise missing
+
+
 def install(directory: Path, requirements: Path, pip: list[str] | None = None) -> Path:
     """Write ``directory/uv`` at the pinned version, installing ``requirements``."""
     directory.mkdir(parents=True, exist_ok=True)
@@ -54,7 +77,7 @@ def install(directory: Path, requirements: Path, pip: list[str] | None = None) -
             python=sys.executable,
             version=_launcher("launcher_uv").UV_VERSION,
             requirements=str(requirements),
-            pip=pip or _launcher("launcher_pip").pip_entry(),
+            pip=pip or host_pip(),
         ),
         encoding="utf-8",
     )

@@ -77,20 +77,10 @@ def _build_wheel(wheels: Path, version: str) -> Path:
     return wheel
 
 
-def _pip_entry() -> list[str]:
-    """The launcher's own pip resolution — this interpreter may have no pip
-    module (issue #582, ADR-1067)."""
-    if str(SCRIPTS_DIR) not in sys.path:
-        sys.path.insert(0, str(SCRIPTS_DIR))
-    import launcher_pip
-
-    return launcher_pip.pip_entry()
-
-
 def _pip_target(deps: Path, wheels: Path, version: str) -> None:
     subprocess.run(
         [
-            *_pip_entry(),
+            *_fake_uv.host_pip(),
             "install",
             "-q",
             "--no-index",
