@@ -234,7 +234,7 @@ class TestEnsureConnection:
 
     def test_never_installs_the_pipeline(self, tmp_path, monkeypatch):
         """SessionStart wires a pipeline that is already there; installing
-        another product's binary is an explicit setup step (#705, ADR-1111)."""
+        another product's binary is an explicit setup step (#705, ADR-1116)."""
         monkeypatch.setattr(
             pipeline_discovery, "MCP_CONNECTIONS_PATH", tmp_path / "mcp.json"
         )

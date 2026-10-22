@@ -169,7 +169,7 @@ def ensure_pipeline_connection(project_root: Optional[str]) -> dict:
       binary: resolved pipeline binary path (when discovered)
 
     Idempotent. Safe to call every SessionStart: it only wires a pipeline
-    that is already installed and never downloads or builds one (ADR-1111).
+    that is already installed and never downloads or builds one (ADR-1116).
     ``project_root`` is
     forwarded to ``discover_pipeline_command`` as its sibling-scan anchor.
     """
@@ -204,7 +204,7 @@ def ensure_pipeline_connection(project_root: Optional[str]) -> dict:
                 "Failed to purge stale codebase entry from %s: %s", path, exc
             )
 
-    # source: ADR-1111 — never installs; installing is scripts/setup.sh's step
+    # source: ADR-1116 — never installs; installing is scripts/setup.sh's step
     if command is None:
         return {"action": "no_pipeline_found", "path": str(path)}
 
