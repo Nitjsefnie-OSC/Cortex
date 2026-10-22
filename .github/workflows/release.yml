@@ -258,6 +258,11 @@ jobs:
             grep -q "\"name\": \"$pkg\"" hypermnesia-mcp.cdx.json \
               || { echo "SBOM missing expected component: $pkg" >&2; exit 1; }
           done
+          # source: ADR-1110 — vendored files (third_party/) are not in uv.lock
+          python scripts/sbom_add_vendored.py hypermnesia-mcp.cdx.json
+          grep -q '"purl": "pkg:github/gitleaks/gitleaks@v8.30.1#config/gitleaks.toml"' \
+            hypermnesia-mcp.cdx.json \
+            || { echo "SBOM missing the vendored gitleaks rule set" >&2; exit 1; }
           sha256sum hypermnesia-mcp.cdx.json | tee hypermnesia-mcp.cdx.json.sha256
           ls -la hypermnesia-mcp.cdx.json*
 
