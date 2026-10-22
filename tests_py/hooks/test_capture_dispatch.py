@@ -52,8 +52,11 @@ class TestCaptureDispatch(unittest.TestCase):
         self.assertIn("persistence pending", log.call_args.args[0])
 
     def test_spawn_or_transport_failure_is_logged_and_telemetried(self):
-        with mock.patch.object(
-            self.dispatch, "deliver", side_effect=OSError("fixture spawn failed")
+        with (
+            mock.patch.object(self.dispatch, "is_supported", return_value=True),
+            mock.patch.object(
+                self.dispatch, "deliver", side_effect=OSError("fixture spawn failed")
+            ),
         ):
             with mock.patch.object(
                 self.dispatch.time, "monotonic", side_effect=[4.0, 4.25]
