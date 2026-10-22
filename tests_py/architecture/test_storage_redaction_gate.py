@@ -47,7 +47,11 @@ _AUDITED = {
     ),
     ("hooks/capture_worker_logging.py", "os.open-write"): (
         1,
-        "pre-creates the worker log 0600, writes nothing",
+        "opens the worker log 0600 for the filtered handler",
+    ),
+    ("hooks/capture_worker_logging.py", "open-write"): (
+        1,
+        "fdopen wraps the guarded descriptor for the filtered handler",
     ),
     ("hooks/capture_worker_logging.py", "log-file-handler"): (
         1,
