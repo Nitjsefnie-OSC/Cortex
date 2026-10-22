@@ -12,6 +12,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The `unit` and `regression` commands of `ci.json` install a uv-managed CPython 3.12 (`uv python install 3.12`, `uv sync --managed-python --python 3.12`) and put pip into the venv (`uv pip install pip`, run with `uv run --no-sync`): on the bare ubuntu runner `uv sync` built the venv from `/usr/bin/python3` 3.12.3, whose standard library bundles no pip wheel for ensurepip (19 `tests_py/scripts` launcher and installer tests: `FileNotFoundError: .venv/bin/python has no pip module`) and whose inlined-comprehension bug raised `UnboundLocalError: cannot access local variable 'call'` in 3 `DirectWriters` tests; the previous CI ran 3.12.15 through setup-python (run 39761845476, 2026-10-22).
 - The `merge` job of `.github/workflows/pipeline.yml` sets `GH_REPO: ${{ github.repository }}` on its `gh pr merge` step: the job runs without a checkout, so gh could not infer the repository and failed with `fatal: not a git repository` after every stage was green (session-optimizer #65, run 39756969927, 2026-10-22).
 
 ### Added
